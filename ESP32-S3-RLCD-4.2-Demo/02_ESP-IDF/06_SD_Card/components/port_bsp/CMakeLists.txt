@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS 
+    "sdcard_bsp.cpp" 
+    PRIV_REQUIRES 
+    driver
+    REQUIRES
+    esp_driver_sdmmc
+    fatfs
+    INCLUDE_DIRS 
+    "./")

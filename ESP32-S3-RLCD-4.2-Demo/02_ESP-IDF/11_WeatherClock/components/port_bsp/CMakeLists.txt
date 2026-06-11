@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS 
+    "display_bsp.cpp"
+    "i2c_bsp.cpp"
+    "i2c_equipment.cpp"
+    REQUIRES
+    driver
+    esp_lcd
+    esp_timer
+    SensorLib
+    INCLUDE_DIRS 
+    "./")

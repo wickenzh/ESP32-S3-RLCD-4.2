@@ -1,0 +1,20 @@
+# ESP-IDF build output
+build/
+build_*/
+**/build/
+**/build_*/
+
+# ESP-IDF component manager cache
+managed_components/
+**/managed_components/
+
+# Local/editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Generated binaries and logs
+*.bin
+*.elf
+*.map
+*.log

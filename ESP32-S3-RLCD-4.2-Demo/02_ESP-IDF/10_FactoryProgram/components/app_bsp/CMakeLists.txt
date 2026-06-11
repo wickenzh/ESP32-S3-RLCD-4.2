@@ -1,0 +1,19 @@
+idf_component_register(
+    SRCS
+    "lvgl_bsp.cpp"
+    "ble_scan_bsp.c"
+    "esp_wifi_bsp.c"
+    PRIV_REQUIRES
+    esp_wifi
+    esp_event
+    nvs_flash
+    ui_bsp
+    espressif__avi_player 
+    espressif__esp_new_jpeg
+    port_bsp
+    esp_timer
+    REQUIRES
+    bt
+    lvgl__lvgl
+    INCLUDE_DIRS 
+    "./")
