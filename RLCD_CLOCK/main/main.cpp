@@ -35,7 +35,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.28";
+static const char *APP_VERSION = "v0.0.29";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -223,11 +223,11 @@ static void style_battery_part(lv_obj_t *obj, bool filled)
 
 static void style_battery_frame(lv_obj_t *obj)
 {
-    lv_obj_set_style_bg_color(obj, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(obj, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(obj, 4, LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(obj, 3, LV_PART_MAIN);
     lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
 }
 
@@ -239,9 +239,17 @@ static void build_battery_icon(lv_obj_t *parent)
     lv_obj_set_size(frame, 34, 16);
     style_battery_frame(frame);
 
+    lv_obj_t *inner = lv_obj_create(frame);
+    lv_obj_clear_flag(inner, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(inner, 2, 2);
+    lv_obj_set_size(inner, 30, 12);
+    style_battery_part(inner, false);
+    lv_obj_set_style_border_width(inner, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(inner, 2, LV_PART_MAIN);
+
     lv_obj_t *tip = lv_obj_create(parent);
     lv_obj_clear_flag(tip, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(tip, 378, 22);
+    lv_obj_set_pos(tip, 377, 22);
     lv_obj_set_size(tip, 3, 6);
     style_battery_part(tip, true);
     lv_obj_set_style_border_width(tip, 0, LV_PART_MAIN);
@@ -250,8 +258,8 @@ static void build_battery_icon(lv_obj_t *parent)
     for (int i = 0; i < 5; ++i) {
         g_battery_segments[i] = lv_obj_create(frame);
         lv_obj_clear_flag(g_battery_segments[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_pos(g_battery_segments[i], 3 + i * 6, 3);
-        lv_obj_set_size(g_battery_segments[i], 4, 10);
+        lv_obj_set_pos(g_battery_segments[i], 3 + i * 6, 4);
+        lv_obj_set_size(g_battery_segments[i], 4, 8);
         style_battery_part(g_battery_segments[i], false);
         lv_obj_set_style_border_width(g_battery_segments[i], 0, LV_PART_MAIN);
         lv_obj_set_style_radius(g_battery_segments[i], 1, LV_PART_MAIN);
