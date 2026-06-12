@@ -932,10 +932,10 @@ static bool json_copy_string(cJSON *obj, const char *name, char *out, size_t out
     return true;
 }
 
-static bool ip_geolocation_lookup(char *location, size_t location_len)
+static bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size_t city_len)
 {
     char response[1024] = {};
-    if (http_get_text("http://ip-api.com/json/?fields=status,message,lat,lon&lang=zh-CN", response, sizeof(response)) != ESP_OK) {
+    if (http_get_text("http://ip-api.com/json/?fields=status,message,lat,lon,city&lang=zh-CN", response, sizeof(response)) != ESP_OK) {
         return false;
     }
     cJSON *root = cJSON_Parse(response);
@@ -946,9 +946,16 @@ static bool ip_geolocation_lookup(char *location, size_t location_len)
     cJSON *status = cJSON_GetObjectItem(root, "status");
     cJSON *lat = cJSON_GetObjectItem(root, "lat");
     cJSON *lon = cJSON_GetObjectItem(root, "lon");
+    cJSON *city_json = cJSON_GetObjectItem(root, "city");
     if (cJSON_IsString(status) && strcmp(status->valuestring, "success") == 0 &&
         cJSON_IsNumber(lat) && cJSON_IsNumber(lon)) {
         snprintf(location, location_len, "%.2f,%.2f", lon->valuedouble, lat->valuedouble);
+        if (cJSON_IsString(city_json) && city_json->valuestring) {
+            strlcpy(city, city_json->valuestring, city_len);
+        } else {
+            strlcpy(city, location, city_len);
+        }
+        ESP_LOGI(TAG, "ip location resolved: %s city=%s", location, city);
         ok = true;
     }
     cJSON_Delete(root);
@@ -976,6 +983,9 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
     if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && first) {
         ok = json_copy_string(first, "id", city_id, city_id_len) &&
              json_copy_string(first, "name", city_name, city_name_len);
+    } else {
+        ESP_LOGW(TAG, "qweather city lookup failed code=%s",
+                 cJSON_IsString(code) ? code->valuestring : "missing");
     }
     cJSON_Delete(root);
     return ok;
@@ -1003,6 +1013,9 @@ static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
              json_copy_string(now, "icon", weather->icon, sizeof(weather->icon)) &&
              json_copy_string(now, "temp", weather->temp, sizeof(weather->temp)) &&
              json_copy_string(now, "humidity", weather->humidity, sizeof(weather->humidity));
+    } else {
+        ESP_LOGW(TAG, "qweather now failed code=%s",
+                 cJSON_IsString(code) ? code->valuestring : "missing");
     }
     cJSON_Delete(root);
     return ok;
@@ -1017,11 +1030,17 @@ static bool perform_weather_update()
 
     char location[32] = {};
     char city_id[24] = {};
+    char ip_city[32] = {};
     WeatherData next = {};
-    if (ip_geolocation_lookup(location, sizeof(location))) {
+    if (ip_geolocation_lookup(location, sizeof(location), ip_city, sizeof(ip_city))) {
         trim_ascii(location);
-        if (qweather_lookup_city(location, city_id, sizeof(city_id), next.city, sizeof(next.city)) &&
-            qweather_fetch_now(city_id, &next)) {
+        bool have_city_id = qweather_lookup_city(location, city_id, sizeof(city_id), next.city, sizeof(next.city));
+        if (!have_city_id) {
+            strlcpy(city_id, location, sizeof(city_id));
+            strlcpy(next.city, ip_city[0] ? ip_city : location, sizeof(next.city));
+            ESP_LOGW(TAG, "using ip coordinates for weather now: %s", city_id);
+        }
+        if (qweather_fetch_now(city_id, &next)) {
             g_weather = next;
             xEventGroupSetBits(g_app_events, kWeatherReadyBit);
             ESP_LOGI(TAG, "weather updated: %s %s %sC %s%% icon=%s",
@@ -1178,9 +1197,9 @@ static void network_sync_task(void *)
                 }
             }
             if (weather_due) {
-                perform_weather_update();
+                bool weather_ok = perform_weather_update();
                 time(&next_weather_at);
-                next_weather_at += 30 * 60;
+                next_weather_at += weather_ok ? 30 * 60 : 5 * 60;
             }
         } else {
             ESP_LOGW(TAG, "wifi connect timeout during sync window");
