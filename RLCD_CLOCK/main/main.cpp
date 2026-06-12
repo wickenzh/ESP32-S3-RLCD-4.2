@@ -39,7 +39,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.31";
+static const char *APP_VERSION = "v0.0.32";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1260,6 +1260,10 @@ static esp_err_t http_get_text(const char *url, char *out, size_t out_len, const
         ESP_LOGW(TAG, "http get failed status=%d err=%s", status, esp_err_to_name(err));
         return err == ESP_OK ? ESP_FAIL : err;
     }
+    ESP_LOGI(TAG, "http get ok status=%d len=%u gzip=%d",
+             status,
+             (unsigned)buffer.len,
+             buffer.len >= 2 && (uint8_t)out[0] == 0x1F && (uint8_t)out[1] == 0x8B);
     return decode_http_body(out, out_len, &buffer.len);
 }
 
@@ -1345,12 +1349,19 @@ static void log_response_preview(const char *stage, const char *response)
 
 static bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size_t city_len)
 {
-    char response[1024] = {};
-    if (http_get_text("http://ip-api.com/json/?fields=status,message,lat,lon,city&lang=zh-CN", response, sizeof(response)) != ESP_OK) {
+    char *response = (char *)malloc(2048);
+    if (!response) {
+        ESP_LOGW(TAG, "ip location response alloc failed");
+        return false;
+    }
+    response[0] = '\0';
+    if (http_get_text("http://ip-api.com/json/?fields=status,message,lat,lon,city&lang=zh-CN", response, 2048) != ESP_OK) {
+        free(response);
         return false;
     }
     cJSON *root = cJSON_Parse(response);
     if (!root) {
+        free(response);
         return false;
     }
     bool ok = false;
@@ -1370,6 +1381,7 @@ static bool ip_geolocation_lookup(char *location, size_t location_len, char *cit
         ok = true;
     }
     cJSON_Delete(root);
+    free(response);
     return ok;
 }
 
@@ -1386,14 +1398,21 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
              "https://geoapi.qweather.com/v2/city/lookup?location=%s&number=1&range=cn&lang=zh",
              encoded_location);
     ESP_LOGI(TAG, "qweather city lookup: %s via geoapi.qweather.com", location);
-    char response[3072] = {};
-    if (http_get_text(url, response, sizeof(response), g_weather_api_key) != ESP_OK) {
+    char *response = (char *)malloc(8192);
+    if (!response) {
+        ESP_LOGW(TAG, "qweather city response alloc failed");
+        return false;
+    }
+    response[0] = '\0';
+    if (http_get_text(url, response, 8192, g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather city lookup http failed");
+        free(response);
         return false;
     }
     cJSON *root = cJSON_Parse(response);
     if (!root) {
         log_response_preview("qweather city", response);
+        free(response);
         return false;
     }
     bool ok = false;
@@ -1411,6 +1430,7 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
                  cJSON_IsString(code) ? code->valuestring : "missing");
     }
     cJSON_Delete(root);
+    free(response);
     return ok;
 }
 
@@ -1427,14 +1447,21 @@ static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
              "https://%s/v7/weather/now?location=%s&lang=zh&unit=m",
              qweather_api_host(), encoded_location);
     ESP_LOGI(TAG, "qweather now lookup: %s via %s", city_id, qweather_api_host());
-    char response[3072] = {};
-    if (http_get_text(url, response, sizeof(response), g_weather_api_key) != ESP_OK) {
+    char *response = (char *)malloc(8192);
+    if (!response) {
+        ESP_LOGW(TAG, "qweather now response alloc failed");
+        return false;
+    }
+    response[0] = '\0';
+    if (http_get_text(url, response, 8192, g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather now http failed");
+        free(response);
         return false;
     }
     cJSON *root = cJSON_Parse(response);
     if (!root) {
         log_response_preview("qweather now", response);
+        free(response);
         return false;
     }
     bool ok = false;
@@ -1450,6 +1477,7 @@ static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
                  cJSON_IsString(code) ? code->valuestring : "missing");
     }
     cJSON_Delete(root);
+    free(response);
     return ok;
 }
 
@@ -1854,7 +1882,7 @@ extern "C" void app_main(void)
     run_boot_connectivity_sync();
     finish_boot_screen();
 
-    xTaskCreatePinnedToCore(network_sync_task, "network_sync", 12288, nullptr, 4, nullptr, 0);
+    xTaskCreatePinnedToCore(network_sync_task, "network_sync", 20480, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(battery_task, "battery_task", 3072, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
