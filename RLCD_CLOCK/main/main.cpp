@@ -28,6 +28,7 @@
 #include "lvgl_bsp.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
+LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
 
@@ -161,8 +162,8 @@ static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const 
     lv_obj_set_size(label, w, h);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_text_letter_space(label, 1, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &zh_font_16, LV_PART_MAIN);
+    lv_obj_set_style_text_letter_space(label, 0, LV_PART_MAIN);
     return label;
 }
 
@@ -241,10 +242,10 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 20, 18, 190, 28, "----/--/--");
     g_week_label = make_label(screen, 242, 18, 62, 28, "---");
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 232, 150, 24, "LOCAL --.-C");
-    g_humi_label = make_label(screen, 200, 232, 150, 24, "RH --.-%");
-    g_weather_city_label = make_label(screen, 20, 202, 120, 22, "CITY --");
-    g_weather_info_label = make_label(screen, 150, 202, 190, 22, "WEATHER WAIT");
+    g_temp_label = make_label(screen, 20, 232, 150, 24, "本地 --.-℃");
+    g_humi_label = make_label(screen, 200, 232, 150, 24, "湿度 --.-%");
+    g_weather_city_label = make_label(screen, 20, 202, 120, 22, "城市 --");
+    g_weather_info_label = make_label(screen, 150, 202, 190, 22, "天气等待");
     g_weather_icon_label = make_label(screen, 344, 186, 42, 44, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
@@ -932,6 +933,48 @@ static bool json_copy_string(cJSON *obj, const char *name, char *out, size_t out
     return true;
 }
 
+static bool url_is_unreserved(char ch)
+{
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+           (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' ||
+           ch == '.' || ch == '~';
+}
+
+static bool url_encode_component(const char *in, char *out, size_t out_len)
+{
+    static const char kHex[] = "0123456789ABCDEF";
+    size_t pos = 0;
+    for (const unsigned char *p = (const unsigned char *)in; *p; ++p) {
+        if (url_is_unreserved((char)*p)) {
+            if (pos + 1 >= out_len) {
+                return false;
+            }
+            out[pos++] = (char)*p;
+        } else {
+            if (pos + 3 >= out_len) {
+                return false;
+            }
+            out[pos++] = '%';
+            out[pos++] = kHex[*p >> 4];
+            out[pos++] = kHex[*p & 0x0F];
+        }
+    }
+    out[pos] = '\0';
+    return true;
+}
+
+static void log_response_preview(const char *stage, const char *response)
+{
+    char preview[121] = {};
+    strlcpy(preview, response, sizeof(preview));
+    for (char *p = preview; *p; ++p) {
+        if (*p == '\r' || *p == '\n' || *p == '\t') {
+            *p = ' ';
+        }
+    }
+    ESP_LOGW(TAG, "%s parse failed len=%u body=%s", stage, (unsigned)strlen(response), preview);
+}
+
 static bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size_t city_len)
 {
     char response[1024] = {};
@@ -964,16 +1007,24 @@ static bool ip_geolocation_lookup(char *location, size_t location_len, char *cit
 
 static bool qweather_lookup_city(const char *location, char *city_id, size_t city_id_len, char *city_name, size_t city_name_len)
 {
-    char url[256];
+    char encoded_location[128] = {};
+    if (!url_encode_component(location, encoded_location, sizeof(encoded_location))) {
+        ESP_LOGW(TAG, "qweather city location too long");
+        return false;
+    }
+
+    char url[384];
     snprintf(url, sizeof(url),
              "https://geoapi.qweather.com/v2/city/lookup?location=%s&number=1&lang=zh&key=%s",
-             location, g_weather_api_key);
+             encoded_location, g_weather_api_key);
     char response[3072] = {};
     if (http_get_text(url, response, sizeof(response)) != ESP_OK) {
+        ESP_LOGW(TAG, "qweather city lookup http failed");
         return false;
     }
     cJSON *root = cJSON_Parse(response);
     if (!root) {
+        log_response_preview("qweather city", response);
         return false;
     }
     bool ok = false;
@@ -993,16 +1044,24 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
 
 static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
 {
-    char url[256];
+    char encoded_location[128] = {};
+    if (!url_encode_component(city_id, encoded_location, sizeof(encoded_location))) {
+        ESP_LOGW(TAG, "qweather now location too long");
+        return false;
+    }
+
+    char url[384];
     snprintf(url, sizeof(url),
              "https://devapi.qweather.com/v7/weather/now?location=%s&lang=zh&unit=m&key=%s",
-             city_id, g_weather_api_key);
+             encoded_location, g_weather_api_key);
     char response[3072] = {};
     if (http_get_text(url, response, sizeof(response)) != ESP_OK) {
+        ESP_LOGW(TAG, "qweather now http failed");
         return false;
     }
     cJSON *root = cJSON_Parse(response);
     if (!root) {
+        log_response_preview("qweather now", response);
         return false;
     }
     bool ok = false;
@@ -1035,6 +1094,10 @@ static bool perform_weather_update()
     if (ip_geolocation_lookup(location, sizeof(location), ip_city, sizeof(ip_city))) {
         trim_ascii(location);
         bool have_city_id = qweather_lookup_city(location, city_id, sizeof(city_id), next.city, sizeof(next.city));
+        if (!have_city_id && ip_city[0] != '\0') {
+            ESP_LOGW(TAG, "retry qweather city lookup by ip city: %s", ip_city);
+            have_city_id = qweather_lookup_city(ip_city, city_id, sizeof(city_id), next.city, sizeof(next.city));
+        }
         if (!have_city_id) {
             strlcpy(city_id, location, sizeof(city_id));
             strlcpy(next.city, ip_city[0] ? ip_city : location, sizeof(next.city));
@@ -1265,11 +1328,11 @@ static void ui_task(void *)
         char temp[32];
         char humi[32];
         if (g_sensor_ok) {
-            snprintf(temp, sizeof(temp), "LOCAL %.1fC", g_temperature);
-            snprintf(humi, sizeof(humi), "RH %.1f%%", g_humidity);
+            snprintf(temp, sizeof(temp), "本地 %.1f℃", g_temperature);
+            snprintf(humi, sizeof(humi), "湿度 %.1f%%", g_humidity);
         } else {
-            snprintf(temp, sizeof(temp), "LOCAL --.-C");
-            snprintf(humi, sizeof(humi), "RH --.-%%");
+            snprintf(temp, sizeof(temp), "本地 --.-℃");
+            snprintf(humi, sizeof(humi), "湿度 --.-%%");
         }
 
         char wifi[48];
@@ -1290,18 +1353,18 @@ static void ui_task(void *)
             if (bits & kWeatherReadyBit) {
                 char city[48];
                 char weather[80];
-                snprintf(city, sizeof(city), "CITY %s", g_weather.city);
-                snprintf(weather, sizeof(weather), "%s %sC %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
+                snprintf(city, sizeof(city), "城市 %s", g_weather.city);
+                snprintf(weather, sizeof(weather), "%s %s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
                 set_label_text_if_changed(g_weather_city_label, city);
                 set_label_text_if_changed(g_weather_info_label, weather);
                 set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
             } else if (g_have_weather_key) {
-                set_label_text_if_changed(g_weather_city_label, "CITY --");
-                set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "WEATHER SYNC" : "WEATHER WAIT");
+                set_label_text_if_changed(g_weather_city_label, "城市 --");
+                set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "天气等待");
                 set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
             } else {
-                set_label_text_if_changed(g_weather_city_label, "CITY --");
-                set_label_text_if_changed(g_weather_info_label, "SET API KEY");
+                set_label_text_if_changed(g_weather_city_label, "城市 --");
+                set_label_text_if_changed(g_weather_info_label, "设置 API Key");
                 set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
             }
             update_battery_icon(g_battery_percent);

@@ -15,7 +15,8 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 
 add_executable(weather_clock_sdl
     "main.cpp"
-    "../main/qweather_icons_36.c")
+    "../main/qweather_icons_36.c"
+    "../main/zh_font_16.c")
 
 target_include_directories(weather_clock_sdl PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}"

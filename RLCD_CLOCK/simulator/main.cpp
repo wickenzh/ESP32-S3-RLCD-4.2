@@ -8,6 +8,7 @@
 #include "lvgl.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
+LV_FONT_DECLARE(zh_font_16);
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -100,8 +101,8 @@ static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const 
     lv_obj_set_size(label, w, h);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_text_letter_space(label, 1, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &zh_font_16, LV_PART_MAIN);
+    lv_obj_set_style_text_letter_space(label, 0, LV_PART_MAIN);
     return label;
 }
 
@@ -200,10 +201,10 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 20, 18, 190, 28, "----/--/--");
     g_week_label = make_label(screen, 242, 18, 62, 28, "---");
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 232, 150, 24, "LOCAL --.-C");
-    g_humi_label = make_label(screen, 200, 232, 150, 24, "RH --.-%");
-    g_weather_city_label = make_label(screen, 20, 202, 120, 22, "CITY --");
-    g_weather_info_label = make_label(screen, 150, 202, 190, 22, "WEATHER WAIT");
+    g_temp_label = make_label(screen, 20, 232, 150, 24, "本地 --.-℃");
+    g_humi_label = make_label(screen, 200, 232, 150, 24, "湿度 --.-%");
+    g_weather_city_label = make_label(screen, 20, 202, 120, 22, "城市 --");
+    g_weather_info_label = make_label(screen, 150, 202, 190, 22, "天气等待");
     g_weather_icon_label = make_label(screen, 344, 186, 42, 44, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
@@ -316,10 +317,10 @@ int main(int, char **)
     lv_disp_drv_register(&disp_drv);
 
     build_clock_ui();
-    set_label_text_if_changed(g_temp_label, "LOCAL 24.6C");
-    set_label_text_if_changed(g_humi_label, "RH 58.0%");
-    set_label_text_if_changed(g_weather_city_label, "CITY SHENZHEN");
-    set_label_text_if_changed(g_weather_info_label, "Sunny 26C 58%");
+    set_label_text_if_changed(g_temp_label, "本地 24.6℃");
+    set_label_text_if_changed(g_humi_label, "湿度 58.0%");
+    set_label_text_if_changed(g_weather_city_label, "城市 杭州");
+    set_label_text_if_changed(g_weather_info_label, "晴 26℃ 58%");
     set_label_text_if_changed(g_weather_icon_label, weather_icon_text("100"));
     update_battery_icon(76);
 
