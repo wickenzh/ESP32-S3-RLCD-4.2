@@ -13,7 +13,11 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.22";
+static const char *APP_VERSION = "v0.0.27";
+static constexpr int kTimeCanvasW = 282;
+static constexpr int kTimeCanvasH = 114;
+static constexpr int kSecondCanvasW = 58;
+static constexpr int kSecondCanvasH = 54;
 
 struct SegDigit {
     lv_obj_t *seg[7] = {};
@@ -33,10 +37,11 @@ static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_wifi_label;
 static lv_obj_t *g_sync_label;
-static lv_obj_t *g_battery_fill;
-static lv_obj_t *g_colon1[2];
-static lv_obj_t *g_colon2[2];
-static SegDigit g_digits[6];
+static lv_obj_t *g_battery_segments[5];
+static lv_obj_t *g_time_canvas;
+static lv_obj_t *g_second_canvas;
+static std::vector<lv_color_t> g_time_canvas_pixels(kTimeCanvasW * kTimeCanvasH);
+static std::vector<lv_color_t> g_second_canvas_pixels(kSecondCanvasW * kSecondCanvasH);
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -95,6 +100,127 @@ static void set_colon(lv_obj_t *dots[2], bool active)
     set_obj_black(dots[1], active);
 }
 
+static void draw_canvas_polygon(lv_obj_t *canvas, const lv_point_t *points, uint32_t count)
+{
+    lv_draw_rect_dsc_t dsc;
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_color = lv_color_black();
+    dsc.bg_opa = LV_OPA_COVER;
+    dsc.border_width = 0;
+    dsc.radius = 1;
+    lv_canvas_draw_polygon(canvas, points, count, &dsc);
+}
+
+static lv_point_t canvas_point(int x, int y)
+{
+    return {
+        .x = static_cast<lv_coord_t>(x),
+        .y = static_cast<lv_coord_t>(y),
+    };
+}
+
+static void draw_dseg_segment(lv_obj_t *canvas, int x, int y, int w, int h, int t, int seg)
+{
+    int mid = h / 2;
+    int s = t / 2 + 2;
+    lv_point_t p[4];
+    switch (seg) {
+    case 0:
+        p[0] = canvas_point(x + t + s, y); p[1] = canvas_point(x + w - t, y);
+        p[2] = canvas_point(x + w - s, y + t); p[3] = canvas_point(x + t, y + t);
+        break;
+    case 6:
+        p[0] = canvas_point(x + t + s, y + mid - t / 2); p[1] = canvas_point(x + w - t, y + mid - t / 2);
+        p[2] = canvas_point(x + w - s, y + mid + t / 2); p[3] = canvas_point(x + t, y + mid + t / 2);
+        break;
+    case 3:
+        p[0] = canvas_point(x + t + s, y + h - t); p[1] = canvas_point(x + w - t, y + h - t);
+        p[2] = canvas_point(x + w - s, y + h); p[3] = canvas_point(x + t, y + h);
+        break;
+    case 1:
+        p[0] = canvas_point(x + w - t, y + t); p[1] = canvas_point(x + w, y + t + s);
+        p[2] = canvas_point(x + w - s, y + mid - t / 2); p[3] = canvas_point(x + w - t - s, y + mid - t / 2);
+        break;
+    case 2:
+        p[0] = canvas_point(x + w - t - s, y + mid + t / 2); p[1] = canvas_point(x + w - s, y + mid + t / 2);
+        p[2] = canvas_point(x + w, y + h - t - s); p[3] = canvas_point(x + w - t, y + h - t);
+        break;
+    case 4:
+        p[0] = canvas_point(x + s, y + mid + t / 2); p[1] = canvas_point(x + t + s, y + mid + t / 2);
+        p[2] = canvas_point(x + t, y + h - t); p[3] = canvas_point(x, y + h - t - s);
+        break;
+    case 5:
+        p[0] = canvas_point(x, y + t + s); p[1] = canvas_point(x + t, y + t);
+        p[2] = canvas_point(x + t + s, y + mid - t / 2); p[3] = canvas_point(x + s, y + mid - t / 2);
+        break;
+    default:
+        return;
+    }
+    draw_canvas_polygon(canvas, p, 4);
+}
+
+static void draw_dseg_digit(lv_obj_t *canvas, int x, int y, int w, int h, int t, int value)
+{
+    static const bool map[10][7] = {
+        {true, true, true, true, true, true, false},
+        {false, true, true, false, false, false, false},
+        {true, true, false, true, true, false, true},
+        {true, true, true, true, false, false, true},
+        {false, true, true, false, false, true, true},
+        {true, false, true, true, false, true, true},
+        {true, false, true, true, true, true, true},
+        {true, true, true, false, false, false, false},
+        {true, true, true, true, true, true, true},
+        {true, true, true, true, false, true, true},
+    };
+    if (value < 0 || value > 9) return;
+    for (int i = 0; i < 7; ++i) {
+        if (map[value][i]) draw_dseg_segment(canvas, x, y, w, h, t, i);
+    }
+}
+
+static void draw_canvas_rect(lv_obj_t *canvas, int x, int y, int w, int h, int radius)
+{
+    lv_draw_rect_dsc_t dsc;
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_color = lv_color_black();
+    dsc.bg_opa = LV_OPA_COVER;
+    dsc.border_width = 0;
+    dsc.radius = radius;
+    lv_canvas_draw_rect(canvas, x, y, w, h, &dsc);
+}
+
+static void draw_time_canvas(const struct tm &local)
+{
+    if (!g_time_canvas) return;
+    lv_canvas_fill_bg(g_time_canvas, lv_color_white(), LV_OPA_COVER);
+    const int y = 4;
+    const int w = 54;
+    const int h = 104;
+    const int t = 10;
+    int x = 0;
+    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_hour / 10);
+    x += w + 8;
+    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_hour % 10);
+    x += w + 12;
+    draw_canvas_rect(g_time_canvas, x + 2, y + 31, 10, 10, 2);
+    draw_canvas_rect(g_time_canvas, x + 2, y + 69, 10, 10, 2);
+    x += 22;
+    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_min / 10);
+    x += w + 8;
+    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_min % 10);
+    lv_obj_invalidate(g_time_canvas);
+}
+
+static void draw_second_canvas(const struct tm &local)
+{
+    if (!g_second_canvas) return;
+    lv_canvas_fill_bg(g_second_canvas, lv_color_white(), LV_OPA_COVER);
+    draw_dseg_digit(g_second_canvas, 0, 0, 27, 54, 5, local.tm_sec / 10);
+    draw_dseg_digit(g_second_canvas, 31, 0, 27, 54, 5, local.tm_sec % 10);
+    lv_obj_invalidate(g_second_canvas);
+}
+
 static lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int h, const char *text, const lv_font_t *font)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -145,25 +271,27 @@ static void build_battery_icon(lv_obj_t *parent)
 {
     lv_obj_t *frame = lv_obj_create(parent);
     lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(frame, 344, 18);
-    lv_obj_set_size(frame, 31, 14);
+    lv_obj_set_pos(frame, 342, 17);
+    lv_obj_set_size(frame, 34, 16);
     style_battery_frame(frame);
 
     lv_obj_t *tip = lv_obj_create(parent);
     lv_obj_clear_flag(tip, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(tip, 377, 22);
+    lv_obj_set_pos(tip, 378, 22);
     lv_obj_set_size(tip, 3, 6);
     style_battery_part(tip, true);
     lv_obj_set_style_border_width(tip, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(tip, 1, LV_PART_MAIN);
 
-    g_battery_fill = lv_obj_create(frame);
-    lv_obj_clear_flag(g_battery_fill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_battery_fill, 2, 2);
-    lv_obj_set_size(g_battery_fill, 0, 10);
-    style_battery_part(g_battery_fill, true);
-    lv_obj_set_style_border_width(g_battery_fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(g_battery_fill, 2, LV_PART_MAIN);
+    for (int i = 0; i < 5; ++i) {
+        g_battery_segments[i] = lv_obj_create(frame);
+        lv_obj_clear_flag(g_battery_segments[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(g_battery_segments[i], 3 + i * 6, 3);
+        lv_obj_set_size(g_battery_segments[i], 4, 10);
+        style_battery_part(g_battery_segments[i], false);
+        lv_obj_set_style_border_width(g_battery_segments[i], 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(g_battery_segments[i], 1, LV_PART_MAIN);
+    }
 }
 
 static void show_boot_screen()
@@ -206,18 +334,18 @@ static void show_boot_screen()
 
 static void update_battery_icon(int percent)
 {
-    int filled = percent;
+    int filled = 0;
     if (percent >= 0) {
         if (percent > 100) percent = 100;
-        filled = percent;
-    } else {
-        filled = 0;
+        filled = (percent + 19) / 20;
     }
-    int width = (filled * 27 + 99) / 100;
-    if (filled > 0 && width < 2) {
-        width = 2;
+    for (int i = 0; i < 5; ++i) {
+        if (g_battery_segments[i]) {
+            style_battery_part(g_battery_segments[i], i < filled);
+            lv_obj_set_style_border_width(g_battery_segments[i], 0, LV_PART_MAIN);
+            lv_obj_set_style_radius(g_battery_segments[i], 1, LV_PART_MAIN);
+        }
     }
-    lv_obj_set_width(g_battery_fill, width);
 }
 
 static uint32_t weather_icon_codepoint(const char *code)
@@ -271,47 +399,43 @@ static void build_clock_ui()
     g_wifi_label = make_label_with_font(screen, 20, 270, 230, 22, "SDL PREVIEW", &lv_font_montserrat_14);
     g_sync_label = make_label_with_font(screen, 265, 270, 120, 22, "NTP OK", &lv_font_montserrat_14);
 
-    const int y = 74;
-    const int w = 42;
-    const int h = 100;
-    const int t = 8;
-    const int gap = 8;
-    int x = 19;
-    g_digits[0] = make_digit(screen, x, y, w, h, t);
-    x += w + gap;
-    g_digits[1] = make_digit(screen, x, y, w, h, t);
-    x += w + 12;
-    g_colon1[0] = make_bar(screen, x, y + 28, 8, 8);
-    g_colon1[1] = make_bar(screen, x, y + 64, 8, 8);
-    x += 20;
-    g_digits[2] = make_digit(screen, x, y, w, h, t);
-    x += w + gap;
-    g_digits[3] = make_digit(screen, x, y, w, h, t);
-    x += w + 12;
-    g_colon2[0] = make_bar(screen, x, y + 28, 8, 8);
-    g_colon2[1] = make_bar(screen, x, y + 64, 8, 8);
-    x += 20;
-    g_digits[4] = make_digit(screen, x, y, w, h, t);
-    x += w + gap;
-    g_digits[5] = make_digit(screen, x, y, w, h, t);
+    g_time_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_time_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_time_canvas, 18, 62);
+    lv_obj_set_size(g_time_canvas, kTimeCanvasW, kTimeCanvasH);
+    lv_obj_set_style_border_width(g_time_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_time_canvas, 0, LV_PART_MAIN);
+    lv_canvas_set_buffer(g_time_canvas, g_time_canvas_pixels.data(), kTimeCanvasW, kTimeCanvasH, LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_fill_bg(g_time_canvas, lv_color_white(), LV_OPA_COVER);
+
+    g_second_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_second_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_second_canvas, 322, 109);
+    lv_obj_set_size(g_second_canvas, kSecondCanvasW, kSecondCanvasH);
+    lv_obj_set_style_border_width(g_second_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_second_canvas, 0, LV_PART_MAIN);
+    lv_canvas_set_buffer(g_second_canvas, g_second_canvas_pixels.data(), kSecondCanvasW, kSecondCanvasH, LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_fill_bg(g_second_canvas, lv_color_white(), LV_OPA_COVER);
 
     lv_obj_t *top_line = make_bar(screen, 18, 54, 364, 4);
-    lv_obj_t *bottom_line = make_bar(screen, 18, 180, 364, 4);
+    lv_obj_t *bottom_line = make_bar(screen, 18, 184, 364, 4);
     set_obj_black(top_line, true);
     set_obj_black(bottom_line, true);
 }
 
 static void update_time_ui(const struct tm &local)
 {
-    int values[6] = {
-        local.tm_hour / 10, local.tm_hour % 10,
-        local.tm_min / 10, local.tm_min % 10,
-        local.tm_sec / 10, local.tm_sec % 10,
-    };
-    for (int i = 0; i < 6; ++i) set_digit(g_digits[i], values[i]);
-    bool colon_on = (local.tm_sec % 2) == 0;
-    set_colon(g_colon1, colon_on);
-    set_colon(g_colon2, colon_on);
+    static int last_second = -1;
+    static int last_minute = -1;
+    int minute_key = local.tm_hour * 60 + local.tm_min;
+    if (minute_key != last_minute) {
+        last_minute = minute_key;
+        draw_time_canvas(local);
+    }
+    if (local.tm_sec != last_second) {
+        last_second = local.tm_sec;
+        draw_second_canvas(local);
+    }
 
     char date[32];
     snprintf(date, sizeof(date), "%04d/%02d/%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
