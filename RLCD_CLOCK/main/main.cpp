@@ -33,7 +33,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.21";
+static const char *APP_VERSION = "v0.0.22";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -806,7 +806,7 @@ static void start_wifi_radio(bool enable_setup_portal)
         apply_station_config(false);
     }
     ESP_ERROR_CHECK(esp_wifi_start());
-    esp_err_t ps_err = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    esp_err_t ps_err = esp_wifi_set_ps(WIFI_PS_NONE);
     if (ps_err != ESP_OK) {
         ESP_LOGW(TAG, "wifi power save setup failed: %s", esp_err_to_name(ps_err));
     }
@@ -923,13 +923,13 @@ static void init_power_management()
     esp_pm_config_t pm_config = {};
     pm_config.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
     pm_config.min_freq_mhz = CONFIG_XTAL_FREQ;
-    pm_config.light_sleep_enable = true;
+    pm_config.light_sleep_enable = false;
 
     esp_err_t err = esp_pm_configure(&pm_config);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "power management setup failed: %s", esp_err_to_name(err));
     } else {
-        ESP_LOGI(TAG, "power management: max=%dMHz min=%dMHz light sleep enabled",
+        ESP_LOGI(TAG, "power management: max=%dMHz min=%dMHz light sleep disabled",
                  pm_config.max_freq_mhz, pm_config.min_freq_mhz);
     }
     esp_err_t lock_err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "net_sync", &g_no_light_sleep_lock);
