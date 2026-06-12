@@ -13,7 +13,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.19";
+static const char *APP_VERSION = "v0.0.20";
 
 struct SegDigit {
     lv_obj_t *seg[7] = {};

@@ -33,7 +33,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.19";
+static const char *APP_VERSION = "v0.0.20";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -92,6 +92,9 @@ static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_wifi_label;
 static lv_obj_t *g_sync_label;
 static lv_obj_t *g_battery_fill;
+static lv_obj_t *g_boot_status_label;
+static lv_obj_t *g_boot_detail_label;
+static lv_obj_t *g_boot_progress_fill;
 static lv_obj_t *g_colon1[2];
 static lv_obj_t *g_colon2[2];
 static SegDigit g_digits[6];
@@ -99,6 +102,8 @@ static SegDigit g_digits[6];
 static void apply_station_config(bool reconnect);
 static bool wait_for_wifi_connected(uint32_t timeout_ms);
 static void trim_ascii(char *text);
+static void build_clock_ui();
+static void run_boot_connectivity_sync();
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -244,8 +249,11 @@ static void show_boot_screen()
     lv_obj_t *title = make_label_with_font(screen, 28, 72, 344, 30, "RLCD Weather Clock", &lv_font_montserrat_16);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    lv_obj_t *status = make_label_with_font(screen, 28, 112, 344, 24, "Starting...", &lv_font_montserrat_16);
-    lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    g_boot_status_label = make_label_with_font(screen, 28, 112, 344, 24, "Starting...", &lv_font_montserrat_16);
+    lv_obj_set_style_text_align(g_boot_status_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    g_boot_detail_label = make_label_with_font(screen, 28, 232, 344, 22, "Preparing system", &lv_font_montserrat_14);
+    lv_obj_set_style_text_align(g_boot_detail_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     lv_obj_t *version = make_label_with_font(screen, 28, 202, 344, 24, APP_VERSION, &lv_font_montserrat_16);
     lv_obj_set_style_text_align(version, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -261,23 +269,52 @@ static void show_boot_screen()
     lv_obj_set_style_radius(frame, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(frame, 2, LV_PART_MAIN);
 
-    lv_obj_t *fill = lv_obj_create(frame);
-    lv_obj_clear_flag(fill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(fill, 0, 0);
-    lv_obj_set_size(fill, 0, 12);
-    lv_obj_set_style_bg_color(fill, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(fill, 0, LV_PART_MAIN);
+    g_boot_progress_fill = lv_obj_create(frame);
+    lv_obj_clear_flag(g_boot_progress_fill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_boot_progress_fill, 0, 0);
+    lv_obj_set_size(g_boot_progress_fill, 0, 12);
+    lv_obj_set_style_bg_color(g_boot_progress_fill, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(g_boot_progress_fill, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(g_boot_progress_fill, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(g_boot_progress_fill, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_boot_progress_fill, 0, LV_PART_MAIN);
 
-    for (int step = 0; step <= 5; ++step) {
-        lv_obj_set_width(fill, step * 51);
-        lv_refr_now(nullptr);
-        vTaskDelay(pdMS_TO_TICKS(500));
+    lv_refr_now(nullptr);
+}
+
+static void update_boot_screen(int percent, const char *status, const char *detail)
+{
+    if (percent < 0) {
+        percent = 0;
+    } else if (percent > 100) {
+        percent = 100;
     }
+    if (Lvgl_lock(2000)) {
+        if (g_boot_status_label) {
+            set_label_text_if_changed(g_boot_status_label, status);
+        }
+        if (g_boot_detail_label) {
+            set_label_text_if_changed(g_boot_detail_label, detail);
+        }
+        if (g_boot_progress_fill) {
+            lv_obj_set_width(g_boot_progress_fill, (percent * 255 + 99) / 100);
+        }
+        lv_refr_now(nullptr);
+        Lvgl_unlock();
+    }
+}
 
-    lv_obj_clean(screen);
+static void finish_boot_screen()
+{
+    if (Lvgl_lock(2000)) {
+        lv_obj_clean(lv_scr_act());
+        g_boot_status_label = nullptr;
+        g_boot_detail_label = nullptr;
+        g_boot_progress_fill = nullptr;
+        build_clock_ui();
+        lv_refr_now(nullptr);
+        Lvgl_unlock();
+    }
 }
 
 static void update_battery_icon(int percent)
@@ -1404,10 +1441,51 @@ static bool is_time_valid(struct tm *local_out = nullptr)
     return local.tm_year + 1900 >= 2024;
 }
 
+static void run_boot_connectivity_sync()
+{
+    if (!g_have_wifi_creds) {
+        char detail[64];
+        snprintf(detail, sizeof(detail), "Setup AP: %s", g_ap_ssid);
+        update_boot_screen(100, "Setup mode", detail);
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        return;
+    }
+
+    update_boot_screen(18, "Connecting Wi-Fi", g_wifi_ssid);
+    start_wifi_radio(false);
+    if (!wait_for_wifi_connected(45000)) {
+        update_boot_screen(100, "Wi-Fi timeout", "Check SSID or password");
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        stop_wifi_radio();
+        return;
+    }
+
+    update_boot_screen(42, "Wi-Fi connected", "Synchronizing time");
+    bool ntp_ok = perform_ntp_sync();
+    update_boot_screen(ntp_ok ? 68 : 58, ntp_ok ? "Time synchronized" : "NTP timeout",
+                       ntp_ok ? "Loading weather" : "Will retry in background");
+
+    if (g_have_weather_key) {
+        bool weather_ok = perform_weather_update();
+        update_boot_screen(weather_ok ? 100 : 82, weather_ok ? "Weather synchronized" : "Weather timeout",
+                           weather_ok ? g_weather.city : "Will retry in background");
+    } else {
+        update_boot_screen(100, "Weather skipped", "API Key not configured");
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1200));
+    stop_wifi_radio();
+}
+
 static void network_sync_task(void *)
 {
-    bool boot_ntp_due = true;
+    EventBits_t initial_bits = xEventGroupGetBits(g_app_events);
+    bool boot_ntp_due = (initial_bits & kTimeSyncedBit) == 0;
     time_t next_weather_at = 0;
+    if (initial_bits & kWeatherReadyBit) {
+        time(&next_weather_at);
+        next_weather_at += 60 * 60;
+    }
     time_t next_ntp_retry_at = 0;
     int last_midnight_ntp_yday = -1;
 
@@ -1626,10 +1704,10 @@ extern "C" void app_main(void)
     Lvgl_PortInit(kDisplayWidth, kDisplayHeight, flush_callback);
     if (Lvgl_lock(-1)) {
         show_boot_screen();
-        build_clock_ui();
-        lv_refr_now(nullptr);
         Lvgl_unlock();
     }
+    run_boot_connectivity_sync();
+    finish_boot_screen();
 
     xTaskCreatePinnedToCore(network_sync_task, "network_sync", 7168, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, nullptr, 3, nullptr, 1);
