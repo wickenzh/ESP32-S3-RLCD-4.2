@@ -428,10 +428,26 @@ static void append_wifi_scan_list(char *html, size_t html_len)
         html_append(html, html_len, "<p class='muted'>Scan busy, refresh this page.</p>");
     } else {
         uint16_t ap_count = 0;
-        ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
-        wifi_ap_record_t records[16] = {};
-        uint16_t max_records = sizeof(records) / sizeof(records[0]);
-        ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&max_records, records));
+        err = esp_wifi_scan_get_ap_num(&ap_count);
+        if (err != ESP_OK) {
+            html_append(html, html_len, "<p class='muted'>Scan failed, refresh this page.</p>");
+            html_append(html, html_len, "</div>");
+            return;
+        }
+        wifi_ap_record_t *records = (wifi_ap_record_t *)calloc(16, sizeof(wifi_ap_record_t));
+        if (records == nullptr) {
+            html_append(html, html_len, "<p class='muted'>Not enough memory to list Wi-Fi.</p>");
+            html_append(html, html_len, "</div>");
+            return;
+        }
+        uint16_t max_records = 16;
+        err = esp_wifi_scan_get_ap_records(&max_records, records);
+        if (err != ESP_OK) {
+            free(records);
+            html_append(html, html_len, "<p class='muted'>Scan failed, refresh this page.</p>");
+            html_append(html, html_len, "</div>");
+            return;
+        }
         if (max_records == 0) {
             html_append(html, html_len, "<p class='muted'>No Wi-Fi found.</p>");
         }
@@ -442,9 +458,10 @@ static void append_wifi_scan_list(char *html, size_t html_len)
             char ssid[80] = {};
             html_escape((const char *)records[i].ssid, ssid, sizeof(ssid));
             html_append(html, html_len,
-                        "<button type='button' class='wifi' onclick=\"pick('%s')\"><span>%s</span><b>%d dBm</b></button>",
+                        "<button type='button' class='wifi' data-ssid=\"%s\" onclick=\"pick(this.dataset.ssid)\"><span>%s</span><b>%d dBm</b></button>",
                         ssid, ssid, records[i].rssi);
         }
+        free(records);
         (void)ap_count;
     }
     html_append(html, html_len, "</div>");
@@ -480,8 +497,13 @@ static esp_err_t root_get_handler(httpd_req_t *req)
 {
     char safe_ssid[80] = {};
     html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
-    char html[8192] = {};
-    html_append(html, sizeof(html),
+    const size_t html_len = 8192;
+    char *html = (char *)calloc(1, html_len);
+    if (html == nullptr) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        return httpd_resp_sendstr(req, "Not enough memory.");
+    }
+    html_append(html, html_len,
                 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>WeatherClock Setup</title><style>"
                 "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:24px auto;padding:0 14px;color:#111}"
@@ -494,10 +516,12 @@ static esp_err_t root_get_handler(httpd_req_t *req)
                 "<input name='api_key' placeholder='QWeather API Key (leave blank to keep)' value=''>"
                 "<button>Save and connect</button></form>",
                 safe_ssid);
-    append_wifi_scan_list(html, sizeof(html));
-    html_append(html, sizeof(html), "</body></html>");
+    append_wifi_scan_list(html, html_len);
+    html_append(html, html_len, "</body></html>");
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, html, strlen(html));
+    esp_err_t err = httpd_resp_send(req, html, strlen(html));
+    free(html);
+    return err;
 }
 
 static esp_err_t save_post_handler(httpd_req_t *req)
@@ -538,6 +562,7 @@ static void start_http_server()
     }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
+    config.stack_size = 8192;
     ESP_ERROR_CHECK(httpd_start(&g_http_server, &config));
 
     httpd_uri_t root = {};
