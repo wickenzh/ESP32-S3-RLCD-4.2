@@ -48,6 +48,9 @@ static char g_ap_ssid[33] = {};
 static bool g_have_wifi_creds = false;
 static bool g_have_weather_key = false;
 static bool g_ntp_started = false;
+static bool g_wifi_radio_on = false;
+static bool g_wifi_stop_requested = false;
+static bool g_setup_portal_active = false;
 static float g_temperature = 0.0f;
 static float g_humidity = 0.0f;
 static bool g_sensor_ok = false;
@@ -364,6 +367,15 @@ static void apply_station_config(bool reconnect)
     }
 }
 
+static void stop_http_server()
+{
+    if (g_http_server) {
+        httpd_stop(g_http_server);
+        g_http_server = nullptr;
+    }
+    g_setup_portal_active = false;
+}
+
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
     char safe_ssid[80] = {};
@@ -420,6 +432,10 @@ static esp_err_t save_post_handler(httpd_req_t *req)
 
 static void start_http_server()
 {
+    if (g_http_server) {
+        g_setup_portal_active = true;
+        return;
+    }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     ESP_ERROR_CHECK(httpd_start(&g_http_server, &config));
@@ -435,6 +451,45 @@ static void start_http_server()
     save.method = HTTP_POST;
     save.handler = save_post_handler;
     ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &save));
+    g_setup_portal_active = true;
+}
+
+static void start_wifi_radio(bool enable_setup_portal)
+{
+    if (g_wifi_radio_on) {
+        if (enable_setup_portal && !g_setup_portal_active) {
+            start_http_server();
+        }
+        if (g_have_wifi_creds) {
+            apply_station_config(true);
+        }
+        return;
+    }
+
+    g_wifi_stop_requested = false;
+    ESP_ERROR_CHECK(esp_wifi_set_mode(enable_setup_portal ? WIFI_MODE_APSTA : WIFI_MODE_STA));
+    if (g_have_wifi_creds) {
+        apply_station_config(false);
+    }
+    ESP_ERROR_CHECK(esp_wifi_start());
+    g_wifi_radio_on = true;
+    if (enable_setup_portal) {
+        start_http_server();
+    }
+}
+
+static void stop_wifi_radio()
+{
+    if (!g_wifi_radio_on || !g_have_wifi_creds) {
+        return;
+    }
+    stop_http_server();
+    g_wifi_stop_requested = true;
+    esp_wifi_disconnect();
+    ESP_ERROR_CHECK(esp_wifi_stop());
+    g_wifi_radio_on = false;
+    xEventGroupClearBits(g_app_events, kWifiConnectedBit);
+    ESP_LOGI(TAG, "wifi radio off");
 }
 
 static void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -444,8 +499,8 @@ static void wifi_event_handler(void *, esp_event_base_t event_base, int32_t even
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
         ESP_LOGW(TAG, "wifi disconnected, reason=%d", event ? event->reason : -1);
-        xEventGroupClearBits(g_app_events, kWifiConnectedBit | kTimeSyncedBit);
-        if (g_have_wifi_creds) {
+        xEventGroupClearBits(g_app_events, kWifiConnectedBit);
+        if (g_have_wifi_creds && g_wifi_radio_on && !g_wifi_stop_requested) {
             esp_err_t err = esp_wifi_connect();
             if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
                 ESP_LOGW(TAG, "wifi reconnect failed to start: %s", esp_err_to_name(err));
@@ -487,8 +542,7 @@ static void init_wifi()
         apply_station_config(false);
     }
 
-    ESP_ERROR_CHECK(esp_wifi_start());
-    start_http_server();
+    start_wifi_radio(!g_have_wifi_creds);
 }
 
 static void restore_system_time_from_rtc()
@@ -520,37 +574,34 @@ static void sync_rtc_from_system_time()
     Rtc_SetTime(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
 }
 
-static void ntp_task(void *)
+static bool perform_ntp_sync()
 {
-    setenv("TZ", "CST-8", 1);
-    tzset();
-    restore_system_time_from_rtc();
-
-    for (;;) {
-        xEventGroupWaitBits(g_app_events, kWifiConnectedBit, pdFALSE, pdTRUE, portMAX_DELAY);
-        if (!g_ntp_started) {
-            esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-            esp_sntp_setservername(0, "pool.ntp.org");
-            esp_sntp_setservername(1, "ntp.aliyun.com");
-            esp_sntp_setservername(2, "time.windows.com");
-            esp_sntp_init();
-            g_ntp_started = true;
-        }
-
-        for (int retry = 0; retry < 20; ++retry) {
-            time_t now;
-            time(&now);
-            struct tm local = {};
-            localtime_r(&now, &local);
-            if (local.tm_year + 1900 >= 2024) {
-                sync_rtc_from_system_time();
-                xEventGroupSetBits(g_app_events, kTimeSyncedBit);
-                break;
-            }
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        vTaskDelay(pdMS_TO_TICKS(60 * 60 * 1000));
+    if (!g_ntp_started) {
+        esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        esp_sntp_setservername(0, "pool.ntp.org");
+        esp_sntp_setservername(1, "ntp.aliyun.com");
+        esp_sntp_setservername(2, "time.windows.com");
+        esp_sntp_init();
+        g_ntp_started = true;
+    } else {
+        esp_sntp_restart();
     }
+
+    for (int retry = 0; retry < 30; ++retry) {
+        time_t now;
+        time(&now);
+        struct tm local = {};
+        localtime_r(&now, &local);
+        if (local.tm_year + 1900 >= 2024) {
+            sync_rtc_from_system_time();
+            xEventGroupSetBits(g_app_events, kTimeSyncedBit);
+            ESP_LOGI(TAG, "ntp synced");
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    ESP_LOGW(TAG, "ntp sync timeout");
+    return false;
 }
 
 static void sensor_task(void *)
@@ -714,35 +765,32 @@ static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
     return ok;
 }
 
-static void weather_task(void *)
+static bool perform_weather_update()
 {
-    for (;;) {
-        xEventGroupWaitBits(g_app_events, kWifiConnectedBit, pdFALSE, pdTRUE, portMAX_DELAY);
-        if (!g_have_weather_key) {
-            xEventGroupClearBits(g_app_events, kWeatherReadyBit);
-            vTaskDelay(pdMS_TO_TICKS(30000));
-            continue;
-        }
-
-        char location[32] = {};
-        char city_id[24] = {};
-        WeatherData next = {};
-        if (ip_geolocation_lookup(location, sizeof(location))) {
-            trim_ascii(location);
-            if (qweather_lookup_city(location, city_id, sizeof(city_id), next.city, sizeof(next.city)) &&
-                qweather_fetch_now(city_id, &next)) {
-                g_weather = next;
-                xEventGroupSetBits(g_app_events, kWeatherReadyBit);
-                ESP_LOGI(TAG, "weather updated: %s %s %sC %s%% icon=%s",
-                         g_weather.city, g_weather.text, g_weather.temp, g_weather.humidity, g_weather.icon);
-            } else {
-                ESP_LOGW(TAG, "weather update failed after ip lookup");
-            }
-        } else {
-            ESP_LOGW(TAG, "ip geolocation lookup failed");
-        }
-        vTaskDelay(pdMS_TO_TICKS(15 * 60 * 1000));
+    if (!g_have_weather_key) {
+        xEventGroupClearBits(g_app_events, kWeatherReadyBit);
+        return false;
     }
+
+    char location[32] = {};
+    char city_id[24] = {};
+    WeatherData next = {};
+    if (ip_geolocation_lookup(location, sizeof(location))) {
+        trim_ascii(location);
+        if (qweather_lookup_city(location, city_id, sizeof(city_id), next.city, sizeof(next.city)) &&
+            qweather_fetch_now(city_id, &next)) {
+            g_weather = next;
+            xEventGroupSetBits(g_app_events, kWeatherReadyBit);
+            ESP_LOGI(TAG, "weather updated: %s %s %sC %s%% icon=%s",
+                     g_weather.city, g_weather.text, g_weather.temp, g_weather.humidity, g_weather.icon);
+            return true;
+        } else {
+            ESP_LOGW(TAG, "weather update failed after ip lookup");
+        }
+    } else {
+        ESP_LOGW(TAG, "ip geolocation lookup failed");
+    }
+    return false;
 }
 
 static const char *weather_icon_text(const char *code)
@@ -770,6 +818,94 @@ static const char *weather_icon_text(const char *code)
         return "CD";
     }
     return "--";
+}
+
+static bool wait_for_wifi_connected(uint32_t timeout_ms)
+{
+    EventBits_t bits = xEventGroupWaitBits(
+        g_app_events,
+        kWifiConnectedBit,
+        pdFALSE,
+        pdTRUE,
+        pdMS_TO_TICKS(timeout_ms));
+    return (bits & kWifiConnectedBit) != 0;
+}
+
+static bool is_time_valid(struct tm *local_out = nullptr)
+{
+    time_t now;
+    time(&now);
+    struct tm local = {};
+    localtime_r(&now, &local);
+    if (local_out) {
+        *local_out = local;
+    }
+    return local.tm_year + 1900 >= 2024;
+}
+
+static void network_sync_task(void *)
+{
+    bool boot_ntp_due = true;
+    time_t next_weather_at = 0;
+    time_t next_ntp_retry_at = 0;
+    int last_midnight_ntp_yday = -1;
+
+    for (;;) {
+        if (!g_have_wifi_creds) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+
+        struct tm local = {};
+        bool time_valid = is_time_valid(&local);
+        bool midnight_ntp_due = time_valid &&
+                                local.tm_hour == 0 &&
+                                local.tm_min == 0 &&
+                                local.tm_yday != last_midnight_ntp_yday;
+        time_t now;
+        time(&now);
+        bool weather_due = g_have_weather_key && (next_weather_at == 0 || now >= next_weather_at);
+        bool ntp_due = (boot_ntp_due || midnight_ntp_due) && now >= next_ntp_retry_at;
+
+        if (!ntp_due && !weather_due) {
+            vTaskDelay(pdMS_TO_TICKS(10000));
+            continue;
+        }
+
+        ESP_LOGI(TAG, "wifi radio on for sync: ntp=%d weather=%d", ntp_due, weather_due);
+        start_wifi_radio(false);
+        if (wait_for_wifi_connected(45000)) {
+            if (ntp_due) {
+                if (perform_ntp_sync()) {
+                    boot_ntp_due = false;
+                    next_ntp_retry_at = 0;
+                    if (is_time_valid(&local) && local.tm_hour == 0) {
+                        last_midnight_ntp_yday = local.tm_yday;
+                    }
+                } else {
+                    time(&next_ntp_retry_at);
+                    next_ntp_retry_at += 5 * 60;
+                }
+            }
+            if (weather_due) {
+                perform_weather_update();
+                time(&next_weather_at);
+                next_weather_at += 30 * 60;
+            }
+        } else {
+            ESP_LOGW(TAG, "wifi connect timeout during sync window");
+            if (ntp_due) {
+                time(&next_ntp_retry_at);
+                next_ntp_retry_at += 5 * 60;
+            }
+            if (weather_due) {
+                time(&next_weather_at);
+                next_weather_at += 5 * 60;
+            }
+        }
+        stop_wifi_radio();
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
 }
 
 static void update_time_ui(const struct tm &local)
@@ -818,9 +954,11 @@ static void ui_task(void *)
 
         char wifi[48];
         if (bits & kWifiConnectedBit) {
-            snprintf(wifi, sizeof(wifi), "STA OK  AP %s", g_ap_ssid);
+            snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA OK  AP %s" : "STA OK", g_ap_ssid);
+        } else if (g_have_wifi_creds && !g_wifi_radio_on) {
+            snprintf(wifi, sizeof(wifi), "WIFI OFF  AP OFF");
         } else if (g_have_wifi_creds) {
-            snprintf(wifi, sizeof(wifi), "STA WAIT  AP %s", g_ap_ssid);
+            snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA WAIT  AP %s" : "STA WAIT", g_ap_ssid);
         } else {
             snprintf(wifi, sizeof(wifi), "SETUP AP %s", g_ap_ssid);
         }
@@ -882,6 +1020,9 @@ extern "C" void app_main(void)
 
     g_have_wifi_creds = load_saved_config();
     Rtc_Setup(&g_i2c, 0x51);
+    setenv("TZ", "CST-8", 1);
+    tzset();
+    restore_system_time_from_rtc();
     g_shtc3 = new Shtc3Port(g_i2c);
     init_wifi();
 
@@ -892,8 +1033,7 @@ extern "C" void app_main(void)
         Lvgl_unlock();
     }
 
-    xTaskCreatePinnedToCore(ntp_task, "ntp_task", 4096, nullptr, 4, nullptr, 0);
+    xTaskCreatePinnedToCore(network_sync_task, "network_sync", 7168, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, nullptr, 3, nullptr, 1);
-    xTaskCreatePinnedToCore(weather_task, "weather_task", 6144, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
 }
