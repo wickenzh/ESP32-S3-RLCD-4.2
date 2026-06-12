@@ -33,13 +33,14 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.24";
+static const char *APP_VERSION = "v0.0.25";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWifiConnectedBit = BIT0;
 static constexpr int kTimeSyncedBit = BIT1;
 static constexpr int kWeatherReadyBit = BIT2;
+static constexpr int kProvisioningSyncBit = BIT3;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr int kBootSetupHoldMs = 20000;
 
@@ -685,7 +686,11 @@ static esp_err_t save_post_handler(httpd_req_t *req)
 
     bool saved = save_credentials_from_body(body);
     bool connected = saved && wait_for_wifi_connected(12000);
-    return send_save_result_page(req, saved, connected);
+    esp_err_t err = send_save_result_page(req, saved, connected);
+    if (connected) {
+        xEventGroupSetBits(g_app_events, kProvisioningSyncBit);
+    }
+    return err;
 }
 
 static esp_err_t save_get_handler(httpd_req_t *req)
@@ -697,7 +702,11 @@ static esp_err_t save_get_handler(httpd_req_t *req)
     }
     bool saved = save_credentials_from_body(query);
     bool connected = saved && wait_for_wifi_connected(12000);
-    return send_save_result_page(req, saved, connected);
+    esp_err_t err = send_save_result_page(req, saved, connected);
+    if (connected) {
+        xEventGroupSetBits(g_app_events, kProvisioningSyncBit);
+    }
+    return err;
 }
 
 static esp_err_t empty_asset_handler(httpd_req_t *req)
@@ -784,12 +793,12 @@ static void start_wifi_radio(bool enable_setup_portal)
     }
 }
 
-static void stop_wifi_radio()
+static void stop_wifi_radio(bool force_setup_portal = false)
 {
     if (!g_wifi_radio_on || !g_have_wifi_creds) {
         return;
     }
-    if (g_setup_portal_active) {
+    if (g_setup_portal_active && !force_setup_portal) {
         return;
     }
     stop_http_server();
@@ -1466,7 +1475,9 @@ static void network_sync_task(void *)
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
-        if (g_setup_portal_active) {
+        EventBits_t loop_bits = xEventGroupGetBits(g_app_events);
+        bool provisioning_sync_due = (loop_bits & kProvisioningSyncBit) != 0;
+        if (g_setup_portal_active && !provisioning_sync_due) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
@@ -1479,8 +1490,8 @@ static void network_sync_task(void *)
                                 local.tm_yday != last_midnight_ntp_yday;
         time_t now;
         time(&now);
-        bool weather_due = g_have_weather_key && (next_weather_at == 0 || now >= next_weather_at);
-        bool ntp_due = (boot_ntp_due || midnight_ntp_due) && now >= next_ntp_retry_at;
+        bool weather_due = g_have_weather_key && (provisioning_sync_due || next_weather_at == 0 || now >= next_weather_at);
+        bool ntp_due = (provisioning_sync_due || boot_ntp_due || midnight_ntp_due) && now >= next_ntp_retry_at;
 
         if (!ntp_due && !weather_due) {
             vTaskDelay(pdMS_TO_TICKS(10000));
@@ -1508,6 +1519,9 @@ static void network_sync_task(void *)
                 time(&next_weather_at);
                 next_weather_at += 60 * 60;
             }
+            if (provisioning_sync_due) {
+                xEventGroupClearBits(g_app_events, kProvisioningSyncBit);
+            }
         } else {
             ESP_LOGW(TAG, "wifi connect timeout during sync window");
             if (ntp_due) {
@@ -1519,7 +1533,7 @@ static void network_sync_task(void *)
                 next_weather_at += 60 * 60;
             }
         }
-        stop_wifi_radio();
+        stop_wifi_radio(provisioning_sync_due);
         release_network_awake_lock();
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
@@ -1639,9 +1653,10 @@ static void ui_task(void *)
 static void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
     uint16_t *buffer = (uint16_t *)color_map;
+    constexpr uint16_t kRlcdBlackThreshold = 0xC618;
     for (int y = area->y1; y <= area->y2; y++) {
         for (int x = area->x1; x <= area->x2; x++) {
-            uint8_t color = (*buffer < 0x7fff) ? ColorBlack : ColorWhite;
+            uint8_t color = (*buffer < kRlcdBlackThreshold) ? ColorBlack : ColorWhite;
             g_display.RLCD_SetPixel(x, y, color);
             buffer++;
         }
