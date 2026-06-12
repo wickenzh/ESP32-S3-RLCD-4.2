@@ -54,6 +54,7 @@ static bool g_ntp_started = false;
 static bool g_wifi_radio_on = false;
 static bool g_wifi_stop_requested = false;
 static bool g_setup_portal_active = false;
+static int g_last_wifi_disconnect_reason = 0;
 static float g_temperature = 0.0f;
 static float g_humidity = 0.0f;
 static bool g_sensor_ok = false;
@@ -88,6 +89,7 @@ static lv_obj_t *g_colon2[2];
 static SegDigit g_digits[6];
 
 static void apply_station_config(bool reconnect);
+static bool wait_for_wifi_connected(uint32_t timeout_ms);
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -360,7 +362,7 @@ static void form_value_fallback(const char *body, const char *primary_key, const
     }
 }
 
-static void save_credentials_from_body(const char *body)
+static bool save_credentials_from_body(const char *body)
 {
     char ssid[33] = {};
     char pass[65] = {};
@@ -370,14 +372,18 @@ static void save_credentials_from_body(const char *body)
     form_value_fallback(body, "api_key", "weather", api_key, sizeof(api_key));
     if (ssid[0] == '\0') {
         ESP_LOGW(TAG, "provisioning ignored empty ssid");
-        return;
+        return false;
     }
     if (api_key[0] == '\0' && g_weather_api_key[0] != '\0') {
         strlcpy(api_key, g_weather_api_key, sizeof(api_key));
     }
-    ESP_LOGI(TAG, "provisioning saved ssid=%s", ssid);
+    ESP_LOGI(TAG, "provisioning saved ssid=%s pass_len=%u api_key=%s",
+             ssid, (unsigned)strlen(pass), api_key[0] ? "set" : "empty");
+    g_last_wifi_disconnect_reason = 0;
+    xEventGroupClearBits(g_app_events, kWifiConnectedBit);
     save_config(ssid, pass, api_key);
     apply_station_config(true);
+    return true;
 }
 
 static void html_append(char *html, size_t html_len, const char *fmt, ...)
@@ -422,7 +428,7 @@ static void html_escape(const char *src, char *dst, size_t dst_len)
 
 static void append_wifi_scan_list(char *html, size_t html_len)
 {
-    html_append(html, html_len, "<h3>Nearby Wi-Fi</h3><div class='wifi-list'>");
+    html_append(html, html_len, "<section><div class='section-title'><span>Nearby Wi-Fi</span><a href='/'>Refresh</a></div><div class='wifi-list'>");
     wifi_scan_config_t scan_config = {};
     esp_err_t err = esp_wifi_scan_start(&scan_config, true);
     if (err != ESP_OK) {
@@ -465,7 +471,7 @@ static void append_wifi_scan_list(char *html, size_t html_len)
         free(records);
         (void)ap_count;
     }
-    html_append(html, html_len, "</div>");
+    html_append(html, html_len, "</div></section>");
 }
 
 static void apply_station_config(bool reconnect)
@@ -498,7 +504,7 @@ static esp_err_t root_get_handler(httpd_req_t *req)
 {
     char safe_ssid[80] = {};
     html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
-    const size_t html_len = 8192;
+    const size_t html_len = 12288;
     char *html = (char *)calloc(1, html_len);
     if (html == nullptr) {
         httpd_resp_set_status(req, "500 Internal Server Error");
@@ -507,22 +513,54 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     html_append(html, html_len,
                 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>WeatherClock Setup</title><style>"
-                "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:24px auto;padding:0 14px;color:#111}"
-                "input,button{box-sizing:border-box;width:100%;font-size:18px;padding:12px;margin:7px 0;border:2px solid #111;background:#fff;color:#111}"
-                "button{font-weight:700}.wifi{display:flex;justify-content:space-between;gap:12px;text-align:left}.wifi b{white-space:nowrap}.muted{color:#666}"
+                ":root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
+                ".wrap{max-width:480px;margin:0 auto;padding:22px 16px 34px}.brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}"
+                ".mark{width:44px;height:44px;border:2px solid #17202a;border-radius:8px;display:grid;place-items:center;font-weight:900;font-size:22px;background:#fff}"
+                ".pill{border:1px solid #b7c0ca;border-radius:999px;padding:7px 10px;font-size:12px;color:#465563;background:#fff}"
+                "h1{font-size:26px;line-height:1.12;margin:0 0 4px}p{margin:0}.sub{font-size:14px;color:#5d6b78}.panel{background:#fff;border:1px solid #d3dae2;border-radius:8px;padding:16px;box-shadow:0 8px 24px rgba(23,32,42,.08)}"
+                "label{display:block;font-size:12px;font-weight:700;letter-spacing:.03em;color:#465563;margin:13px 0 6px;text-transform:uppercase}"
+                "input{width:100%;height:46px;border:1px solid #aeb8c2;border-radius:6px;padding:0 12px;font-size:17px;background:#fbfcfd;color:#111;outline:none}"
+                "input:focus{border-color:#17202a;box-shadow:0 0 0 3px rgba(23,32,42,.10)}.submit{width:100%;height:48px;border:0;border-radius:6px;margin-top:16px;background:#17202a;color:#fff;font-size:17px;font-weight:800}"
+                "section{margin-top:16px}.section-title{display:flex;align-items:center;justify-content:space-between;margin:0 2px 8px;font-size:13px;font-weight:800;color:#465563}.section-title a{color:#17202a;text-decoration:none}"
+                ".wifi-list{display:grid;gap:8px}.wifi{width:100%;border:1px solid #d3dae2;background:#fff;border-radius:6px;padding:12px;display:flex;justify-content:space-between;gap:12px;text-align:left;font-size:16px;color:#17202a}"
+                ".wifi b{font-size:12px;color:#697784;white-space:nowrap}.muted{padding:12px;border:1px dashed #c7d0d9;border-radius:6px;color:#697784;background:#fbfcfd}"
                 "</style><script>function pick(s){document.querySelector('[name=ssid]').value=s;document.querySelector('[name=pass]').focus();}</script></head>"
-                "<body><h2>WeatherClock Setup</h2><form method='post' action='/save'>"
-                "<input name='ssid' placeholder='Wi-Fi SSID' value='%s'>"
-                "<input name='pass' placeholder='Password' type='password'>"
-                "<input name='api_key' placeholder='QWeather API Key (leave blank to keep)' value=''>"
-                "<button>Save and connect</button></form>",
-                safe_ssid);
+                "<body><main class='wrap'><div class='brand'><div><h1>WeatherClock</h1><p class='sub'>Connect the clock to your local Wi-Fi.</p></div><div class='mark'>42</div></div>"
+                "<div class='panel'><div class='pill'>Setup AP: %s</div><form method='get' action='/save'>"
+                "<label>Wi-Fi SSID</label><input name='ssid' placeholder='Choose or type network name' value='%s' autocomplete='off'>"
+                "<label>Password</label><input name='pass' placeholder='Wi-Fi password' type='password' autocomplete='current-password'>"
+                "<label>QWeather API Key</label><input name='api_key' placeholder='Leave blank to keep saved key' value='' autocomplete='off'>"
+                "<button class='submit' type='submit'>Save and connect</button></form></div>",
+                g_ap_ssid, safe_ssid);
     append_wifi_scan_list(html, html_len);
-    html_append(html, html_len, "</body></html>");
+    html_append(html, html_len, "</main></body></html>");
     httpd_resp_set_type(req, "text/html");
     esp_err_t err = httpd_resp_send(req, html, strlen(html));
     free(html);
     return err;
+}
+
+static esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected)
+{
+    char safe_ssid[80] = {};
+    html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
+    char html[1400] = {};
+    const char *title = saved ? (connected ? "Connected" : "Saved, still connecting") : "Missing Wi-Fi name";
+    const char *body = saved ? (connected ? "The clock has joined your Wi-Fi network." : "The clock saved your settings but did not get an IP yet. Check the password or router signal, then try again.")
+                             : "Please go back and enter a Wi-Fi network name.";
+    html_append(html, sizeof(html),
+                "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "<title>WeatherClock Setup</title><style>"
+                "*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
+                ".wrap{max-width:460px;margin:0 auto;padding:28px 16px}.panel{background:#fff;border:1px solid #d3dae2;border-radius:8px;padding:18px;box-shadow:0 8px 24px rgba(23,32,42,.08)}"
+                ".state{width:48px;height:48px;border-radius:8px;border:2px solid #17202a;display:grid;place-items:center;font-size:24px;font-weight:900;margin-bottom:14px}"
+                "h1{font-size:24px;margin:0 0 8px}p{font-size:15px;line-height:1.45;color:#4d5b68;margin:0 0 14px}.meta{border-top:1px solid #e1e6eb;padding-top:12px;color:#697784;font-size:13px}"
+                "a{display:block;height:46px;line-height:46px;text-align:center;background:#17202a;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;margin-top:16px}"
+                "</style></head><body><main class='wrap'><section class='panel'><div class='state'>%s</div><h1>%s</h1><p>%s</p>"
+                "<div class='meta'>SSID: %s<br>Last Wi-Fi reason: %d</div><a href='/'>Back to setup</a></section></main></body></html>",
+                connected ? "OK" : "!", title, body, safe_ssid, g_last_wifi_disconnect_reason);
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t save_post_handler(httpd_req_t *req)
@@ -538,9 +576,9 @@ static esp_err_t save_post_handler(httpd_req_t *req)
     }
     body[total] = '\0';
 
-    save_credentials_from_body(body);
-    const char *reply = "Saved. The clock is connecting now. You can close this page.";
-    return httpd_resp_send(req, reply, HTTPD_RESP_USE_STRLEN);
+    bool saved = save_credentials_from_body(body);
+    bool connected = saved && wait_for_wifi_connected(12000);
+    return send_save_result_page(req, saved, connected);
 }
 
 static esp_err_t save_get_handler(httpd_req_t *req)
@@ -550,9 +588,15 @@ static esp_err_t save_get_handler(httpd_req_t *req)
         httpd_resp_set_status(req, "400 Bad Request");
         return httpd_resp_sendstr(req, "Missing query.");
     }
-    save_credentials_from_body(query);
-    const char *reply = "Saved. The clock is connecting now. You can close this page.";
-    return httpd_resp_send(req, reply, HTTPD_RESP_USE_STRLEN);
+    bool saved = save_credentials_from_body(query);
+    bool connected = saved && wait_for_wifi_connected(12000);
+    return send_save_result_page(req, saved, connected);
+}
+
+static esp_err_t empty_asset_handler(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "204 No Content");
+    return httpd_resp_send(req, "", 0);
 }
 
 static void start_http_server()
@@ -564,6 +608,7 @@ static void start_http_server()
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.stack_size = 8192;
+    config.lru_purge_enable = true;
     ESP_ERROR_CHECK(httpd_start(&g_http_server, &config));
 
     httpd_uri_t root = {};
@@ -583,6 +628,24 @@ static void start_http_server()
     save_get.method = HTTP_GET;
     save_get.handler = save_get_handler;
     ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &save_get));
+
+    httpd_uri_t favicon = {};
+    favicon.uri = "/favicon.ico";
+    favicon.method = HTTP_GET;
+    favicon.handler = empty_asset_handler;
+    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &favicon));
+
+    httpd_uri_t apple_icon = {};
+    apple_icon.uri = "/apple-touch-icon.png";
+    apple_icon.method = HTTP_GET;
+    apple_icon.handler = empty_asset_handler;
+    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &apple_icon));
+
+    httpd_uri_t apple_icon_precomposed = {};
+    apple_icon_precomposed.uri = "/apple-touch-icon-precomposed.png";
+    apple_icon_precomposed.method = HTTP_GET;
+    apple_icon_precomposed.handler = empty_asset_handler;
+    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &apple_icon_precomposed));
     g_setup_portal_active = true;
 }
 
@@ -630,6 +693,7 @@ static void wifi_event_handler(void *, esp_event_base_t event_base, int32_t even
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
+        g_last_wifi_disconnect_reason = event ? event->reason : -1;
         ESP_LOGW(TAG, "wifi disconnected, reason=%d", event ? event->reason : -1);
         xEventGroupClearBits(g_app_events, kWifiConnectedBit);
         if (g_have_wifi_creds && g_wifi_radio_on && !g_wifi_stop_requested) {
