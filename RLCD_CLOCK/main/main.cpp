@@ -17,6 +17,9 @@
 #include "esp_pm.h"
 #include "esp_sntp.h"
 #include "esp_wifi.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -35,7 +38,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.29";
+static const char *APP_VERSION = "v0.0.30";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -49,7 +52,10 @@ static constexpr int kBootSetupHoldMs = 20000;
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
 static Shtc3Port *g_shtc3 = nullptr;
-static i2c_master_dev_handle_t g_battery_dev = nullptr;
+static adc_oneshot_unit_handle_t g_battery_adc = nullptr;
+static adc_cali_handle_t g_battery_adc_cali = nullptr;
+static bool g_battery_adc_ready = false;
+static bool g_battery_adc_cali_ready = false;
 static EventGroupHandle_t g_app_events;
 static httpd_handle_t g_http_server = nullptr;
 
@@ -998,34 +1004,74 @@ static void sync_rtc_from_system_time()
 
 static void init_battery_gauge()
 {
-    i2c_device_config_t dev_cfg = {};
-    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-    dev_cfg.device_address = 0x55;
-    dev_cfg.scl_speed_hz = 400000;
-    esp_err_t err = i2c_master_bus_add_device(g_i2c.Get_I2cBusHandle(), &dev_cfg, &g_battery_dev);
+    adc_oneshot_unit_init_cfg_t init_config = {};
+    init_config.unit_id = ADC_UNIT_1;
+    esp_err_t err = adc_oneshot_new_unit(&init_config, &g_battery_adc);
     if (err != ESP_OK) {
-        g_battery_dev = nullptr;
-        ESP_LOGW(TAG, "battery gauge init failed: %s", esp_err_to_name(err));
+        g_battery_adc = nullptr;
+        ESP_LOGW(TAG, "battery adc init failed: %s", esp_err_to_name(err));
+        return;
     }
+
+    adc_oneshot_chan_cfg_t chan_config = {};
+    chan_config.bitwidth = ADC_BITWIDTH_12;
+    chan_config.atten = ADC_ATTEN_DB_12;
+    err = adc_oneshot_config_channel(g_battery_adc, ADC_CHANNEL_3, &chan_config);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "battery adc channel config failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    adc_cali_curve_fitting_config_t cali_config = {};
+    cali_config.unit_id = ADC_UNIT_1;
+    cali_config.chan = ADC_CHANNEL_3;
+    cali_config.atten = ADC_ATTEN_DB_12;
+    cali_config.bitwidth = ADC_BITWIDTH_12;
+    err = adc_cali_create_scheme_curve_fitting(&cali_config, &g_battery_adc_cali);
+    if (err == ESP_OK) {
+        g_battery_adc_cali_ready = true;
+    } else {
+        ESP_LOGW(TAG, "battery adc calibration unavailable: %s", esp_err_to_name(err));
+    }
+
+    g_battery_adc_ready = true;
+}
+
+static int battery_percent_from_voltage(float voltage)
+{
+    static constexpr float kBatteryEmptyVoltage = 3.00f;
+    static constexpr float kBatteryFullVoltage = 4.12f;
+    int percent = (int)(((voltage - kBatteryEmptyVoltage) * 100.0f /
+                         (kBatteryFullVoltage - kBatteryEmptyVoltage)) + 0.5f);
+    if (percent < 0) return 0;
+    if (percent > 100) return 100;
+    return percent;
 }
 
 static bool read_battery_percent(int *percent)
 {
-    if (!g_battery_dev) {
+    if (!g_battery_adc_ready) {
         return false;
     }
-    uint8_t reg = 0x2C;
-    uint8_t data[2] = {};
-    esp_err_t err = (esp_err_t)g_i2c.i2c_master_write_read_dev(g_battery_dev, &reg, 1, data, sizeof(data));
+
+    int raw = 0;
+    esp_err_t err = adc_oneshot_read(g_battery_adc, ADC_CHANNEL_3, &raw);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "battery soc read failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "battery adc read failed: %s", esp_err_to_name(err));
         return false;
     }
-    int soc = data[0] | (data[1] << 8);
-    if (soc < 0 || soc > 100) {
-        ESP_LOGW(TAG, "battery soc out of range: %d", soc);
-        return false;
+
+    int adc_mv = (raw * 3300) / 4095;
+    if (g_battery_adc_cali_ready) {
+        err = adc_cali_raw_to_voltage(g_battery_adc_cali, raw, &adc_mv);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "battery adc calibration read failed: %s", esp_err_to_name(err));
+        }
     }
+
+    float voltage = adc_mv * 0.001f * 3.0f;
+    int soc = battery_percent_from_voltage(voltage);
+    ESP_LOGI(TAG, "battery adc raw=%d adc_mv=%d battery=%.3fV soc=%d%%", raw, adc_mv, voltage, soc);
     *percent = soc;
     return true;
 }

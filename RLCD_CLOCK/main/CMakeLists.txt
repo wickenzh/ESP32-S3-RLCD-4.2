@@ -16,6 +16,7 @@ idf_component_register(
         esp_http_server
         esp_timer
         esp_pm
+        esp_adc
         esp_driver_gpio
         json
         mbedtls)
