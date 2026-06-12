@@ -271,7 +271,7 @@ static void update_time_ui(const struct tm &local)
     snprintf(date, sizeof(date), "%04d/%02d/%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     set_label_text_if_changed(g_date_label, date);
 
-    static const char *week_days[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+    static const char *week_days[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
     set_label_text_if_changed(g_week_label, week_days[local.tm_wday]);
 }
 

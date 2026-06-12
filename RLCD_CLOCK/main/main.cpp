@@ -48,6 +48,7 @@ static httpd_handle_t g_http_server = nullptr;
 static char g_wifi_ssid[33] = {};
 static char g_wifi_pass[65] = {};
 static char g_weather_api_key[96] = {};
+static char g_qweather_api_host[96] = {};
 static char g_ap_ssid[33] = {};
 static bool g_have_wifi_creds = false;
 static bool g_have_weather_key = false;
@@ -60,6 +61,7 @@ static float g_temperature = 0.0f;
 static float g_humidity = 0.0f;
 static bool g_sensor_ok = false;
 static int g_battery_percent = -1;
+static uint32_t g_battery_version = 0;
 
 struct WeatherData {
     char city[32] = {};
@@ -91,6 +93,7 @@ static SegDigit g_digits[6];
 
 static void apply_station_config(bool reconnect);
 static bool wait_for_wifi_connected(uint32_t timeout_ms);
+static void trim_ascii(char *text);
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -301,26 +304,30 @@ static bool load_saved_config()
     size_t ssid_len = sizeof(g_wifi_ssid);
     size_t pass_len = sizeof(g_wifi_pass);
     size_t key_len = sizeof(g_weather_api_key);
+    size_t host_len = sizeof(g_qweather_api_host);
     esp_err_t ssid_err = nvs_get_str(nvs, "ssid", g_wifi_ssid, &ssid_len);
     esp_err_t pass_err = nvs_get_str(nvs, "pass", g_wifi_pass, &pass_len);
     esp_err_t key_err = nvs_get_str(nvs, "api_key", g_weather_api_key, &key_len);
+    (void)nvs_get_str(nvs, "api_host", g_qweather_api_host, &host_len);
     nvs_close(nvs);
     g_have_weather_key = key_err == ESP_OK && g_weather_api_key[0] != '\0';
     return ssid_err == ESP_OK && pass_err == ESP_OK && g_wifi_ssid[0] != '\0';
 }
 
-static void save_config(const char *ssid, const char *pass, const char *api_key)
+static void save_config(const char *ssid, const char *pass, const char *api_key, const char *api_host)
 {
     nvs_handle_t nvs;
     ESP_ERROR_CHECK(nvs_open("wifi", NVS_READWRITE, &nvs));
     ESP_ERROR_CHECK(nvs_set_str(nvs, "ssid", ssid));
     ESP_ERROR_CHECK(nvs_set_str(nvs, "pass", pass));
     ESP_ERROR_CHECK(nvs_set_str(nvs, "api_key", api_key));
+    ESP_ERROR_CHECK(nvs_set_str(nvs, "api_host", api_host));
     ESP_ERROR_CHECK(nvs_commit(nvs));
     nvs_close(nvs);
     strlcpy(g_wifi_ssid, ssid, sizeof(g_wifi_ssid));
     strlcpy(g_wifi_pass, pass, sizeof(g_wifi_pass));
     strlcpy(g_weather_api_key, api_key, sizeof(g_weather_api_key));
+    strlcpy(g_qweather_api_host, api_host, sizeof(g_qweather_api_host));
     g_have_wifi_creds = true;
     g_have_weather_key = g_weather_api_key[0] != '\0';
 }
@@ -371,14 +378,34 @@ static void form_value_fallback(const char *body, const char *primary_key, const
     }
 }
 
+static void normalize_api_host(char *host)
+{
+    trim_ascii(host);
+    char *start = host;
+    if (strncmp(start, "https://", 8) == 0) {
+        start += 8;
+    } else if (strncmp(start, "http://", 7) == 0) {
+        start += 7;
+    }
+    if (start != host) {
+        memmove(host, start, strlen(start) + 1);
+    }
+    char *slash = strchr(host, '/');
+    if (slash) {
+        *slash = '\0';
+    }
+}
+
 static bool save_credentials_from_body(const char *body)
 {
     char ssid[33] = {};
     char pass[65] = {};
     char api_key[96] = {};
+    char api_host[96] = {};
     form_value(body, "ssid", ssid, sizeof(ssid));
     form_value_fallback(body, "pass", "password", pass, sizeof(pass));
     form_value_fallback(body, "api_key", "weather", api_key, sizeof(api_key));
+    form_value_fallback(body, "api_host", "host", api_host, sizeof(api_host));
     if (ssid[0] == '\0') {
         ESP_LOGW(TAG, "provisioning ignored empty ssid");
         return false;
@@ -386,11 +413,15 @@ static bool save_credentials_from_body(const char *body)
     if (api_key[0] == '\0' && g_weather_api_key[0] != '\0') {
         strlcpy(api_key, g_weather_api_key, sizeof(api_key));
     }
-    ESP_LOGI(TAG, "provisioning saved ssid=%s pass_len=%u api_key=%s",
-             ssid, (unsigned)strlen(pass), api_key[0] ? "set" : "empty");
+    if (api_host[0] == '\0' && g_qweather_api_host[0] != '\0') {
+        strlcpy(api_host, g_qweather_api_host, sizeof(api_host));
+    }
+    normalize_api_host(api_host);
+    ESP_LOGI(TAG, "provisioning saved ssid=%s pass_len=%u api_key=%s api_host=%s",
+             ssid, (unsigned)strlen(pass), api_key[0] ? "set" : "empty", api_host[0] ? api_host : "default");
     g_last_wifi_disconnect_reason = 0;
     xEventGroupClearBits(g_app_events, kWifiConnectedBit);
-    save_config(ssid, pass, api_key);
+    save_config(ssid, pass, api_key, api_host);
     apply_station_config(true);
     return true;
 }
@@ -512,7 +543,9 @@ static void stop_http_server()
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
     char safe_ssid[80] = {};
+    char safe_host[128] = {};
     html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
+    html_escape(g_qweather_api_host, safe_host, sizeof(safe_host));
     const size_t html_len = 12288;
     char *html = (char *)calloc(1, html_len);
     if (html == nullptr) {
@@ -539,8 +572,9 @@ static esp_err_t root_get_handler(httpd_req_t *req)
                 "<label>Wi-Fi SSID</label><input name='ssid' placeholder='Choose or type network name' value='%s' autocomplete='off'>"
                 "<label>Password</label><input name='pass' placeholder='Wi-Fi password' type='password' autocomplete='current-password'>"
                 "<label>QWeather API Key</label><input name='api_key' placeholder='Leave blank to keep saved key' value='' autocomplete='off'>"
+                "<label>QWeather API Host</label><input name='api_host' placeholder='abc1234xyz.def.qweatherapi.com' value='%s' autocomplete='off'>"
                 "<button class='submit' type='submit'>Save and connect</button></form></div>",
-                g_ap_ssid, safe_ssid);
+                g_ap_ssid, safe_ssid, safe_host);
     append_wifi_scan_list(html, html_len);
     html_append(html, html_len, "</main></body></html>");
     httpd_resp_set_type(req, "text/html");
@@ -574,7 +608,7 @@ static esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connec
 
 static esp_err_t save_post_handler(httpd_req_t *req)
 {
-    char body[384] = {};
+    char body[640] = {};
     int total = 0;
     while (total < req->content_len && total < (int)sizeof(body) - 1) {
         int ret = httpd_req_recv(req, body + total, sizeof(body) - 1 - total);
@@ -592,7 +626,7 @@ static esp_err_t save_post_handler(httpd_req_t *req)
 
 static esp_err_t save_get_handler(httpd_req_t *req)
 {
-    char query[384] = {};
+    char query[640] = {};
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
         httpd_resp_set_status(req, "400 Bad Request");
         return httpd_resp_sendstr(req, "Missing query.");
@@ -822,6 +856,7 @@ static void battery_task(void *)
         } else {
             g_battery_percent = -1;
         }
+        ++g_battery_version;
         vTaskDelay(pdMS_TO_TICKS(60000));
     }
 }
@@ -892,7 +927,7 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-static esp_err_t http_get_text(const char *url, char *out, size_t out_len)
+static esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *api_key = nullptr)
 {
     out[0] = '\0';
     HttpBuffer buffer = {out, 0, out_len};
@@ -908,6 +943,9 @@ static esp_err_t http_get_text(const char *url, char *out, size_t out_len)
     }
     esp_http_client_set_header(client, "Accept", "application/json,text/plain,*/*");
     esp_http_client_set_header(client, "Accept-Encoding", "identity");
+    if (api_key && api_key[0] != '\0') {
+        esp_http_client_set_header(client, "X-QW-Api-Key", api_key);
+    }
     esp_err_t err = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
@@ -916,6 +954,16 @@ static esp_err_t http_get_text(const char *url, char *out, size_t out_len)
         return err == ESP_OK ? ESP_FAIL : err;
     }
     return ESP_OK;
+}
+
+static const char *qweather_api_host()
+{
+    return g_qweather_api_host[0] ? g_qweather_api_host : "devapi.qweather.com";
+}
+
+static bool qweather_uses_custom_host()
+{
+    return g_qweather_api_host[0] != '\0';
 }
 
 static void trim_ascii(char *text)
@@ -1032,11 +1080,17 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
     }
 
     char url[384];
-    snprintf(url, sizeof(url),
-             "https://geoapi.qweather.com/v2/city/lookup?location=%s&number=1&lang=zh&key=%s",
-             encoded_location, g_weather_api_key);
+    if (qweather_uses_custom_host()) {
+        snprintf(url, sizeof(url),
+                 "https://%s/geo/v2/city/lookup?location=%s&number=1&range=cn&lang=zh",
+                 qweather_api_host(), encoded_location);
+    } else {
+        snprintf(url, sizeof(url),
+                 "https://geoapi.qweather.com/v2/city/lookup?location=%s&number=1&range=cn&lang=zh",
+                 encoded_location);
+    }
     char response[3072] = {};
-    if (http_get_text(url, response, sizeof(response)) != ESP_OK) {
+    if (http_get_text(url, response, sizeof(response), g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather city lookup http failed");
         return false;
     }
@@ -1070,10 +1124,10 @@ static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
 
     char url[384];
     snprintf(url, sizeof(url),
-             "https://devapi.qweather.com/v7/weather/now?location=%s&lang=zh&unit=m&key=%s",
-             encoded_location, g_weather_api_key);
+             "https://%s/v7/weather/now?location=%s&lang=zh&unit=m",
+             qweather_api_host(), encoded_location);
     char response[3072] = {};
-    if (http_get_text(url, response, sizeof(response)) != ESP_OK) {
+    if (http_get_text(url, response, sizeof(response), g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather now http failed");
         return false;
     }
@@ -1328,13 +1382,14 @@ static void update_time_ui(const struct tm &local)
     snprintf(date, sizeof(date), "%04d/%02d/%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     set_label_text_if_changed(g_date_label, date);
 
-    static const char *week_days[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+    static const char *week_days[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
     set_label_text_if_changed(g_week_label, week_days[local.tm_wday]);
 }
 
 static void ui_task(void *)
 {
     TickType_t last_status_update = xTaskGetTickCount() - pdMS_TO_TICKS(1000);
+    uint32_t last_battery_version = (uint32_t)-1;
 
     for (;;) {
         time_t now;
@@ -1390,7 +1445,10 @@ static void ui_task(void *)
                     set_label_text_if_changed(g_weather_info_label, "设置 API Key");
                     set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
                 }
-                update_battery_icon(g_battery_percent);
+                if (g_battery_version != last_battery_version) {
+                    update_battery_icon(g_battery_percent);
+                    last_battery_version = g_battery_version;
+                }
                 set_label_text_if_changed(g_wifi_label, wifi);
                 set_label_text_if_changed(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
                 last_status_update = tick_now;
