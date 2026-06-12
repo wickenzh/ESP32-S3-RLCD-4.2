@@ -39,7 +39,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.32";
+static const char *APP_VERSION = "v0.0.33";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1491,17 +1491,18 @@ static bool perform_weather_update()
     char location[32] = {};
     char city_id[24] = {};
     char ip_city[32] = {};
+    char lookup_city[32] = {};
     WeatherData next = {};
     if (ip_geolocation_lookup(location, sizeof(location), ip_city, sizeof(ip_city))) {
         trim_ascii(location);
-        bool have_city_id = qweather_lookup_city(location, city_id, sizeof(city_id), next.city, sizeof(next.city));
+        bool have_city_id = qweather_lookup_city(location, city_id, sizeof(city_id), lookup_city, sizeof(lookup_city));
         if (!have_city_id && ip_city[0] != '\0') {
             ESP_LOGW(TAG, "retry qweather city lookup by ip city: %s", ip_city);
-            have_city_id = qweather_lookup_city(ip_city, city_id, sizeof(city_id), next.city, sizeof(next.city));
+            have_city_id = qweather_lookup_city(ip_city, city_id, sizeof(city_id), lookup_city, sizeof(lookup_city));
         }
+        strlcpy(next.city, ip_city[0] ? ip_city : (lookup_city[0] ? lookup_city : location), sizeof(next.city));
         if (!have_city_id) {
             strlcpy(city_id, location, sizeof(city_id));
-            strlcpy(next.city, ip_city[0] ? ip_city : location, sizeof(next.city));
             ESP_LOGW(TAG, "using ip coordinates for weather now: %s", city_id);
         }
         if (qweather_fetch_now(city_id, &next)) {
