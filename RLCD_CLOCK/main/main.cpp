@@ -15,6 +15,7 @@
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "esp_wifi.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -37,6 +38,8 @@ static constexpr int kDisplayHeight = 300;
 static constexpr int kWifiConnectedBit = BIT0;
 static constexpr int kTimeSyncedBit = BIT1;
 static constexpr int kWeatherReadyBit = BIT2;
+static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
+static constexpr int kBootSetupHoldMs = 20000;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
@@ -725,6 +728,9 @@ static void stop_wifi_radio()
     if (!g_wifi_radio_on || !g_have_wifi_creds) {
         return;
     }
+    if (g_setup_portal_active) {
+        return;
+    }
     stop_http_server();
     g_wifi_stop_requested = true;
     esp_wifi_disconnect();
@@ -786,6 +792,38 @@ static void init_wifi()
     }
 
     start_wifi_radio(!g_have_wifi_creds);
+}
+
+static void boot_button_task(void *)
+{
+    gpio_config_t button = {};
+    button.intr_type = GPIO_INTR_DISABLE;
+    button.mode = GPIO_MODE_INPUT;
+    button.pin_bit_mask = 1ULL << kBootButtonGpio;
+    button.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    button.pull_up_en = GPIO_PULLUP_ENABLE;
+    ESP_ERROR_CHECK(gpio_config(&button));
+
+    TickType_t pressed_since = 0;
+    bool triggered = false;
+    for (;;) {
+        bool pressed = gpio_get_level(kBootButtonGpio) == 0;
+        TickType_t now = xTaskGetTickCount();
+        if (pressed) {
+            if (pressed_since == 0) {
+                pressed_since = now;
+            }
+            if (!triggered && now - pressed_since >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
+                ESP_LOGW(TAG, "boot button held for 20s, entering setup portal");
+                start_wifi_radio(true);
+                triggered = true;
+            }
+        } else {
+            pressed_since = 0;
+            triggered = false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 static void restore_system_time_from_rtc()
@@ -861,7 +899,7 @@ static void battery_task(void *)
             g_battery_percent = -1;
         }
         ++g_battery_version;
-        vTaskDelay(pdMS_TO_TICKS(60000));
+        vTaskDelay(pdMS_TO_TICKS(5 * 60 * 1000));
     }
 }
 
@@ -1303,6 +1341,10 @@ static void network_sync_task(void *)
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
+        if (g_setup_portal_active) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
 
         struct tm local = {};
         bool time_valid = is_time_valid(&local);
@@ -1336,9 +1378,9 @@ static void network_sync_task(void *)
                 }
             }
             if (weather_due) {
-                bool weather_ok = perform_weather_update();
+                perform_weather_update();
                 time(&next_weather_at);
-                next_weather_at += weather_ok ? 30 * 60 : 5 * 60;
+                next_weather_at += 60 * 60;
             }
         } else {
             ESP_LOGW(TAG, "wifi connect timeout during sync window");
@@ -1348,7 +1390,7 @@ static void network_sync_task(void *)
             }
             if (weather_due) {
                 time(&next_weather_at);
-                next_weather_at += 5 * 60;
+                next_weather_at += 60 * 60;
             }
         }
         stop_wifi_radio();
@@ -1514,4 +1556,5 @@ extern "C" void app_main(void)
     xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(battery_task, "battery_task", 3072, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
+    xTaskCreatePinnedToCore(boot_button_task, "boot_button", 2048, nullptr, 2, nullptr, 1);
 }
