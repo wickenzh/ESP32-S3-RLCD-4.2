@@ -8,11 +8,12 @@
 #include "lvgl.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
-LV_FONT_DECLARE(zh_font_18);
+LV_FONT_DECLARE(zh_font_16);
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
+static const char *APP_VERSION = "v0.0.18";
 
 struct SegDigit {
     lv_obj_t *seg[7] = {};
@@ -94,16 +95,21 @@ static void set_colon(lv_obj_t *dots[2], bool active)
     set_obj_black(dots[1], active);
 }
 
-static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const char *text)
+static lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int h, const char *text, const lv_font_t *font)
 {
     lv_obj_t *label = lv_label_create(parent);
     lv_obj_set_pos(label, x, y);
     lv_obj_set_size(label, w, h);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, &zh_font_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
     lv_obj_set_style_text_letter_space(label, 0, LV_PART_MAIN);
     return label;
+}
+
+static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const char *text)
+{
+    return make_label_with_font(parent, x, y, w, h, text, &zh_font_16);
 }
 
 static void set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -156,6 +162,44 @@ static void build_battery_icon(lv_obj_t *parent)
     style_battery_part(g_battery_fill, true);
     lv_obj_set_style_border_width(g_battery_fill, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(g_battery_fill, 3, LV_PART_MAIN);
+}
+
+static void show_boot_screen()
+{
+    lv_obj_t *screen = lv_scr_act();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = make_label_with_font(screen, 28, 72, 344, 30, "RLCD Weather Clock", &lv_font_montserrat_16);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    lv_obj_t *status = make_label_with_font(screen, 28, 112, 344, 24, "Starting...", &lv_font_montserrat_16);
+    lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    lv_obj_t *version = make_label_with_font(screen, 28, 202, 344, 24, APP_VERSION, &lv_font_montserrat_16);
+    lv_obj_set_style_text_align(version, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    lv_obj_t *frame = lv_obj_create(screen);
+    lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(frame, 70, 156);
+    lv_obj_set_size(frame, 260, 20);
+    lv_obj_set_style_bg_color(frame, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(frame, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(frame, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(frame, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(frame, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(frame, 2, LV_PART_MAIN);
+
+    lv_obj_t *fill = lv_obj_create(frame);
+    lv_obj_clear_flag(fill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(fill, 0, 0);
+    lv_obj_set_size(fill, 255, 12);
+    lv_obj_set_style_bg_color(fill, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(fill, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(fill, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(fill, 0, LV_PART_MAIN);
 }
 
 static void update_battery_icon(int percent)
@@ -329,6 +373,10 @@ int main(int, char **)
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
 
+    show_boot_screen();
+    lv_timer_handler();
+    SDL_Delay(2500);
+    lv_obj_clean(lv_scr_act());
     build_clock_ui();
     set_label_text_if_changed(g_temp_label, "本地 24.6℃");
     set_label_text_if_changed(g_humi_label, "湿度 58.0%");
