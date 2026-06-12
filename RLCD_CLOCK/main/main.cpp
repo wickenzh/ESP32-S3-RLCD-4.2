@@ -162,6 +162,14 @@ static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const 
     return label;
 }
 
+static void set_label_text_if_changed(lv_obj_t *label, const char *text)
+{
+    const char *current = lv_label_get_text(label);
+    if (current == nullptr || strcmp(current, text) != 0) {
+        lv_label_set_text(label, text);
+    }
+}
+
 static void style_battery_part(lv_obj_t *obj, bool filled)
 {
     lv_obj_set_style_bg_color(obj, filled ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
@@ -202,6 +210,12 @@ static void build_battery_icon(lv_obj_t *parent)
 
 static void update_battery_icon(int percent)
 {
+    static int last_percent = -999;
+    if (percent == last_percent) {
+        return;
+    }
+    last_percent = percent;
+
     int filled = 0;
     if (percent >= 0) {
         if (percent > 100) {
@@ -1049,6 +1063,9 @@ static void network_sync_task(void *)
 
 static void update_time_ui(const struct tm &local)
 {
+    static int last_values[6] = {-1, -1, -1, -1, -1, -1};
+    static int last_colon_on = -1;
+
     int values[6] = {
         local.tm_hour / 10,
         local.tm_hour % 10,
@@ -1058,22 +1075,30 @@ static void update_time_ui(const struct tm &local)
         local.tm_sec % 10,
     };
     for (int i = 0; i < 6; ++i) {
-        set_digit(g_digits[i], values[i]);
+        if (values[i] != last_values[i]) {
+            set_digit(g_digits[i], values[i]);
+            last_values[i] = values[i];
+        }
     }
     bool colon_on = (local.tm_sec % 2) == 0;
-    set_colon(g_colon1, colon_on);
-    set_colon(g_colon2, colon_on);
+    if ((int)colon_on != last_colon_on) {
+        set_colon(g_colon1, colon_on);
+        set_colon(g_colon2, colon_on);
+        last_colon_on = colon_on;
+    }
 
     char date[32];
     snprintf(date, sizeof(date), "%04d/%02d/%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
-    lv_label_set_text(g_date_label, date);
+    set_label_text_if_changed(g_date_label, date);
 
     static const char *week_days[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
-    lv_label_set_text(g_week_label, week_days[local.tm_wday]);
+    set_label_text_if_changed(g_week_label, week_days[local.tm_wday]);
 }
 
 static void ui_task(void *)
 {
+    TickType_t last_wake = xTaskGetTickCount();
+
     for (;;) {
         time_t now;
         time(&now);
@@ -1102,33 +1127,33 @@ static void ui_task(void *)
             snprintf(wifi, sizeof(wifi), "SETUP AP %s", g_ap_ssid);
         }
 
-        if (Lvgl_lock(200)) {
+        if (Lvgl_lock(800)) {
             update_time_ui(local);
-            lv_label_set_text(g_temp_label, temp);
-            lv_label_set_text(g_humi_label, humi);
+            set_label_text_if_changed(g_temp_label, temp);
+            set_label_text_if_changed(g_humi_label, humi);
             if (bits & kWeatherReadyBit) {
                 char city[48];
                 char weather[80];
                 snprintf(city, sizeof(city), "CITY %s", g_weather.city);
                 snprintf(weather, sizeof(weather), "%s %sC %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
-                lv_label_set_text(g_weather_city_label, city);
-                lv_label_set_text(g_weather_info_label, weather);
-                lv_label_set_text(g_weather_icon_label, weather_icon_text(g_weather.icon));
+                set_label_text_if_changed(g_weather_city_label, city);
+                set_label_text_if_changed(g_weather_info_label, weather);
+                set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
             } else if (g_have_weather_key) {
-                lv_label_set_text(g_weather_city_label, "CITY --");
-                lv_label_set_text(g_weather_info_label, (bits & kWifiConnectedBit) ? "WEATHER SYNC" : "WEATHER WAIT");
-                lv_label_set_text(g_weather_icon_label, "--");
+                set_label_text_if_changed(g_weather_city_label, "CITY --");
+                set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "WEATHER SYNC" : "WEATHER WAIT");
+                set_label_text_if_changed(g_weather_icon_label, "--");
             } else {
-                lv_label_set_text(g_weather_city_label, "CITY --");
-                lv_label_set_text(g_weather_info_label, "SET API KEY");
-                lv_label_set_text(g_weather_icon_label, "--");
+                set_label_text_if_changed(g_weather_city_label, "CITY --");
+                set_label_text_if_changed(g_weather_info_label, "SET API KEY");
+                set_label_text_if_changed(g_weather_icon_label, "--");
             }
             update_battery_icon(g_battery_percent);
-            lv_label_set_text(g_wifi_label, wifi);
-            lv_label_set_text(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
+            set_label_text_if_changed(g_wifi_label, wifi);
+            set_label_text_if_changed(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
             Lvgl_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000));
     }
 }
 
