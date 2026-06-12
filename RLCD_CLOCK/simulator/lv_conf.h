@@ -21,7 +21,7 @@
 
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
-#define LV_FONT_FMT_TXT_LARGE 0
+#define LV_FONT_FMT_TXT_LARGE 1
 #define LV_USE_FONT_COMPRESSED 0
 
 #define LV_USE_LABEL 1

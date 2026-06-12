@@ -2,7 +2,7 @@ idf_component_register(
     SRCS
         "main.cpp"
         "qweather_icons_36.c"
-        "zh_font_16.c"
+        "zh_font_18.c"
     INCLUDE_DIRS "."
     REQUIRES
         app_bsp
@@ -15,6 +15,7 @@ idf_component_register(
         esp_http_client
         esp_http_server
         esp_timer
+        esp_pm
         esp_driver_gpio
         json
         mbedtls)

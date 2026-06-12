@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_pm.h"
 #include "esp_sntp.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
@@ -29,7 +30,7 @@
 #include "lvgl_bsp.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
-LV_FONT_DECLARE(zh_font_16);
+LV_FONT_DECLARE(zh_font_18);
 
 static const char *TAG = "WeatherClock";
 
@@ -168,7 +169,7 @@ static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const 
     lv_obj_set_size(label, w, h);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, &zh_font_16, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &zh_font_18, LV_PART_MAIN);
     lv_obj_set_style_text_letter_space(label, 0, LV_PART_MAIN);
     return label;
 }
@@ -253,20 +254,20 @@ static void build_clock_ui()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    g_date_label = make_label(screen, 20, 18, 190, 28, "----/--/--");
-    g_week_label = make_label(screen, 242, 18, 62, 28, "---");
+    g_date_label = make_label(screen, 20, 16, 198, 30, "----/--/--");
+    g_week_label = make_label(screen, 242, 16, 68, 30, "---");
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 232, 150, 24, "本地 --.-℃");
-    g_humi_label = make_label(screen, 200, 232, 150, 24, "湿度 --.-%");
-    g_weather_city_label = make_label(screen, 20, 202, 120, 22, "城市 --");
-    g_weather_info_label = make_label(screen, 150, 202, 190, 22, "天气等待");
+    g_temp_label = make_label(screen, 20, 232, 160, 26, "本地 --.-℃");
+    g_humi_label = make_label(screen, 200, 232, 160, 26, "湿度 --.-%");
+    g_weather_city_label = make_label(screen, 20, 202, 126, 26, "城市 --");
+    g_weather_info_label = make_label(screen, 150, 202, 190, 26, "天气等待");
     g_weather_icon_label = make_label(screen, 344, 186, 42, 44, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_wifi_label = make_label(screen, 20, 270, 220, 24, "AP 192.168.4.1");
-    g_sync_label = make_label(screen, 265, 270, 120, 24, "NTP WAIT");
+    g_wifi_label = make_label(screen, 20, 270, 230, 26, "AP 192.168.4.1");
+    g_sync_label = make_label(screen, 265, 270, 120, 26, "NTP WAIT");
 
     const int y = 74;
     const int w = 42;
@@ -822,8 +823,28 @@ static void boot_button_task(void *)
             pressed_since = 0;
             triggered = false;
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
+}
+
+static void init_power_management()
+{
+#if CONFIG_PM_ENABLE
+    esp_pm_config_t pm_config = {};
+    pm_config.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    pm_config.min_freq_mhz = CONFIG_XTAL_FREQ;
+    pm_config.light_sleep_enable = true;
+
+    esp_err_t err = esp_pm_configure(&pm_config);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "power management setup failed: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "power management: max=%dMHz min=%dMHz light sleep enabled",
+                 pm_config.max_freq_mhz, pm_config.min_freq_mhz);
+    }
+#else
+    ESP_LOGW(TAG, "power management disabled in sdkconfig");
+#endif
 }
 
 static void restore_system_time_from_rtc()
@@ -1502,6 +1523,7 @@ static void ui_task(void *)
                     last_status_update = tick_now;
                 }
             }
+            lv_refr_now(nullptr);
             Lvgl_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -1535,6 +1557,7 @@ extern "C" void app_main(void)
     g_app_events = xEventGroupCreate();
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+    init_power_management();
 
     g_have_wifi_creds = load_saved_config();
     Rtc_Setup(&g_i2c, 0x51);

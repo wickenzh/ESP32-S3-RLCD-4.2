@@ -41,6 +41,7 @@ class DisplayPort {
     void RLCD_SendData(uint8_t Data);
     void RLCD_Sendbuffera(uint8_t *Data, int len);
     void RLCD_Reset(void);
+    void KeepPinsActiveInLightSleep(void);
 
   public:
     DisplayPort(int mosi, int scl, int dc, int cs, int rst, int width, int height, spi_host_device_t spihost = SPI3_HOST);

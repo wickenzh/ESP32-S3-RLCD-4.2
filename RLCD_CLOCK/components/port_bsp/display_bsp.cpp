@@ -68,6 +68,7 @@ DisplayPort::~DisplayPort() {
 
 void DisplayPort::RLCD_Init() {
     RLCD_Reset();
+    KeepPinsActiveInLightSleep();
 
     RLCD_SendCommand(0xD6);  // NVM Load Control
 	RLCD_SendData(0x17);
@@ -181,6 +182,21 @@ void DisplayPort::RLCD_Init() {
 	RLCD_SendCommand(0x29);
 
     RLCD_ColorClear(ColorWhite);
+}
+
+void DisplayPort::KeepPinsActiveInLightSleep(void) {
+    const gpio_num_t pins[] = {
+        (gpio_num_t)mosi_,
+        (gpio_num_t)scl_,
+        (gpio_num_t)dc_,
+        (gpio_num_t)cs_,
+        (gpio_num_t)rst_,
+    };
+
+    for (gpio_num_t pin : pins) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(gpio_sleep_sel_dis(pin));
+    }
+    ESP_LOGI(TAG, "keep RLCD pins active in light sleep");
 }
 
 void DisplayPort::RLCD_ColorClear(uint8_t color) {

@@ -2,9 +2,9 @@
 
 #include "lvgl.h"
 
-#define LVGL_TICK_PERIOD_MS    5
-#define LVGL_TASK_MAX_DELAY_MS 500
-#define LVGL_TASK_MIN_DELAY_MS 10
+#define LVGL_TICK_PERIOD_MS    1000
+#define LVGL_TASK_MAX_DELAY_MS 1000
+#define LVGL_TASK_MIN_DELAY_MS 100
 
 typedef void (*DispFlushCb)(struct _lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p);
 
