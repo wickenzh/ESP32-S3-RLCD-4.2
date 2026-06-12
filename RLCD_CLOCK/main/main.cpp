@@ -33,7 +33,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.22";
+static const char *APP_VERSION = "v0.0.23";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -62,7 +62,6 @@ static bool g_wifi_radio_on = false;
 static bool g_wifi_stop_requested = false;
 static bool g_setup_portal_active = false;
 static int g_last_wifi_disconnect_reason = 0;
-static esp_pm_lock_handle_t g_no_light_sleep_lock = nullptr;
 static float g_temperature = 0.0f;
 static float g_humidity = 0.0f;
 static bool g_sensor_ok = false;
@@ -932,10 +931,6 @@ static void init_power_management()
         ESP_LOGI(TAG, "power management: max=%dMHz min=%dMHz light sleep disabled",
                  pm_config.max_freq_mhz, pm_config.min_freq_mhz);
     }
-    esp_err_t lock_err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "net_sync", &g_no_light_sleep_lock);
-    if (lock_err != ESP_OK) {
-        ESP_LOGW(TAG, "no-light-sleep lock setup failed: %s", esp_err_to_name(lock_err));
-    }
 #else
     ESP_LOGW(TAG, "power management disabled in sdkconfig");
 #endif
@@ -943,16 +938,11 @@ static void init_power_management()
 
 static void acquire_network_awake_lock()
 {
-    if (g_no_light_sleep_lock) {
-        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_lock_acquire(g_no_light_sleep_lock));
-    }
+    // Light sleep is disabled while debugging RLCD stability, so no PM lock is needed here.
 }
 
 static void release_network_awake_lock()
 {
-    if (g_no_light_sleep_lock) {
-        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_lock_release(g_no_light_sleep_lock));
-    }
 }
 
 static void restore_system_time_from_rtc()
@@ -1115,7 +1105,13 @@ static esp_err_t http_get_text(const char *url, char *out, size_t out_len, const
     esp_http_client_set_header(client, "Accept", "application/json,text/plain,*/*");
     esp_http_client_set_header(client, "Accept-Encoding", "identity");
     if (api_key && api_key[0] != '\0') {
-        esp_http_client_set_header(client, "X-QW-Api-Key", api_key);
+        if (strchr(api_key, '.') != nullptr) {
+            char bearer[128];
+            snprintf(bearer, sizeof(bearer), "Bearer %s", api_key);
+            esp_http_client_set_header(client, "Authorization", bearer);
+        } else {
+            esp_http_client_set_header(client, "X-QW-Api-Key", api_key);
+        }
     }
     esp_err_t err = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
@@ -1135,6 +1131,20 @@ static const char *qweather_api_host()
 static bool qweather_uses_custom_host()
 {
     return g_qweather_api_host[0] != '\0';
+}
+
+static bool qweather_key_is_jwt()
+{
+    return strchr(g_weather_api_key, '.') != nullptr;
+}
+
+static void qweather_auth_query(char *out, size_t out_len)
+{
+    out[0] = '\0';
+    if (!g_have_weather_key || qweather_key_is_jwt()) {
+        return;
+    }
+    snprintf(out, out_len, "&key=%s", g_weather_api_key);
 }
 
 static void trim_ascii(char *text)
@@ -1250,16 +1260,20 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
         return false;
     }
 
-    char url[384];
+    char auth_query[112];
+    qweather_auth_query(auth_query, sizeof(auth_query));
+
+    char url[512];
     if (qweather_uses_custom_host()) {
         snprintf(url, sizeof(url),
-                 "https://%s/geo/v2/city/lookup?location=%s&number=1&range=cn&lang=zh",
-                 qweather_api_host(), encoded_location);
+                 "https://%s/geo/v2/city/lookup?location=%s&number=1&range=cn&lang=zh%s",
+                 qweather_api_host(), encoded_location, auth_query);
     } else {
         snprintf(url, sizeof(url),
-                 "https://geoapi.qweather.com/v2/city/lookup?location=%s&number=1&range=cn&lang=zh",
-                 encoded_location);
+                 "https://geoapi.qweather.com/v2/city/lookup?location=%s&number=1&range=cn&lang=zh%s",
+                 encoded_location, auth_query);
     }
+    ESP_LOGI(TAG, "qweather city lookup: %s via %s", location, qweather_uses_custom_host() ? qweather_api_host() : "geoapi.qweather.com");
     char response[3072] = {};
     if (http_get_text(url, response, sizeof(response), g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather city lookup http failed");
@@ -1277,6 +1291,9 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
     if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && first) {
         ok = json_copy_string(first, "id", city_id, city_id_len) &&
              json_copy_string(first, "name", city_name, city_name_len);
+        if (ok) {
+            ESP_LOGI(TAG, "qweather city resolved: %s id=%s", city_name, city_id);
+        }
     } else {
         ESP_LOGW(TAG, "qweather city lookup failed code=%s",
                  cJSON_IsString(code) ? code->valuestring : "missing");
@@ -1293,10 +1310,14 @@ static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
         return false;
     }
 
-    char url[384];
+    char auth_query[112];
+    qweather_auth_query(auth_query, sizeof(auth_query));
+
+    char url[512];
     snprintf(url, sizeof(url),
-             "https://%s/v7/weather/now?location=%s&lang=zh&unit=m",
-             qweather_api_host(), encoded_location);
+             "https://%s/v7/weather/now?location=%s&lang=zh&unit=m%s",
+             qweather_api_host(), encoded_location, auth_query);
+    ESP_LOGI(TAG, "qweather now lookup: %s via %s", city_id, qweather_api_host());
     char response[3072] = {};
     if (http_get_text(url, response, sizeof(response), g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather now http failed");
@@ -1485,9 +1506,7 @@ static void run_boot_connectivity_sync()
                        ntp_ok ? "Loading weather" : "Will retry in background");
 
     if (g_have_weather_key) {
-        bool weather_ok = perform_weather_update();
-        update_boot_screen(weather_ok ? 100 : 82, weather_ok ? "Weather synchronized" : "Weather timeout",
-                           weather_ok ? g_weather.city : "Will retry in background");
+        update_boot_screen(88, "Weather queued", "Syncing after startup");
     } else {
         update_boot_screen(100, "Weather skipped", "API Key not configured");
     }
@@ -1499,6 +1518,7 @@ static void run_boot_connectivity_sync()
 
 static void network_sync_task(void *)
 {
+    vTaskDelay(pdMS_TO_TICKS(2500));
     EventBits_t initial_bits = xEventGroupGetBits(g_app_events);
     bool boot_ntp_due = (initial_bits & kTimeSyncedBit) == 0;
     time_t next_weather_at = 0;
@@ -1731,7 +1751,7 @@ extern "C" void app_main(void)
     run_boot_connectivity_sync();
     finish_boot_screen();
 
-    xTaskCreatePinnedToCore(network_sync_task, "network_sync", 7168, nullptr, 4, nullptr, 0);
+    xTaskCreatePinnedToCore(network_sync_task, "network_sync", 12288, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(battery_task, "battery_task", 3072, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
