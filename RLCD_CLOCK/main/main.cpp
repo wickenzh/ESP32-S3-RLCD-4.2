@@ -33,7 +33,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.20";
+static const char *APP_VERSION = "v0.0.21";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -62,6 +62,7 @@ static bool g_wifi_radio_on = false;
 static bool g_wifi_stop_requested = false;
 static bool g_setup_portal_active = false;
 static int g_last_wifi_disconnect_reason = 0;
+static esp_pm_lock_handle_t g_no_light_sleep_lock = nullptr;
 static float g_temperature = 0.0f;
 static float g_humidity = 0.0f;
 static bool g_sensor_ok = false;
@@ -879,11 +880,9 @@ static void init_wifi()
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
 
-    if (g_have_wifi_creds) {
-        apply_station_config(false);
+    if (!g_have_wifi_creds) {
+        start_wifi_radio(true);
     }
-
-    start_wifi_radio(!g_have_wifi_creds);
 }
 
 static void boot_button_task(void *)
@@ -933,9 +932,27 @@ static void init_power_management()
         ESP_LOGI(TAG, "power management: max=%dMHz min=%dMHz light sleep enabled",
                  pm_config.max_freq_mhz, pm_config.min_freq_mhz);
     }
+    esp_err_t lock_err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "net_sync", &g_no_light_sleep_lock);
+    if (lock_err != ESP_OK) {
+        ESP_LOGW(TAG, "no-light-sleep lock setup failed: %s", esp_err_to_name(lock_err));
+    }
 #else
     ESP_LOGW(TAG, "power management disabled in sdkconfig");
 #endif
+}
+
+static void acquire_network_awake_lock()
+{
+    if (g_no_light_sleep_lock) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_lock_acquire(g_no_light_sleep_lock));
+    }
+}
+
+static void release_network_awake_lock()
+{
+    if (g_no_light_sleep_lock) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_lock_release(g_no_light_sleep_lock));
+    }
 }
 
 static void restore_system_time_from_rtc()
@@ -1452,11 +1469,13 @@ static void run_boot_connectivity_sync()
     }
 
     update_boot_screen(18, "Connecting Wi-Fi", g_wifi_ssid);
+    acquire_network_awake_lock();
     start_wifi_radio(false);
     if (!wait_for_wifi_connected(45000)) {
         update_boot_screen(100, "Wi-Fi timeout", "Check SSID or password");
         vTaskDelay(pdMS_TO_TICKS(1500));
         stop_wifi_radio();
+        release_network_awake_lock();
         return;
     }
 
@@ -1475,6 +1494,7 @@ static void run_boot_connectivity_sync()
 
     vTaskDelay(pdMS_TO_TICKS(1200));
     stop_wifi_radio();
+    release_network_awake_lock();
 }
 
 static void network_sync_task(void *)
@@ -1516,6 +1536,7 @@ static void network_sync_task(void *)
         }
 
         ESP_LOGI(TAG, "wifi radio on for sync: ntp=%d weather=%d", ntp_due, weather_due);
+        acquire_network_awake_lock();
         start_wifi_radio(false);
         if (wait_for_wifi_connected(45000)) {
             if (ntp_due) {
@@ -1547,6 +1568,7 @@ static void network_sync_task(void *)
             }
         }
         stop_wifi_radio();
+        release_network_awake_lock();
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
