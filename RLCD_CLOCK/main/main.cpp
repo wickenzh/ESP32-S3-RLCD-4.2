@@ -38,6 +38,7 @@ static constexpr int kWeatherReadyBit = BIT2;
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
 static Shtc3Port *g_shtc3 = nullptr;
+static i2c_master_dev_handle_t g_battery_dev = nullptr;
 static EventGroupHandle_t g_app_events;
 static httpd_handle_t g_http_server = nullptr;
 
@@ -54,6 +55,7 @@ static bool g_setup_portal_active = false;
 static float g_temperature = 0.0f;
 static float g_humidity = 0.0f;
 static bool g_sensor_ok = false;
+static int g_battery_percent = -1;
 
 struct WeatherData {
     char city[32] = {};
@@ -78,6 +80,7 @@ static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_wifi_label;
 static lv_obj_t *g_sync_label;
+static lv_obj_t *g_battery_cells[5];
 static lv_obj_t *g_colon1[2];
 static lv_obj_t *g_colon2[2];
 static SegDigit g_digits[6];
@@ -157,6 +160,58 @@ static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const 
     return label;
 }
 
+static void style_battery_part(lv_obj_t *obj, bool filled)
+{
+    lv_obj_set_style_bg_color(obj, filled ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
+}
+
+static void build_battery_icon(lv_obj_t *parent)
+{
+    lv_obj_t *frame = lv_obj_create(parent);
+    lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(frame, 318, 18);
+    lv_obj_set_size(frame, 48, 22);
+    style_battery_part(frame, false);
+
+    lv_obj_t *tip = lv_obj_create(parent);
+    lv_obj_clear_flag(tip, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(tip, 368, 24);
+    lv_obj_set_size(tip, 6, 10);
+    style_battery_part(tip, true);
+
+    const int cell_w = 6;
+    const int cell_h = 14;
+    const int gap = 3;
+    int x = 322;
+    for (int i = 0; i < 5; ++i) {
+        g_battery_cells[i] = lv_obj_create(parent);
+        lv_obj_clear_flag(g_battery_cells[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(g_battery_cells[i], x, 22);
+        lv_obj_set_size(g_battery_cells[i], cell_w, cell_h);
+        style_battery_part(g_battery_cells[i], false);
+        x += cell_w + gap;
+    }
+}
+
+static void update_battery_icon(int percent)
+{
+    int filled = 0;
+    if (percent >= 0) {
+        if (percent > 100) {
+            percent = 100;
+        }
+        filled = (percent + 19) / 20;
+    }
+    for (int i = 0; i < 5; ++i) {
+        style_battery_part(g_battery_cells[i], i < filled);
+    }
+}
+
 static void build_clock_ui()
 {
     lv_obj_t *screen = lv_scr_act();
@@ -164,7 +219,8 @@ static void build_clock_ui()
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
     g_date_label = make_label(screen, 20, 18, 190, 28, "----/--/--");
-    g_week_label = make_label(screen, 270, 18, 110, 28, "---");
+    g_week_label = make_label(screen, 242, 18, 62, 28, "---");
+    build_battery_icon(screen);
     g_temp_label = make_label(screen, 20, 232, 150, 24, "LOCAL --.-C");
     g_humi_label = make_label(screen, 200, 232, 150, 24, "RH --.-%");
     g_weather_city_label = make_label(screen, 20, 202, 120, 22, "CITY --");
@@ -572,6 +628,53 @@ static void sync_rtc_from_system_time()
     struct tm local = {};
     localtime_r(&now, &local);
     Rtc_SetTime(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
+}
+
+static void init_battery_gauge()
+{
+    i2c_device_config_t dev_cfg = {};
+    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_cfg.device_address = 0x55;
+    dev_cfg.scl_speed_hz = 400000;
+    esp_err_t err = i2c_master_bus_add_device(g_i2c.Get_I2cBusHandle(), &dev_cfg, &g_battery_dev);
+    if (err != ESP_OK) {
+        g_battery_dev = nullptr;
+        ESP_LOGW(TAG, "battery gauge init failed: %s", esp_err_to_name(err));
+    }
+}
+
+static bool read_battery_percent(int *percent)
+{
+    if (!g_battery_dev) {
+        return false;
+    }
+    uint8_t reg = 0x2C;
+    uint8_t data[2] = {};
+    esp_err_t err = (esp_err_t)g_i2c.i2c_master_write_read_dev(g_battery_dev, &reg, 1, data, sizeof(data));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "battery soc read failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    int soc = data[0] | (data[1] << 8);
+    if (soc < 0 || soc > 100) {
+        ESP_LOGW(TAG, "battery soc out of range: %d", soc);
+        return false;
+    }
+    *percent = soc;
+    return true;
+}
+
+static void battery_task(void *)
+{
+    for (;;) {
+        int percent = -1;
+        if (read_battery_percent(&percent)) {
+            g_battery_percent = percent;
+        } else {
+            g_battery_percent = -1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(60000));
+    }
 }
 
 static bool perform_ntp_sync()
@@ -984,6 +1087,7 @@ static void ui_task(void *)
                 lv_label_set_text(g_weather_info_label, "SET API KEY");
                 lv_label_set_text(g_weather_icon_label, "--");
             }
+            update_battery_icon(g_battery_percent);
             lv_label_set_text(g_wifi_label, wifi);
             lv_label_set_text(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
             Lvgl_unlock();
@@ -1024,6 +1128,7 @@ extern "C" void app_main(void)
     tzset();
     restore_system_time_from_rtc();
     g_shtc3 = new Shtc3Port(g_i2c);
+    init_battery_gauge();
     init_wifi();
 
     g_display.RLCD_Init();
@@ -1035,5 +1140,6 @@ extern "C" void app_main(void)
 
     xTaskCreatePinnedToCore(network_sync_task, "network_sync", 7168, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, nullptr, 3, nullptr, 1);
+    xTaskCreatePinnedToCore(battery_task, "battery_task", 3072, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
 }
