@@ -85,6 +85,8 @@ static lv_obj_t *g_colon1[2];
 static lv_obj_t *g_colon2[2];
 static SegDigit g_digits[6];
 
+static void apply_station_config(bool reconnect);
+
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
     lv_obj_set_style_bg_color(obj, active ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
@@ -335,6 +337,34 @@ static void form_value(const char *body, const char *key, char *out, size_t out_
     url_decode(out, out_len, encoded);
 }
 
+static void form_value_fallback(const char *body, const char *primary_key, const char *fallback_key, char *out, size_t out_len)
+{
+    form_value(body, primary_key, out, out_len);
+    if (out[0] == '\0' && fallback_key) {
+        form_value(body, fallback_key, out, out_len);
+    }
+}
+
+static void save_credentials_from_body(const char *body)
+{
+    char ssid[33] = {};
+    char pass[65] = {};
+    char api_key[96] = {};
+    form_value(body, "ssid", ssid, sizeof(ssid));
+    form_value_fallback(body, "pass", "password", pass, sizeof(pass));
+    form_value_fallback(body, "api_key", "weather", api_key, sizeof(api_key));
+    if (ssid[0] == '\0') {
+        ESP_LOGW(TAG, "provisioning ignored empty ssid");
+        return;
+    }
+    if (api_key[0] == '\0' && g_weather_api_key[0] != '\0') {
+        strlcpy(api_key, g_weather_api_key, sizeof(api_key));
+    }
+    ESP_LOGI(TAG, "provisioning saved ssid=%s", ssid);
+    save_config(ssid, pass, api_key);
+    apply_station_config(true);
+}
+
 static void html_append(char *html, size_t html_len, const char *fmt, ...)
 {
     size_t used = strlen(html);
@@ -469,19 +499,19 @@ static esp_err_t save_post_handler(httpd_req_t *req)
     }
     body[total] = '\0';
 
-    char ssid[33] = {};
-    char pass[65] = {};
-    char api_key[96] = {};
-    form_value(body, "ssid", ssid, sizeof(ssid));
-    form_value(body, "pass", pass, sizeof(pass));
-    form_value(body, "api_key", api_key, sizeof(api_key));
-    if (ssid[0] != '\0') {
-        if (api_key[0] == '\0' && g_weather_api_key[0] != '\0') {
-            strlcpy(api_key, g_weather_api_key, sizeof(api_key));
-        }
-        save_config(ssid, pass, api_key);
-        apply_station_config(true);
+    save_credentials_from_body(body);
+    const char *reply = "Saved. The clock is connecting now. You can close this page.";
+    return httpd_resp_send(req, reply, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t save_get_handler(httpd_req_t *req)
+{
+    char query[384] = {};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_sendstr(req, "Missing query.");
     }
+    save_credentials_from_body(query);
     const char *reply = "Saved. The clock is connecting now. You can close this page.";
     return httpd_resp_send(req, reply, HTTPD_RESP_USE_STRLEN);
 }
@@ -507,6 +537,12 @@ static void start_http_server()
     save.method = HTTP_POST;
     save.handler = save_post_handler;
     ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &save));
+
+    httpd_uri_t save_get = {};
+    save_get.uri = "/save";
+    save_get.method = HTTP_GET;
+    save_get.handler = save_get_handler;
+    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &save_get));
     g_setup_portal_active = true;
 }
 
