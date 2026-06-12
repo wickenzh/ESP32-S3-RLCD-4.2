@@ -17,6 +17,7 @@
 #include "esp_pm.h"
 #include "esp_sntp.h"
 #include "esp_wifi.h"
+#include "miniz.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
@@ -38,7 +39,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.30";
+static const char *APP_VERSION = "v0.0.31";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1146,6 +1147,9 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
         return ESP_OK;
     }
     HttpBuffer *buffer = (HttpBuffer *)evt->user_data;
+    if (buffer->len + 1 >= buffer->cap) {
+        return ESP_OK;
+    }
     size_t room = buffer->cap - buffer->len - 1;
     size_t copy_len = evt->data_len < room ? evt->data_len : room;
     if (copy_len > 0) {
@@ -1153,6 +1157,80 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
         buffer->len += copy_len;
         buffer->data[buffer->len] = '\0';
     }
+    return ESP_OK;
+}
+
+static bool gzip_payload_range(const uint8_t *data, size_t len, size_t *payload_offset, size_t *payload_len)
+{
+    if (len < 18 || data[0] != 0x1F || data[1] != 0x8B || data[2] != 8) {
+        return false;
+    }
+
+    uint8_t flags = data[3];
+    size_t pos = 10;
+    if (flags & 0x04) {
+        if (pos + 2 > len) return false;
+        size_t extra_len = data[pos] | (data[pos + 1] << 8);
+        pos += 2 + extra_len;
+        if (pos > len) return false;
+    }
+    if (flags & 0x08) {
+        while (pos < len && data[pos] != 0) ++pos;
+        if (++pos > len) return false;
+    }
+    if (flags & 0x10) {
+        while (pos < len && data[pos] != 0) ++pos;
+        if (++pos > len) return false;
+    }
+    if (flags & 0x02) {
+        pos += 2;
+        if (pos > len) return false;
+    }
+    if (pos + 8 > len) {
+        return false;
+    }
+
+    *payload_offset = pos;
+    *payload_len = len - pos - 8;
+    return true;
+}
+
+static esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
+{
+    if (*body_len < 3 || (uint8_t)out[0] != 0x1F || (uint8_t)out[1] != 0x8B) {
+        return ESP_OK;
+    }
+
+    size_t payload_offset = 0;
+    size_t payload_len = 0;
+    if (!gzip_payload_range((const uint8_t *)out, *body_len, &payload_offset, &payload_len)) {
+        ESP_LOGW(TAG, "gzip response header invalid len=%u", (unsigned)*body_len);
+        return ESP_FAIL;
+    }
+
+    uint8_t *compressed = (uint8_t *)malloc(*body_len);
+    if (!compressed) {
+        ESP_LOGW(TAG, "gzip response alloc failed len=%u", (unsigned)*body_len);
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(compressed, out, *body_len);
+
+    size_t written = tinfl_decompress_mem_to_mem(out,
+                                                 out_len - 1,
+                                                 compressed + payload_offset,
+                                                 payload_len,
+                                                 TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+    free(compressed);
+    if (written == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED) {
+        out[0] = '\0';
+        *body_len = 0;
+        ESP_LOGW(TAG, "gzip response decompress failed payload_len=%u", (unsigned)payload_len);
+        return ESP_FAIL;
+    }
+
+    out[written] = '\0';
+    *body_len = written;
+    ESP_LOGI(TAG, "gzip response decompressed len=%u", (unsigned)written);
     return ESP_OK;
 }
 
@@ -1182,7 +1260,7 @@ static esp_err_t http_get_text(const char *url, char *out, size_t out_len, const
         ESP_LOGW(TAG, "http get failed status=%d err=%s", status, esp_err_to_name(err));
         return err == ESP_OK ? ESP_FAIL : err;
     }
-    return ESP_OK;
+    return decode_http_body(out, out_len, &buffer.len);
 }
 
 static const char *qweather_api_host()
