@@ -13,7 +13,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.18";
+static const char *APP_VERSION = "v0.0.19";
 
 struct SegDigit {
     lv_obj_t *seg[7] = {};
@@ -101,6 +101,7 @@ static lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int
     lv_obj_set_pos(label, x, y);
     lv_obj_set_size(label, w, h);
     lv_label_set_text(label, text);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
     lv_obj_set_style_text_letter_space(label, 0, LV_PART_MAIN);
@@ -126,7 +127,7 @@ static void style_battery_part(lv_obj_t *obj, bool filled)
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(obj, 2, LV_PART_MAIN);
     lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
 }
 
@@ -135,8 +136,8 @@ static void style_battery_frame(lv_obj_t *obj)
     lv_obj_set_style_bg_color(obj, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(obj, 2, LV_PART_MAIN);
-    lv_obj_set_style_radius(obj, 5, LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(obj, 4, LV_PART_MAIN);
     lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
 }
 
@@ -144,24 +145,25 @@ static void build_battery_icon(lv_obj_t *parent)
 {
     lv_obj_t *frame = lv_obj_create(parent);
     lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(frame, 320, 18);
-    lv_obj_set_size(frame, 46, 20);
+    lv_obj_set_pos(frame, 344, 18);
+    lv_obj_set_size(frame, 31, 14);
     style_battery_frame(frame);
 
     lv_obj_t *tip = lv_obj_create(parent);
     lv_obj_clear_flag(tip, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(tip, 368, 24);
-    lv_obj_set_size(tip, 4, 8);
+    lv_obj_set_pos(tip, 377, 22);
+    lv_obj_set_size(tip, 3, 6);
     style_battery_part(tip, true);
-    lv_obj_set_style_radius(tip, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_width(tip, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(tip, 1, LV_PART_MAIN);
 
     g_battery_fill = lv_obj_create(frame);
     lv_obj_clear_flag(g_battery_fill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_battery_fill, 3, 3);
-    lv_obj_set_size(g_battery_fill, 0, 14);
+    lv_obj_set_pos(g_battery_fill, 2, 2);
+    lv_obj_set_size(g_battery_fill, 0, 10);
     style_battery_part(g_battery_fill, true);
     lv_obj_set_style_border_width(g_battery_fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(g_battery_fill, 3, LV_PART_MAIN);
+    lv_obj_set_style_radius(g_battery_fill, 2, LV_PART_MAIN);
 }
 
 static void show_boot_screen()
@@ -211,7 +213,7 @@ static void update_battery_icon(int percent)
     } else {
         filled = 0;
     }
-    int width = (filled * 40 + 99) / 100;
+    int width = (filled * 27 + 99) / 100;
     if (filled > 0 && width < 2) {
         width = 2;
     }
@@ -255,7 +257,7 @@ static void build_clock_ui()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    g_date_label = make_label(screen, 20, 16, 198, 30, "----/--/--");
+    g_date_label = make_label_with_font(screen, 20, 15, 198, 26, "----/--/--", &lv_font_montserrat_16);
     g_week_label = make_label(screen, 242, 16, 68, 30, "---");
     build_battery_icon(screen);
     g_temp_label = make_label(screen, 20, 232, 160, 26, "本地 --.-℃");
@@ -266,8 +268,8 @@ static void build_clock_ui()
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_wifi_label = make_label(screen, 20, 270, 230, 26, "SDL PREVIEW");
-    g_sync_label = make_label(screen, 265, 270, 120, 26, "NTP OK");
+    g_wifi_label = make_label_with_font(screen, 20, 270, 230, 22, "SDL PREVIEW", &lv_font_montserrat_14);
+    g_sync_label = make_label_with_font(screen, 265, 270, 120, 22, "NTP OK", &lv_font_montserrat_14);
 
     const int y = 74;
     const int w = 42;
