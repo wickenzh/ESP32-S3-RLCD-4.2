@@ -84,7 +84,7 @@ static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_wifi_label;
 static lv_obj_t *g_sync_label;
-static lv_obj_t *g_battery_cells[5];
+static lv_obj_t *g_battery_fill;
 static lv_obj_t *g_colon1[2];
 static lv_obj_t *g_colon2[2];
 static SegDigit g_digits[6];
@@ -185,32 +185,38 @@ static void style_battery_part(lv_obj_t *obj, bool filled)
     lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
 }
 
+static void style_battery_frame(lv_obj_t *obj)
+{
+    lv_obj_set_style_bg_color(obj, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(obj, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
+}
+
 static void build_battery_icon(lv_obj_t *parent)
 {
     lv_obj_t *frame = lv_obj_create(parent);
     lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(frame, 318, 18);
-    lv_obj_set_size(frame, 48, 22);
-    style_battery_part(frame, false);
+    lv_obj_set_pos(frame, 320, 18);
+    lv_obj_set_size(frame, 46, 20);
+    style_battery_frame(frame);
 
     lv_obj_t *tip = lv_obj_create(parent);
     lv_obj_clear_flag(tip, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(tip, 368, 24);
-    lv_obj_set_size(tip, 6, 10);
+    lv_obj_set_size(tip, 4, 8);
     style_battery_part(tip, true);
+    lv_obj_set_style_radius(tip, 2, LV_PART_MAIN);
 
-    const int cell_w = 6;
-    const int cell_h = 14;
-    const int gap = 3;
-    int x = 322;
-    for (int i = 0; i < 5; ++i) {
-        g_battery_cells[i] = lv_obj_create(parent);
-        lv_obj_clear_flag(g_battery_cells[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_pos(g_battery_cells[i], x, 22);
-        lv_obj_set_size(g_battery_cells[i], cell_w, cell_h);
-        style_battery_part(g_battery_cells[i], false);
-        x += cell_w + gap;
-    }
+    g_battery_fill = lv_obj_create(frame);
+    lv_obj_clear_flag(g_battery_fill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_battery_fill, 3, 3);
+    lv_obj_set_size(g_battery_fill, 0, 14);
+    style_battery_part(g_battery_fill, true);
+    lv_obj_set_style_border_width(g_battery_fill, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(g_battery_fill, 3, LV_PART_MAIN);
 }
 
 static void update_battery_icon(int percent)
@@ -226,11 +232,13 @@ static void update_battery_icon(int percent)
         if (percent > 100) {
             percent = 100;
         }
-        filled = (percent + 19) / 20;
+        filled = percent;
     }
-    for (int i = 0; i < 5; ++i) {
-        style_battery_part(g_battery_cells[i], i < filled);
+    int width = (filled * 40 + 99) / 100;
+    if (filled > 0 && width < 2) {
+        width = 2;
     }
+    lv_obj_set_width(g_battery_fill, width);
 }
 
 static void build_clock_ui()
@@ -898,6 +906,8 @@ static esp_err_t http_get_text(const char *url, char *out, size_t out_len)
     if (!client) {
         return ESP_FAIL;
     }
+    esp_http_client_set_header(client, "Accept", "application/json,text/plain,*/*");
+    esp_http_client_set_header(client, "Accept-Encoding", "identity");
     esp_err_t err = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
@@ -972,7 +982,15 @@ static void log_response_preview(const char *stage, const char *response)
             *p = ' ';
         }
     }
-    ESP_LOGW(TAG, "%s parse failed len=%u body=%s", stage, (unsigned)strlen(response), preview);
+    const unsigned char *bytes = (const unsigned char *)response;
+    ESP_LOGW(TAG, "%s parse failed len=%u head=%02x %02x %02x %02x body=%s",
+             stage,
+             (unsigned)strlen(response),
+             bytes[0],
+             bytes[1],
+             bytes[2],
+             bytes[3],
+             preview);
 }
 
 static bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size_t city_len)
@@ -1316,7 +1334,7 @@ static void update_time_ui(const struct tm &local)
 
 static void ui_task(void *)
 {
-    TickType_t last_wake = xTaskGetTickCount();
+    TickType_t last_status_update = xTaskGetTickCount() - pdMS_TO_TICKS(1000);
 
     for (;;) {
         time_t now;
@@ -1324,55 +1342,62 @@ static void ui_task(void *)
         struct tm local = {};
         localtime_r(&now, &local);
 
-        EventBits_t bits = xEventGroupGetBits(g_app_events);
-        char temp[32];
-        char humi[32];
-        if (g_sensor_ok) {
-            snprintf(temp, sizeof(temp), "本地 %.1f℃", g_temperature);
-            snprintf(humi, sizeof(humi), "湿度 %.1f%%", g_humidity);
-        } else {
-            snprintf(temp, sizeof(temp), "本地 --.-℃");
-            snprintf(humi, sizeof(humi), "湿度 --.-%%");
-        }
+        TickType_t tick_now = xTaskGetTickCount();
+        bool status_due = tick_now - last_status_update >= pdMS_TO_TICKS(1000);
 
-        char wifi[48];
-        if (bits & kWifiConnectedBit) {
-            snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA OK  AP %s" : "STA OK", g_ap_ssid);
-        } else if (g_have_wifi_creds && !g_wifi_radio_on) {
-            snprintf(wifi, sizeof(wifi), "WIFI OFF  AP OFF");
-        } else if (g_have_wifi_creds) {
-            snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA WAIT  AP %s" : "STA WAIT", g_ap_ssid);
-        } else {
-            snprintf(wifi, sizeof(wifi), "SETUP AP %s", g_ap_ssid);
-        }
-
-        if (Lvgl_lock(800)) {
+        if (Lvgl_lock(20)) {
             update_time_ui(local);
-            set_label_text_if_changed(g_temp_label, temp);
-            set_label_text_if_changed(g_humi_label, humi);
-            if (bits & kWeatherReadyBit) {
-                char city[48];
-                char weather[80];
-                snprintf(city, sizeof(city), "城市 %s", g_weather.city);
-                snprintf(weather, sizeof(weather), "%s %s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
-                set_label_text_if_changed(g_weather_city_label, city);
-                set_label_text_if_changed(g_weather_info_label, weather);
-                set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
-            } else if (g_have_weather_key) {
-                set_label_text_if_changed(g_weather_city_label, "城市 --");
-                set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "天气等待");
-                set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
-            } else {
-                set_label_text_if_changed(g_weather_city_label, "城市 --");
-                set_label_text_if_changed(g_weather_info_label, "设置 API Key");
-                set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+
+            if (status_due) {
+                EventBits_t bits = xEventGroupGetBits(g_app_events);
+                char temp[32];
+                char humi[32];
+                if (g_sensor_ok) {
+                    snprintf(temp, sizeof(temp), "本地 %.1f℃", g_temperature);
+                    snprintf(humi, sizeof(humi), "湿度 %.1f%%", g_humidity);
+                } else {
+                    snprintf(temp, sizeof(temp), "本地 --.-℃");
+                    snprintf(humi, sizeof(humi), "湿度 --.-%%");
+                }
+
+                char wifi[48];
+                if (bits & kWifiConnectedBit) {
+                    snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA OK  AP %s" : "STA OK", g_ap_ssid);
+                } else if (g_have_wifi_creds && !g_wifi_radio_on) {
+                    snprintf(wifi, sizeof(wifi), "WIFI OFF  AP OFF");
+                } else if (g_have_wifi_creds) {
+                    snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA WAIT  AP %s" : "STA WAIT", g_ap_ssid);
+                } else {
+                    snprintf(wifi, sizeof(wifi), "SETUP AP %s", g_ap_ssid);
+                }
+
+                set_label_text_if_changed(g_temp_label, temp);
+                set_label_text_if_changed(g_humi_label, humi);
+                if (bits & kWeatherReadyBit) {
+                    char city[48];
+                    char weather[80];
+                    snprintf(city, sizeof(city), "城市 %s", g_weather.city);
+                    snprintf(weather, sizeof(weather), "%s %s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
+                    set_label_text_if_changed(g_weather_city_label, city);
+                    set_label_text_if_changed(g_weather_info_label, weather);
+                    set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
+                } else if (g_have_weather_key) {
+                    set_label_text_if_changed(g_weather_city_label, "城市 --");
+                    set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "天气等待");
+                    set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                } else {
+                    set_label_text_if_changed(g_weather_city_label, "城市 --");
+                    set_label_text_if_changed(g_weather_info_label, "设置 API Key");
+                    set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                }
+                update_battery_icon(g_battery_percent);
+                set_label_text_if_changed(g_wifi_label, wifi);
+                set_label_text_if_changed(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
+                last_status_update = tick_now;
             }
-            update_battery_icon(g_battery_percent);
-            set_label_text_if_changed(g_wifi_label, wifi);
-            set_label_text_if_changed(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
             Lvgl_unlock();
         }
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 

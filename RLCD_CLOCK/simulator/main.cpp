@@ -32,7 +32,7 @@ static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_wifi_label;
 static lv_obj_t *g_sync_label;
-static lv_obj_t *g_battery_cells[5];
+static lv_obj_t *g_battery_fill;
 static lv_obj_t *g_colon1[2];
 static lv_obj_t *g_colon2[2];
 static SegDigit g_digits[6];
@@ -124,41 +124,54 @@ static void style_battery_part(lv_obj_t *obj, bool filled)
     lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
 }
 
+static void style_battery_frame(lv_obj_t *obj)
+{
+    lv_obj_set_style_bg_color(obj, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(obj, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
+}
+
 static void build_battery_icon(lv_obj_t *parent)
 {
     lv_obj_t *frame = lv_obj_create(parent);
     lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(frame, 318, 18);
-    lv_obj_set_size(frame, 48, 22);
-    style_battery_part(frame, false);
+    lv_obj_set_pos(frame, 320, 18);
+    lv_obj_set_size(frame, 46, 20);
+    style_battery_frame(frame);
 
     lv_obj_t *tip = lv_obj_create(parent);
     lv_obj_clear_flag(tip, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(tip, 368, 24);
-    lv_obj_set_size(tip, 6, 10);
+    lv_obj_set_size(tip, 4, 8);
     style_battery_part(tip, true);
+    lv_obj_set_style_radius(tip, 2, LV_PART_MAIN);
 
-    int x = 322;
-    for (int i = 0; i < 5; ++i) {
-        g_battery_cells[i] = lv_obj_create(parent);
-        lv_obj_clear_flag(g_battery_cells[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_pos(g_battery_cells[i], x, 22);
-        lv_obj_set_size(g_battery_cells[i], 6, 14);
-        style_battery_part(g_battery_cells[i], false);
-        x += 9;
-    }
+    g_battery_fill = lv_obj_create(frame);
+    lv_obj_clear_flag(g_battery_fill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_battery_fill, 3, 3);
+    lv_obj_set_size(g_battery_fill, 0, 14);
+    style_battery_part(g_battery_fill, true);
+    lv_obj_set_style_border_width(g_battery_fill, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(g_battery_fill, 3, LV_PART_MAIN);
 }
 
 static void update_battery_icon(int percent)
 {
-    int filled = 0;
+    int filled = percent;
     if (percent >= 0) {
         if (percent > 100) percent = 100;
-        filled = (percent + 19) / 20;
+        filled = percent;
+    } else {
+        filled = 0;
     }
-    for (int i = 0; i < 5; ++i) {
-        style_battery_part(g_battery_cells[i], i < filled);
+    int width = (filled * 40 + 99) / 100;
+    if (filled > 0 && width < 2) {
+        width = 2;
     }
+    lv_obj_set_width(g_battery_fill, width);
 }
 
 static uint32_t weather_icon_codepoint(const char *code)
