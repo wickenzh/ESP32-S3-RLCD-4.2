@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "lvgl.h"
+#include "dseg_digits.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
@@ -13,15 +14,11 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.27";
-static constexpr int kTimeCanvasW = 282;
-static constexpr int kTimeCanvasH = 114;
-static constexpr int kSecondCanvasW = 58;
-static constexpr int kSecondCanvasH = 54;
-
-struct SegDigit {
-    lv_obj_t *seg[7] = {};
-};
+static const char *APP_VERSION = "v0.0.28";
+static constexpr int kTimeCanvasW = 292;
+static constexpr int kTimeCanvasH = 92;
+static constexpr int kSecondCanvasW = 60;
+static constexpr int kSecondCanvasH = 40;
 
 static SDL_Window *g_window = nullptr;
 static SDL_Renderer *g_renderer = nullptr;
@@ -62,153 +59,43 @@ static lv_obj_t *make_bar(lv_obj_t *parent, int x, int y, int w, int h)
     return bar;
 }
 
-static SegDigit make_digit(lv_obj_t *parent, int x, int y, int w, int h, int t)
+static const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
 {
-    SegDigit digit;
-    digit.seg[0] = make_bar(parent, x + t, y, w - 2 * t, t);
-    digit.seg[1] = make_bar(parent, x + w - t, y + t, t, h / 2 - t);
-    digit.seg[2] = make_bar(parent, x + w - t, y + h / 2, t, h / 2 - t);
-    digit.seg[3] = make_bar(parent, x + t, y + h - t, w - 2 * t, t);
-    digit.seg[4] = make_bar(parent, x, y + h / 2, t, h / 2 - t);
-    digit.seg[5] = make_bar(parent, x, y + t, t, h / 2 - t);
-    digit.seg[6] = make_bar(parent, x + t, y + h / 2 - t / 2, w - 2 * t, t);
-    return digit;
+    const char *pos = strchr(font.chars, ch);
+    if (!pos) return nullptr;
+    return &font.glyphs[pos - font.chars];
 }
 
-static void set_digit(SegDigit &digit, int value)
+static int draw_dseg_text(lv_obj_t *canvas, const DsegFont &font, const char *text, int cursor_x, int baseline_y)
 {
-    static const bool map[10][7] = {
-        {true, true, true, true, true, true, false},
-        {false, true, true, false, false, false, false},
-        {true, true, false, true, true, false, true},
-        {true, true, true, true, false, false, true},
-        {false, true, true, false, false, true, true},
-        {true, false, true, true, false, true, true},
-        {true, false, true, true, true, true, true},
-        {true, true, true, false, false, false, false},
-        {true, true, true, true, true, true, true},
-        {true, true, true, true, false, true, true},
-    };
-    for (int i = 0; i < 7; ++i) {
-        set_obj_black(digit.seg[i], value >= 0 && value <= 9 && map[value][i]);
+    int x_cursor = cursor_x;
+    for (const char *p = text; *p; ++p) {
+        const DsegGlyph *glyph = find_dseg_glyph(font, *p);
+        if (!glyph) continue;
+        uint32_t bit = 0;
+        for (int y = 0; y < glyph->height; ++y) {
+            for (int x = 0; x < glyph->width; ++x, ++bit) {
+                uint8_t byte = font.bitmap[glyph->bitmap_offset + bit / 8];
+                if (byte & (0x80 >> (bit & 7))) {
+                    lv_canvas_set_px_color(canvas,
+                                           x_cursor + glyph->x_offset + x,
+                                           baseline_y + glyph->y_offset + y,
+                                           lv_color_black());
+                }
+            }
+        }
+        x_cursor += glyph->x_advance;
     }
-}
-
-static void set_colon(lv_obj_t *dots[2], bool active)
-{
-    set_obj_black(dots[0], active);
-    set_obj_black(dots[1], active);
-}
-
-static void draw_canvas_polygon(lv_obj_t *canvas, const lv_point_t *points, uint32_t count)
-{
-    lv_draw_rect_dsc_t dsc;
-    lv_draw_rect_dsc_init(&dsc);
-    dsc.bg_color = lv_color_black();
-    dsc.bg_opa = LV_OPA_COVER;
-    dsc.border_width = 0;
-    dsc.radius = 1;
-    lv_canvas_draw_polygon(canvas, points, count, &dsc);
-}
-
-static lv_point_t canvas_point(int x, int y)
-{
-    return {
-        .x = static_cast<lv_coord_t>(x),
-        .y = static_cast<lv_coord_t>(y),
-    };
-}
-
-static void draw_dseg_segment(lv_obj_t *canvas, int x, int y, int w, int h, int t, int seg)
-{
-    int mid = h / 2;
-    int s = t / 2 + 2;
-    lv_point_t p[4];
-    switch (seg) {
-    case 0:
-        p[0] = canvas_point(x + t + s, y); p[1] = canvas_point(x + w - t, y);
-        p[2] = canvas_point(x + w - s, y + t); p[3] = canvas_point(x + t, y + t);
-        break;
-    case 6:
-        p[0] = canvas_point(x + t + s, y + mid - t / 2); p[1] = canvas_point(x + w - t, y + mid - t / 2);
-        p[2] = canvas_point(x + w - s, y + mid + t / 2); p[3] = canvas_point(x + t, y + mid + t / 2);
-        break;
-    case 3:
-        p[0] = canvas_point(x + t + s, y + h - t); p[1] = canvas_point(x + w - t, y + h - t);
-        p[2] = canvas_point(x + w - s, y + h); p[3] = canvas_point(x + t, y + h);
-        break;
-    case 1:
-        p[0] = canvas_point(x + w - t, y + t); p[1] = canvas_point(x + w, y + t + s);
-        p[2] = canvas_point(x + w - s, y + mid - t / 2); p[3] = canvas_point(x + w - t - s, y + mid - t / 2);
-        break;
-    case 2:
-        p[0] = canvas_point(x + w - t - s, y + mid + t / 2); p[1] = canvas_point(x + w - s, y + mid + t / 2);
-        p[2] = canvas_point(x + w, y + h - t - s); p[3] = canvas_point(x + w - t, y + h - t);
-        break;
-    case 4:
-        p[0] = canvas_point(x + s, y + mid + t / 2); p[1] = canvas_point(x + t + s, y + mid + t / 2);
-        p[2] = canvas_point(x + t, y + h - t); p[3] = canvas_point(x, y + h - t - s);
-        break;
-    case 5:
-        p[0] = canvas_point(x, y + t + s); p[1] = canvas_point(x + t, y + t);
-        p[2] = canvas_point(x + t + s, y + mid - t / 2); p[3] = canvas_point(x + s, y + mid - t / 2);
-        break;
-    default:
-        return;
-    }
-    draw_canvas_polygon(canvas, p, 4);
-}
-
-static void draw_dseg_digit(lv_obj_t *canvas, int x, int y, int w, int h, int t, int value)
-{
-    static const bool map[10][7] = {
-        {true, true, true, true, true, true, false},
-        {false, true, true, false, false, false, false},
-        {true, true, false, true, true, false, true},
-        {true, true, true, true, false, false, true},
-        {false, true, true, false, false, true, true},
-        {true, false, true, true, false, true, true},
-        {true, false, true, true, true, true, true},
-        {true, true, true, false, false, false, false},
-        {true, true, true, true, true, true, true},
-        {true, true, true, true, false, true, true},
-    };
-    if (value < 0 || value > 9) return;
-    for (int i = 0; i < 7; ++i) {
-        if (map[value][i]) draw_dseg_segment(canvas, x, y, w, h, t, i);
-    }
-}
-
-static void draw_canvas_rect(lv_obj_t *canvas, int x, int y, int w, int h, int radius)
-{
-    lv_draw_rect_dsc_t dsc;
-    lv_draw_rect_dsc_init(&dsc);
-    dsc.bg_color = lv_color_black();
-    dsc.bg_opa = LV_OPA_COVER;
-    dsc.border_width = 0;
-    dsc.radius = radius;
-    lv_canvas_draw_rect(canvas, x, y, w, h, &dsc);
+    return x_cursor;
 }
 
 static void draw_time_canvas(const struct tm &local)
 {
     if (!g_time_canvas) return;
     lv_canvas_fill_bg(g_time_canvas, lv_color_white(), LV_OPA_COVER);
-    const int y = 4;
-    const int w = 54;
-    const int h = 104;
-    const int t = 10;
-    int x = 0;
-    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_hour / 10);
-    x += w + 8;
-    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_hour % 10);
-    x += w + 12;
-    draw_canvas_rect(g_time_canvas, x + 2, y + 31, 10, 10, 2);
-    draw_canvas_rect(g_time_canvas, x + 2, y + 69, 10, 10, 2);
-    x += 22;
-    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_min / 10);
-    x += w + 8;
-    draw_dseg_digit(g_time_canvas, x, y, w, h, t, local.tm_min % 10);
+    char hm[6];
+    snprintf(hm, sizeof(hm), "%02d:%02d", local.tm_hour, local.tm_min);
+    draw_dseg_text(g_time_canvas, kDSEG84Font, hm, 0, 88);
     lv_obj_invalidate(g_time_canvas);
 }
 
@@ -216,8 +103,9 @@ static void draw_second_canvas(const struct tm &local)
 {
     if (!g_second_canvas) return;
     lv_canvas_fill_bg(g_second_canvas, lv_color_white(), LV_OPA_COVER);
-    draw_dseg_digit(g_second_canvas, 0, 0, 27, 54, 5, local.tm_sec / 10);
-    draw_dseg_digit(g_second_canvas, 31, 0, 27, 54, 5, local.tm_sec % 10);
+    char ss[3];
+    snprintf(ss, sizeof(ss), "%02d", local.tm_sec);
+    draw_dseg_text(g_second_canvas, kDSEG36Font, ss, 0, 40);
     lv_obj_invalidate(g_second_canvas);
 }
 
@@ -401,7 +289,7 @@ static void build_clock_ui()
 
     g_time_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_time_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_time_canvas, 18, 62);
+    lv_obj_set_pos(g_time_canvas, 18, 76);
     lv_obj_set_size(g_time_canvas, kTimeCanvasW, kTimeCanvasH);
     lv_obj_set_style_border_width(g_time_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_time_canvas, 0, LV_PART_MAIN);
@@ -410,7 +298,7 @@ static void build_clock_ui()
 
     g_second_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_second_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_second_canvas, 322, 109);
+    lv_obj_set_pos(g_second_canvas, 320, 124);
     lv_obj_set_size(g_second_canvas, kSecondCanvasW, kSecondCanvasH);
     lv_obj_set_style_border_width(g_second_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_second_canvas, 0, LV_PART_MAIN);
