@@ -1,5 +1,7 @@
 idf_component_register(
-    SRCS "main.cpp"
+    SRCS
+        "main.cpp"
+        "qweather_icons_36.c"
     INCLUDE_DIRS "."
     REQUIRES
         app_bsp

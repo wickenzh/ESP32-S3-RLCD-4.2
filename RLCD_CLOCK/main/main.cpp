@@ -27,6 +27,8 @@
 #include "i2c_equipment.h"
 #include "lvgl_bsp.h"
 
+LV_FONT_DECLARE(qweather_icons_36);
+
 static const char *TAG = "WeatherClock";
 
 static constexpr int kDisplayWidth = 400;
@@ -241,11 +243,10 @@ static void build_clock_ui()
     g_humi_label = make_label(screen, 200, 232, 150, 24, "RH --.-%");
     g_weather_city_label = make_label(screen, 20, 202, 120, 22, "CITY --");
     g_weather_info_label = make_label(screen, 150, 202, 190, 22, "WEATHER WAIT");
-    g_weather_icon_label = make_label(screen, 348, 188, 34, 36, "--");
-    lv_obj_set_style_text_font(g_weather_icon_label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_border_width(g_weather_icon_label, 2, LV_PART_MAIN);
-    lv_obj_set_style_border_color(g_weather_icon_label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_pad_all(g_weather_icon_label, 3, LV_PART_MAIN);
+    g_weather_icon_label = make_label(screen, 344, 186, 42, 44, "");
+    lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
+    lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_wifi_label = make_label(screen, 20, 270, 220, 24, "AP 192.168.4.1");
     g_sync_label = make_label(screen, 265, 270, 120, 24, "NTP WAIT");
@@ -971,31 +972,78 @@ static bool perform_weather_update()
     return false;
 }
 
-static const char *weather_icon_text(const char *code)
+static uint32_t weather_icon_codepoint(const char *code)
 {
     int icon = atoi(code);
-    if (icon == 100 || icon == 150) {
-        return "SU";
+    if (icon >= 100 && icon <= 104) {
+        return 0xF101 + (uint32_t)(icon - 100);
     }
-    if ((icon >= 101 && icon <= 104) || (icon >= 151 && icon <= 153)) {
-        return "CL";
+    if (icon >= 150 && icon <= 153) {
+        return 0xF106 + (uint32_t)(icon - 150);
     }
-    if ((icon >= 300 && icon <= 399)) {
-        return "RA";
+    if (icon >= 300 && icon <= 318) {
+        return 0xF10A + (uint32_t)(icon - 300);
     }
-    if ((icon >= 400 && icon <= 499)) {
-        return "SN";
+    if (icon >= 350 && icon <= 351) {
+        return 0xF11D + (uint32_t)(icon - 350);
     }
-    if ((icon >= 500 && icon <= 515)) {
-        return "FG";
+    if (icon == 399) {
+        return 0xF11F;
+    }
+    if (icon >= 400 && icon <= 410) {
+        return 0xF120 + (uint32_t)(icon - 400);
+    }
+    if (icon >= 456 && icon <= 457) {
+        return 0xF12B + (uint32_t)(icon - 456);
+    }
+    if (icon == 499) {
+        return 0xF12D;
+    }
+    if (icon >= 500 && icon <= 504) {
+        return 0xF12E + (uint32_t)(icon - 500);
+    }
+    if (icon >= 507 && icon <= 515) {
+        return 0xF133 + (uint32_t)(icon - 507);
+    }
+    if (icon >= 800 && icon <= 807) {
+        return 0xF13C + (uint32_t)(icon - 800);
     }
     if (icon == 900) {
-        return "HT";
+        return 0xF144;
     }
     if (icon == 901) {
-        return "CD";
+        return 0xF145;
     }
-    return "--";
+    if (icon == 9999) {
+        return 0xF1CB;
+    }
+    return 0xF146;
+}
+
+static const char *weather_icon_text(const char *code)
+{
+    static char text[5];
+    uint32_t cp = weather_icon_codepoint(code);
+    if (cp <= 0x7F) {
+        text[0] = (char)cp;
+        text[1] = '\0';
+    } else if (cp <= 0x7FF) {
+        text[0] = (char)(0xC0 | (cp >> 6));
+        text[1] = (char)(0x80 | (cp & 0x3F));
+        text[2] = '\0';
+    } else if (cp <= 0xFFFF) {
+        text[0] = (char)(0xE0 | (cp >> 12));
+        text[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        text[2] = (char)(0x80 | (cp & 0x3F));
+        text[3] = '\0';
+    } else {
+        text[0] = (char)(0xF0 | (cp >> 18));
+        text[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+        text[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        text[3] = (char)(0x80 | (cp & 0x3F));
+        text[4] = '\0';
+    }
+    return text;
 }
 
 static bool wait_for_wifi_connected(uint32_t timeout_ms)
@@ -1167,11 +1215,11 @@ static void ui_task(void *)
             } else if (g_have_weather_key) {
                 set_label_text_if_changed(g_weather_city_label, "CITY --");
                 set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "WEATHER SYNC" : "WEATHER WAIT");
-                set_label_text_if_changed(g_weather_icon_label, "--");
+                set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
             } else {
                 set_label_text_if_changed(g_weather_city_label, "CITY --");
                 set_label_text_if_changed(g_weather_info_label, "SET API KEY");
-                set_label_text_if_changed(g_weather_icon_label, "--");
+                set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
             }
             update_battery_icon(g_battery_percent);
             set_label_text_if_changed(g_wifi_label, wifi);
