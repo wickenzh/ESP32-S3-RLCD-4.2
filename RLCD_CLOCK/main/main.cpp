@@ -710,6 +710,10 @@ static void start_wifi_radio(bool enable_setup_portal)
         apply_station_config(false);
     }
     ESP_ERROR_CHECK(esp_wifi_start());
+    esp_err_t ps_err = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    if (ps_err != ESP_OK) {
+        ESP_LOGW(TAG, "wifi power save setup failed: %s", esp_err_to_name(ps_err));
+    }
     g_wifi_radio_on = true;
     if (enable_setup_portal) {
         start_http_server();
@@ -901,7 +905,7 @@ static void sensor_task(void *)
             g_temperature = temp;
             g_humidity = humi;
         }
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(60000));
     }
 }
 
@@ -1388,7 +1392,7 @@ static void update_time_ui(const struct tm &local)
 
 static void ui_task(void *)
 {
-    TickType_t last_status_update = xTaskGetTickCount() - pdMS_TO_TICKS(1000);
+    TickType_t last_status_update = xTaskGetTickCount() - pdMS_TO_TICKS(10000);
     uint32_t last_battery_version = (uint32_t)-1;
 
     for (;;) {
@@ -1398,12 +1402,13 @@ static void ui_task(void *)
         localtime_r(&now, &local);
 
         TickType_t tick_now = xTaskGetTickCount();
-        bool status_due = tick_now - last_status_update >= pdMS_TO_TICKS(1000);
+        bool status_due = tick_now - last_status_update >= pdMS_TO_TICKS(10000);
+        bool battery_due = g_battery_version != last_battery_version;
 
-        if (Lvgl_lock(20)) {
+        if (Lvgl_lock(80)) {
             update_time_ui(local);
 
-            if (status_due) {
+            if (status_due || battery_due) {
                 EventBits_t bits = xEventGroupGetBits(g_app_events);
                 char temp[32];
                 char humi[32];
@@ -1445,17 +1450,19 @@ static void ui_task(void *)
                     set_label_text_if_changed(g_weather_info_label, "设置 API Key");
                     set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
                 }
-                if (g_battery_version != last_battery_version) {
+                if (battery_due) {
                     update_battery_icon(g_battery_percent);
                     last_battery_version = g_battery_version;
                 }
                 set_label_text_if_changed(g_wifi_label, wifi);
                 set_label_text_if_changed(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
-                last_status_update = tick_now;
+                if (status_due) {
+                    last_status_update = tick_now;
+                }
             }
             Lvgl_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -1469,7 +1476,9 @@ static void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t
             buffer++;
         }
     }
-    g_display.RLCD_Display();
+    if (lv_disp_flush_is_last(drv)) {
+        g_display.RLCD_Display();
+    }
     lv_disp_flush_ready(drv);
 }
 
