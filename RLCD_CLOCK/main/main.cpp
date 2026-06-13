@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.56";
+static const char *APP_VERSION = "v0.0.57";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -60,6 +60,9 @@ static constexpr int kBootSetupHoldMs = 20000;
 static constexpr int kSettingsHoldMs = 2000;
 static constexpr int kSettingsTimeoutMs = 5000;
 static constexpr int kSettingsManualSyncTimeoutMs = 60000;
+static constexpr int kButtonIdlePollMs = 250;
+static constexpr int kButtonActivePollMs = 100;
+static constexpr int kButtonPressedPollMs = 50;
 static constexpr int kBootAnimRunFrameMs = 50;
 static constexpr int kBootWifiConnectTimeoutMs = 5000;
 static constexpr int kBootNtpRetries = 2;
@@ -1649,7 +1652,13 @@ static void button_task(void *)
             key_pressed_since = 0;
             key_long_handled = false;
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        int delay_ms = kButtonIdlePollMs;
+        if (boot_pressed || key_pressed) {
+            delay_ms = kButtonPressedPollMs;
+        } else if (g_settings_requested || g_boot_info_requested || g_setup_portal_active) {
+            delay_ms = kButtonActivePollMs;
+        }
+        vTaskDelay(pdMS_TO_TICKS(delay_ms));
     }
 }
 
@@ -1727,15 +1736,34 @@ static void sync_rtc_from_system_time()
     Rtc_SetTime(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
 }
 
-static void init_battery_gauge()
+static void release_battery_gauge()
 {
+    if (g_battery_adc_cali_ready && g_battery_adc_cali) {
+        adc_cali_delete_scheme_curve_fitting(g_battery_adc_cali);
+    }
+    g_battery_adc_cali = nullptr;
+    g_battery_adc_cali_ready = false;
+
+    if (g_battery_adc) {
+        adc_oneshot_del_unit(g_battery_adc);
+    }
+    g_battery_adc = nullptr;
+    g_battery_adc_ready = false;
+}
+
+static bool init_battery_gauge()
+{
+    if (g_battery_adc_ready) {
+        return true;
+    }
+
     adc_oneshot_unit_init_cfg_t init_config = {};
     init_config.unit_id = ADC_UNIT_1;
     esp_err_t err = adc_oneshot_new_unit(&init_config, &g_battery_adc);
     if (err != ESP_OK) {
         g_battery_adc = nullptr;
         ESP_LOGW(TAG, "battery adc init failed: %s", esp_err_to_name(err));
-        return;
+        return false;
     }
 
     adc_oneshot_chan_cfg_t chan_config = {};
@@ -1744,7 +1772,8 @@ static void init_battery_gauge()
     err = adc_oneshot_config_channel(g_battery_adc, ADC_CHANNEL_3, &chan_config);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "battery adc channel config failed: %s", esp_err_to_name(err));
-        return;
+        release_battery_gauge();
+        return false;
     }
 
     adc_cali_curve_fitting_config_t cali_config = {};
@@ -1760,6 +1789,7 @@ static void init_battery_gauge()
     }
 
     g_battery_adc_ready = true;
+    return true;
 }
 
 static int battery_percent_from_voltage(float voltage)
@@ -1775,7 +1805,7 @@ static int battery_percent_from_voltage(float voltage)
 
 static bool read_battery_percent(int *percent)
 {
-    if (!g_battery_adc_ready) {
+    if (!init_battery_gauge()) {
         return false;
     }
 
@@ -1783,6 +1813,7 @@ static bool read_battery_percent(int *percent)
     esp_err_t err = adc_oneshot_read(g_battery_adc, ADC_CHANNEL_3, &raw);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "battery adc read failed: %s", esp_err_to_name(err));
+        release_battery_gauge();
         return false;
     }
 
@@ -1799,6 +1830,7 @@ static bool read_battery_percent(int *percent)
     ESP_LOGI(TAG, "battery adc raw=%d adc_mv=%d battery=%.3fV soc=%d%%", raw, adc_mv, voltage, soc);
     *percent = soc;
     g_battery_voltage = voltage;
+    release_battery_gauge();
     return true;
 }
 
@@ -2894,7 +2926,6 @@ extern "C" void app_main(void)
     tzset();
     restore_system_time_from_rtc();
     g_shtc3 = new Shtc3Port(g_i2c);
-    init_battery_gauge();
     init_wifi();
 
     g_display.RLCD_Init();
