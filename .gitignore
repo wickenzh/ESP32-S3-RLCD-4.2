@@ -18,3 +18,8 @@ managed_components/
 *.elf
 *.map
 *.log
+
+# Project assets that should stay versioned
+!assets/
+!assets/gif_video/
+!assets/gif_video/**

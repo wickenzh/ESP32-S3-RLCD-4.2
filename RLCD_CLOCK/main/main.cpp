@@ -39,7 +39,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.34";
+static const char *APP_VERSION = "v0.0.35";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -48,6 +48,7 @@ static constexpr int kTimeSyncedBit = BIT1;
 static constexpr int kWeatherReadyBit = BIT2;
 static constexpr int kProvisioningSyncBit = BIT3;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
+static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
@@ -75,7 +76,11 @@ static float g_temperature = 0.0f;
 static float g_humidity = 0.0f;
 static bool g_sensor_ok = false;
 static int g_battery_percent = -1;
+static float g_battery_voltage = -1.0f;
 static uint32_t g_battery_version = 0;
+static time_t g_last_ntp_sync_time = 0;
+static time_t g_last_weather_sync_time = 0;
+static volatile bool g_boot_info_requested = false;
 
 struct WeatherData {
     char city[32] = {};
@@ -104,6 +109,9 @@ static lv_color_t *g_second_canvas_buf;
 static lv_obj_t *g_boot_status_label;
 static lv_obj_t *g_boot_detail_label;
 static lv_obj_t *g_boot_progress_fill;
+static lv_obj_t *g_info_labels[5];
+static int g_last_ui_second = -1;
+static int g_last_ui_minute = -1;
 
 static void apply_station_config(bool reconnect);
 static bool wait_for_wifi_connected(uint32_t timeout_ms);
@@ -215,6 +223,54 @@ static void set_label_text_if_changed(lv_obj_t *label, const char *text)
     const char *current = lv_label_get_text(label);
     if (current == nullptr || strcmp(current, text) != 0) {
         lv_label_set_text(label, text);
+    }
+}
+
+static void format_time_or_dash(time_t value, char *out, size_t out_len)
+{
+    if (value <= 0) {
+        strlcpy(out, "--", out_len);
+        return;
+    }
+    struct tm local = {};
+    localtime_r(&value, &local);
+    if (local.tm_year + 1900 < 2024) {
+        strlcpy(out, "--", out_len);
+        return;
+    }
+    snprintf(out, out_len, "%04d-%02d-%02d %02d:%02d:%02d",
+             local.tm_year + 1900,
+             local.tm_mon + 1,
+             local.tm_mday,
+             local.tm_hour,
+             local.tm_min,
+             local.tm_sec);
+}
+
+static void clear_clock_object_refs()
+{
+    g_date_label = nullptr;
+    g_week_label = nullptr;
+    g_temp_label = nullptr;
+    g_humi_label = nullptr;
+    g_weather_city_label = nullptr;
+    g_weather_info_label = nullptr;
+    g_weather_icon_label = nullptr;
+    g_wifi_label = nullptr;
+    g_sync_label = nullptr;
+    g_time_canvas = nullptr;
+    g_second_canvas = nullptr;
+    for (lv_obj_t *&segment : g_battery_segments) {
+        segment = nullptr;
+    }
+    g_last_ui_second = -1;
+    g_last_ui_minute = -1;
+}
+
+static void clear_info_object_refs()
+{
+    for (lv_obj_t *&label : g_info_labels) {
+        label = nullptr;
     }
 }
 
@@ -342,6 +398,8 @@ static void finish_boot_screen()
 {
     if (Lvgl_lock(2000)) {
         lv_obj_clean(lv_scr_act());
+        clear_clock_object_refs();
+        clear_info_object_refs();
         g_boot_status_label = nullptr;
         g_boot_detail_label = nullptr;
         g_boot_progress_fill = nullptr;
@@ -349,6 +407,63 @@ static void finish_boot_screen()
         lv_refr_now(nullptr);
         Lvgl_unlock();
     }
+}
+
+static void build_boot_info_page()
+{
+    lv_obj_t *screen = lv_scr_act();
+    lv_obj_clean(screen);
+    clear_clock_object_refs();
+    clear_info_object_refs();
+    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = make_label_with_font(screen, 24, 18, 352, 26, "SYSTEM INFO", &lv_font_montserrat_16);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    lv_obj_t *top_line = make_bar(screen, 24, 50, 352, 3);
+    set_obj_black(top_line, true);
+
+    static const int y_positions[] = {70, 104, 138, 172, 206};
+    for (int i = 0; i < 5; ++i) {
+        g_info_labels[i] = make_label_with_font(screen, 30, y_positions[i], 340, 24, "--", &lv_font_montserrat_14);
+    }
+
+    lv_obj_t *bottom_line = make_bar(screen, 24, 238, 352, 3);
+    set_obj_black(bottom_line, true);
+
+    lv_obj_t *hint = make_label_with_font(screen, 24, 255, 352, 22, "Hold 20s for setup  |  Release to return", &lv_font_montserrat_14);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+}
+
+static void update_boot_info_page()
+{
+    char ntp[32];
+    char weather[32];
+    char line[96];
+
+    format_time_or_dash(g_last_ntp_sync_time, ntp, sizeof(ntp));
+    snprintf(line, sizeof(line), "Last NTP: %s", ntp);
+    set_label_text_if_changed(g_info_labels[0], line);
+
+    snprintf(line, sizeof(line), "WiFi: %s", g_wifi_ssid[0] ? g_wifi_ssid : "--");
+    set_label_text_if_changed(g_info_labels[1], line);
+
+    format_time_or_dash(g_last_weather_sync_time, weather, sizeof(weather));
+    snprintf(line, sizeof(line), "Last Weather: %s", weather);
+    set_label_text_if_changed(g_info_labels[2], line);
+
+    if (g_battery_percent >= 0 && g_battery_voltage >= 0.0f) {
+        snprintf(line, sizeof(line), "Battery: %d%%  %.2fV", g_battery_percent, g_battery_voltage);
+    } else if (g_battery_percent >= 0) {
+        snprintf(line, sizeof(line), "Battery: %d%%  --", g_battery_percent);
+    } else {
+        snprintf(line, sizeof(line), "Battery: --  --");
+    }
+    set_label_text_if_changed(g_info_labels[3], line);
+
+    snprintf(line, sizeof(line), "Version: %s", APP_VERSION);
+    set_label_text_if_changed(g_info_labels[4], line);
 }
 
 static void update_battery_icon(int percent)
@@ -378,6 +493,7 @@ static void update_battery_icon(int percent)
 static void build_clock_ui()
 {
     lv_obj_t *screen = lv_scr_act();
+    clear_info_object_refs();
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -926,6 +1042,7 @@ static void boot_button_task(void *)
 
     TickType_t pressed_since = 0;
     bool triggered = false;
+    bool info_requested = false;
     for (;;) {
         bool pressed = gpio_get_level(kBootButtonGpio) == 0;
         TickType_t now = xTaskGetTickCount();
@@ -933,16 +1050,28 @@ static void boot_button_task(void *)
             if (pressed_since == 0) {
                 pressed_since = now;
             }
-            if (!triggered && now - pressed_since >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
+            TickType_t held = now - pressed_since;
+            if (!info_requested && held >= pdMS_TO_TICKS(kBootInfoHoldMs)) {
+                ESP_LOGI(TAG, "boot button held for 5s, showing info page");
+                g_boot_info_requested = true;
+                info_requested = true;
+            }
+            if (!triggered && held >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
                 ESP_LOGW(TAG, "boot button held for 20s, entering setup portal");
+                g_boot_info_requested = false;
                 start_wifi_radio(true);
                 triggered = true;
             }
         } else {
+            if (info_requested && !triggered) {
+                ESP_LOGI(TAG, "boot button released before setup, returning to clock");
+                g_boot_info_requested = false;
+            }
             pressed_since = 0;
             triggered = false;
+            info_requested = false;
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -1074,6 +1203,7 @@ static bool read_battery_percent(int *percent)
     int soc = battery_percent_from_voltage(voltage);
     ESP_LOGI(TAG, "battery adc raw=%d adc_mv=%d battery=%.3fV soc=%d%%", raw, adc_mv, voltage, soc);
     *percent = soc;
+    g_battery_voltage = voltage;
     return true;
 }
 
@@ -1111,6 +1241,7 @@ static bool perform_ntp_sync()
         localtime_r(&now, &local);
         if (local.tm_year + 1900 >= 2024) {
             sync_rtc_from_system_time();
+            time(&g_last_ntp_sync_time);
             xEventGroupSetBits(g_app_events, kTimeSyncedBit);
             ESP_LOGI(TAG, "ntp synced");
             return true;
@@ -1507,6 +1638,7 @@ static bool perform_weather_update()
         }
         if (qweather_fetch_now(city_id, &next)) {
             g_weather = next;
+            time(&g_last_weather_sync_time);
             xEventGroupSetBits(g_app_events, kWeatherReadyBit);
             ESP_LOGI(TAG, "weather updated: %s %s %sC %s%% icon=%s",
                      g_weather.city, g_weather.text, g_weather.temp, g_weather.humidity, g_weather.icon);
@@ -1738,16 +1870,14 @@ static void network_sync_task(void *)
 
 static void update_time_ui(const struct tm &local)
 {
-    static int last_second = -1;
-    static int last_minute = -1;
     int minute_key = local.tm_hour * 60 + local.tm_min;
-    if (minute_key != last_minute) {
+    if (minute_key != g_last_ui_minute) {
         draw_time_canvas(local);
-        last_minute = minute_key;
+        g_last_ui_minute = minute_key;
     }
-    if (local.tm_sec != last_second) {
+    if (local.tm_sec != g_last_ui_second) {
         draw_second_canvas(local);
-        last_second = local.tm_sec;
+        g_last_ui_second = local.tm_sec;
     }
 
     char date[32];
@@ -1762,6 +1892,7 @@ static void ui_task(void *)
 {
     TickType_t last_status_update = xTaskGetTickCount() - pdMS_TO_TICKS(10000);
     uint32_t last_battery_version = (uint32_t)-1;
+    bool info_page_visible = false;
 
     for (;;) {
         time_t now;
@@ -1774,6 +1905,27 @@ static void ui_task(void *)
         bool battery_due = g_battery_version != last_battery_version;
 
         if (Lvgl_lock(80)) {
+            bool info_requested = g_boot_info_requested;
+            if (info_requested) {
+                if (!info_page_visible) {
+                    build_boot_info_page();
+                    info_page_visible = true;
+                }
+                update_boot_info_page();
+                lv_refr_now(nullptr);
+                Lvgl_unlock();
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
+            if (info_page_visible) {
+                lv_obj_clean(lv_scr_act());
+                clear_clock_object_refs();
+                build_clock_ui();
+                info_page_visible = false;
+                status_due = true;
+                battery_due = true;
+            }
+
             update_time_ui(local);
 
             if (status_due || battery_due) {
