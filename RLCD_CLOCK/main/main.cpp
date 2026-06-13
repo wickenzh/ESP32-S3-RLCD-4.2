@@ -41,7 +41,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.44";
+static const char *APP_VERSION = "v0.0.45";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -55,10 +55,10 @@ static constexpr int kBootSetupHoldMs = 20000;
 static constexpr int kBootAnimRunFrameMs = 50;
 static constexpr int kBootAnimFinishFrameMs = 10;
 static constexpr int kBootWifiConnectTimeoutMs = 5000;
-static constexpr int kBootNtpRetries = 4;
-static constexpr int kBootSyncBudgetMs = 6000;
+static constexpr int kBootNtpRetries = 2;
+static constexpr int kBootStartupBudgetMs = 6000;
 static constexpr int kHttpDefaultTimeoutMs = 10000;
-static constexpr int kHttpBootTimeoutMs = 1600;
+static constexpr int kHttpBootTimeoutMs = 2500;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
@@ -1833,53 +1833,58 @@ static bool is_time_valid(struct tm *local_out = nullptr)
 
 static void run_boot_connectivity_sync()
 {
-    g_boot_sync_deadline_us = esp_timer_get_time() + (int64_t)kBootSyncBudgetMs * 1000;
     if (!g_have_wifi_creds) {
         char detail[64];
         snprintf(detail, sizeof(detail), "Setup AP: %s", g_ap_ssid);
         update_boot_screen(100, "Setup mode", detail);
         vTaskDelay(pdMS_TO_TICKS(1500));
-        g_boot_sync_deadline_us = 0;
         return;
     }
 
     update_boot_screen(18, "Connecting Wi-Fi", g_wifi_ssid);
     acquire_network_awake_lock();
+    g_boot_sync_deadline_us = esp_timer_get_time() + (int64_t)kBootStartupBudgetMs * 1000;
     start_wifi_radio(false);
-    uint32_t wifi_timeout_ms = kBootWifiConnectTimeoutMs;
     int remaining_ms = boot_sync_remaining_ms();
-    if (remaining_ms > 0 && remaining_ms < (int)wifi_timeout_ms) {
-        wifi_timeout_ms = remaining_ms;
-    }
+    uint32_t wifi_timeout_ms = remaining_ms > 0 && remaining_ms < kBootWifiConnectTimeoutMs
+                                   ? remaining_ms
+                                   : kBootWifiConnectTimeoutMs;
     if (!wait_for_wifi_connected(wifi_timeout_ms)) {
         update_boot_screen(100, "Wi-Fi timeout", "Check SSID or password");
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(200));
         stop_wifi_radio();
         release_network_awake_lock();
         g_boot_sync_deadline_us = 0;
         return;
     }
 
-    update_boot_screen(42, "Wi-Fi connected", "Synchronizing time");
-    bool ntp_ok = perform_ntp_sync(kBootNtpRetries);
-    update_boot_screen(ntp_ok ? 68 : 58, ntp_ok ? "Time synchronized" : "NTP timeout",
-                       ntp_ok ? "Loading weather" : "Will retry in background");
-
-    if (g_have_weather_key) {
+    update_boot_screen(42, "Wi-Fi connected", "Loading weather");
+    remaining_ms = boot_sync_remaining_ms();
+    if (g_have_weather_key && remaining_ms > 250) {
         bool weather_ok = false;
-        if (boot_sync_remaining_ms() > 250) {
-            int previous_timeout = g_http_timeout_ms;
-            g_http_timeout_ms = kHttpBootTimeoutMs;
-            update_boot_screen(78, "Loading weather", "Fetching API data");
-            weather_ok = perform_weather_update();
-            g_http_timeout_ms = previous_timeout;
-        }
-        update_boot_screen(weather_ok ? 100 : 88,
+        int previous_timeout = g_http_timeout_ms;
+        g_http_timeout_ms = kHttpBootTimeoutMs;
+        update_boot_screen(58, "Loading weather", "Fetching API data");
+        weather_ok = perform_weather_update();
+        g_http_timeout_ms = previous_timeout;
+        update_boot_screen(weather_ok ? 76 : 68,
                            weather_ok ? "Weather ready" : "Weather retry later",
-                           weather_ok ? "Starting clock" : "Syncing in background");
+                           weather_ok ? "Synchronizing time" : "Will sync in background");
+    } else if (g_have_weather_key) {
+        update_boot_screen(68, "Weather retry later", "Starting clock");
     } else {
-        update_boot_screen(100, "Weather skipped", "API Key not configured");
+        update_boot_screen(58, "Weather skipped", "API Key not configured");
     }
+
+    bool ntp_ok = false;
+    remaining_ms = boot_sync_remaining_ms();
+    if (remaining_ms > 600) {
+        update_boot_screen(82, "Synchronizing time", "Short NTP check");
+        ntp_ok = perform_ntp_sync(kBootNtpRetries);
+    }
+    update_boot_screen(100,
+                       ntp_ok ? "Time synchronized" : "NTP retry later",
+                       "Starting clock");
 
     vTaskDelay(pdMS_TO_TICKS(200));
     stop_wifi_radio();
