@@ -15,12 +15,13 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.42";
+static const char *APP_VERSION = "v0.0.43";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
 static constexpr int kSecondCanvasH = 40;
-static constexpr int kBootAnimFrameMs = 25;
+static constexpr int kBootAnimRunFrameMs = 50;
+static constexpr int kBootAnimFinishFrameMs = 10;
 
 static SDL_Window *g_window = nullptr;
 static SDL_Renderer *g_renderer = nullptr;
@@ -297,10 +298,10 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 258, 170, 28, "本地 --.-℃");
+    g_temp_label = make_label(screen, 20, 258, 170, 28, "温度 --.-℃");
     g_humi_label = make_label(screen, 205, 258, 170, 28, "湿度 --.-%");
-    g_weather_city_label = make_label(screen, 20, 216, 140, 28, "城市 --");
-    g_weather_info_label = make_label(screen, 166, 216, 174, 28, "天气等待");
+    g_weather_city_label = make_label(screen, 20, 216, 152, 28, "--");
+    g_weather_info_label = make_label(screen, 178, 216, 162, 28, "天气等待");
     g_weather_icon_label = make_label(screen, 344, 204, 42, 44, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
@@ -416,7 +417,7 @@ int main(int, char **)
         uint32_t now_tick = SDL_GetTicks();
         lv_tick_inc(now_tick - boot_last_tick);
         boot_last_tick = now_tick;
-        if (now_tick - boot_last_frame_tick >= kBootAnimFrameMs) {
+        if (now_tick - boot_last_frame_tick >= kBootAnimRunFrameMs) {
             boot_last_frame_tick = now_tick;
             boot_anim_frame = (boot_anim_frame + 1) % BOOT_ANIM_FRAME_COUNT;
         }
@@ -427,7 +428,7 @@ int main(int, char **)
     for (int frame = boot_anim_frame + 1; frame < BOOT_ANIM_FRAME_COUNT; ++frame) {
         draw_boot_anim_frame_index(frame);
         lv_timer_handler();
-        SDL_Delay(kBootAnimFrameMs);
+        SDL_Delay(kBootAnimFinishFrameMs);
     }
     draw_boot_anim_frame_index(BOOT_ANIM_FRAME_COUNT - 1);
     lv_timer_handler();
@@ -435,9 +436,9 @@ int main(int, char **)
     lv_obj_clean(lv_scr_act());
     g_boot_anim_canvas = nullptr;
     build_clock_ui();
-    set_label_text_if_changed(g_temp_label, "本地 24.6℃");
+    set_label_text_if_changed(g_temp_label, "温度 24.6℃");
     set_label_text_if_changed(g_humi_label, "湿度 58.0%");
-    set_label_text_if_changed(g_weather_city_label, "城市 杭州");
+    set_label_text_if_changed(g_weather_city_label, "杭州");
     set_label_text_if_changed(g_weather_info_label, "晴 26℃ 58%");
     set_label_text_if_changed(g_weather_icon_label, weather_icon_text("100"));
     update_battery_icon(76);

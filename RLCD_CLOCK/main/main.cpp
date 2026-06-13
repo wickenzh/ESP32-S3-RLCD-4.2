@@ -41,7 +41,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.42";
+static const char *APP_VERSION = "v0.0.43";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -52,7 +52,8 @@ static constexpr int kProvisioningSyncBit = BIT3;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
-static constexpr int kBootAnimFrameMs = 25;
+static constexpr int kBootAnimRunFrameMs = 50;
+static constexpr int kBootAnimFinishFrameMs = 10;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
@@ -306,7 +307,7 @@ static void boot_anim_task(void *)
             Lvgl_unlock();
         }
         frame = (frame + 1) % BOOT_ANIM_FRAME_COUNT;
-        vTaskDelay(pdMS_TO_TICKS(kBootAnimFrameMs));
+        vTaskDelay(pdMS_TO_TICKS(kBootAnimRunFrameMs));
     }
     g_boot_anim_task_handle = nullptr;
     vTaskDelete(nullptr);
@@ -325,7 +326,7 @@ static void finish_boot_anim_to_last_frame()
             lv_refr_now(nullptr);
             Lvgl_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(kBootAnimFrameMs));
+        vTaskDelay(pdMS_TO_TICKS(kBootAnimFinishFrameMs));
     }
     if (Lvgl_lock(200)) {
         draw_boot_anim_frame_index(BOOT_ANIM_FRAME_COUNT - 1);
@@ -556,10 +557,10 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 258, 170, 28, "本地 --.-℃");
+    g_temp_label = make_label(screen, 20, 258, 170, 28, "温度 --.-℃");
     g_humi_label = make_label(screen, 205, 258, 170, 28, "湿度 --.-%");
-    g_weather_city_label = make_label(screen, 20, 216, 140, 28, "城市 --");
-    g_weather_info_label = make_label(screen, 166, 216, 174, 28, "天气等待");
+    g_weather_city_label = make_label(screen, 20, 216, 152, 28, "--");
+    g_weather_info_label = make_label(screen, 178, 216, 162, 28, "天气等待");
     g_weather_icon_label = make_label(screen, 344, 204, 42, 44, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
@@ -1834,7 +1835,7 @@ static void run_boot_connectivity_sync()
         update_boot_screen(100, "Weather skipped", "API Key not configured");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1200));
+    vTaskDelay(pdMS_TO_TICKS(200));
     stop_wifi_radio();
     release_network_awake_lock();
 }
@@ -1988,10 +1989,10 @@ static void ui_task(void *)
                 char temp[32];
                 char humi[32];
                 if (g_sensor_ok) {
-                    snprintf(temp, sizeof(temp), "本地 %.1f℃", g_temperature);
+                    snprintf(temp, sizeof(temp), "温度 %.1f℃", g_temperature);
                     snprintf(humi, sizeof(humi), "湿度 %.1f%%", g_humidity);
                 } else {
-                    snprintf(temp, sizeof(temp), "本地 --.-℃");
+                    snprintf(temp, sizeof(temp), "温度 --.-℃");
                     snprintf(humi, sizeof(humi), "湿度 --.-%%");
                 }
 
@@ -2000,17 +2001,17 @@ static void ui_task(void *)
                 if (bits & kWeatherReadyBit) {
                     char city[48];
                     char weather[80];
-                    snprintf(city, sizeof(city), "城市 %s", g_weather.city);
+                    snprintf(city, sizeof(city), "%s", g_weather.city);
                     snprintf(weather, sizeof(weather), "%s %s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
                     set_label_text_if_changed(g_weather_city_label, city);
                     set_label_text_if_changed(g_weather_info_label, weather);
                     set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
                 } else if (g_have_weather_key) {
-                    set_label_text_if_changed(g_weather_city_label, "城市 --");
+                    set_label_text_if_changed(g_weather_city_label, "--");
                     set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "天气等待");
                     set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
                 } else {
-                    set_label_text_if_changed(g_weather_city_label, "城市 --");
+                    set_label_text_if_changed(g_weather_city_label, "--");
                     set_label_text_if_changed(g_weather_info_label, "设置 API Key");
                     set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
                 }
