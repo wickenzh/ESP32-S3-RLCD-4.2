@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.55";
+static const char *APP_VERSION = "v0.0.56";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1896,7 +1896,9 @@ static void housekeeping_task(void *)
             sample_battery();
             next_battery = now + pdMS_TO_TICKS(5 * 60 * 1000);
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        TickType_t next_wake = next_sensor < next_battery ? next_sensor : next_battery;
+        TickType_t delay_ticks = next_wake > now ? next_wake - now : pdMS_TO_TICKS(1000);
+        vTaskDelay(delay_ticks);
     }
 }
 
@@ -2690,6 +2692,7 @@ static void ui_task(void *)
         bool setup_due = g_setup_portal_active != setup_panel_visible;
 
         if (Lvgl_lock(80)) {
+            bool refresh_now = false;
             bool info_requested = g_boot_info_requested;
             bool settings_requested = g_settings_requested;
             if (info_requested && !settings_requested) {
@@ -2713,6 +2716,7 @@ static void ui_task(void *)
                 battery_due = true;
                 g_last_ui_second = -1;
                 g_last_ui_minute = -1;
+                refresh_now = true;
             }
 
             if (settings_requested) {
@@ -2770,12 +2774,19 @@ static void ui_task(void *)
                 battery_due = true;
                 g_last_ui_second = -1;
                 g_last_ui_minute = -1;
+                refresh_now = true;
             }
 
             if (is_system_time_plausible(&local)) {
+                int previous_second = g_last_ui_second;
+                int previous_minute = g_last_ui_minute;
                 update_time_ui(local);
+                if (g_last_ui_second != previous_second || g_last_ui_minute != previous_minute) {
+                    refresh_now = true;
+                }
             } else {
                 set_label_text_if_changed(g_date_label, "----/--/-- / 星期-");
+                refresh_now = true;
             }
 
             if (status_due || battery_due || setup_due) {
@@ -2785,6 +2796,7 @@ static void ui_task(void *)
                     set_lower_panel_visible(!setup_active);
                     setup_panel_visible = setup_active;
                     status_due = true;
+                    refresh_now = true;
                 }
                 if (setup_active) {
                     update_setup_status_panel();
@@ -2835,8 +2847,11 @@ static void ui_task(void *)
                 if (status_due) {
                     last_status_update = tick_now;
                 }
+                refresh_now = true;
             }
-            lv_refr_now(nullptr);
+            if (refresh_now) {
+                lv_refr_now(nullptr);
+            }
             Lvgl_unlock();
         }
         vTaskDelay(delay_to_next_second());

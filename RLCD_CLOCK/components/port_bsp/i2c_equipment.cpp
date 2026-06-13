@@ -161,11 +161,9 @@ uint8_t Shtc3Port::Shtc3_ReadTempHumi(float *t,float *h) {
     error = Shtc3_GetTempAndHumiPolling(t, h);
     if (error != NO_ERROR) {
         ESP_LOGW("shtc3", "error:%d", error);
-    } else {
-        return 0;
     }
     Shtc3_Sleep();
-    return 1;
+    return error == NO_ERROR ? 0 : 1;
 }
 
 static i2c_master_dev_handle_t I2cRTCdev = NULL;
