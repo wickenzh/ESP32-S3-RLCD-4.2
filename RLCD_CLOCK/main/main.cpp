@@ -15,6 +15,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_pm.h"
+#include "esp_timer.h"
 #include "esp_sntp.h"
 #include "esp_wifi.h"
 #include "miniz.h"
@@ -40,7 +41,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.38";
+static const char *APP_VERSION = "v0.0.39";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -51,6 +52,8 @@ static constexpr int kProvisioningSyncBit = BIT3;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
+static constexpr int kBootAnimFrameMs = 100;
+static constexpr int kBootFinalHoldMs = 2500;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
@@ -110,7 +113,6 @@ static lv_obj_t *g_boot_anim_canvas;
 static lv_color_t *g_boot_anim_canvas_buf;
 static lv_obj_t *g_info_labels[5];
 static volatile bool g_boot_anim_running = false;
-static volatile int g_boot_anim_progress = 0;
 static TaskHandle_t g_boot_anim_task_handle = nullptr;
 static int g_last_ui_second = -1;
 static int g_last_ui_minute = -1;
@@ -273,16 +275,6 @@ static void clear_info_object_refs()
     }
 }
 
-static int boot_anim_frame_for_percent(int percent)
-{
-    if (percent < 0) {
-        percent = 0;
-    } else if (percent > 100) {
-        percent = 100;
-    }
-    return (percent * (BOOT_ANIM_FRAME_COUNT - 1) + 50) / 100;
-}
-
 static void draw_boot_anim_frame_index(int frame)
 {
     if (!g_boot_anim_canvas) {
@@ -304,28 +296,16 @@ static void draw_boot_anim_frame_index(int frame)
     lv_obj_invalidate(g_boot_anim_canvas);
 }
 
-static void draw_boot_anim_frame(int percent)
-{
-    draw_boot_anim_frame_index(boot_anim_frame_for_percent(percent));
-}
-
 static void boot_anim_task(void *)
 {
     int frame = 0;
     while (g_boot_anim_running) {
-        int max_frame = boot_anim_frame_for_percent(g_boot_anim_progress);
-        if (max_frame < 1) {
-            max_frame = 1;
-        }
-        if (frame > max_frame) {
-            frame = 0;
-        }
         if (Lvgl_lock(100)) {
             draw_boot_anim_frame_index(frame);
             Lvgl_unlock();
         }
-        frame = (frame + 1) % (max_frame + 1);
-        vTaskDelay(pdMS_TO_TICKS(160));
+        frame = (frame + 1) % BOOT_ANIM_FRAME_COUNT;
+        vTaskDelay(pdMS_TO_TICKS(kBootAnimFrameMs));
     }
     g_boot_anim_task_handle = nullptr;
     vTaskDelete(nullptr);
@@ -426,7 +406,7 @@ static void show_boot_screen()
                              BOOT_ANIM_HEIGHT,
                              LV_IMG_CF_TRUE_COLOR);
         lv_canvas_fill_bg(g_boot_anim_canvas, lv_color_white(), LV_OPA_COVER);
-        draw_boot_anim_frame(0);
+        draw_boot_anim_frame_index(0);
     }
 
     lv_refr_now(nullptr);
@@ -439,7 +419,6 @@ static void update_boot_screen(int percent, const char *status, const char *deta
     } else if (percent > 100) {
         percent = 100;
     }
-    g_boot_anim_progress = percent;
     if (Lvgl_lock(2000)) {
         if (g_boot_status_label) {
             set_label_text_if_changed(g_boot_status_label, status);
@@ -2070,10 +2049,18 @@ extern "C" void app_main(void)
         show_boot_screen();
         Lvgl_unlock();
     }
-    g_boot_anim_progress = 0;
+    int64_t boot_anim_start_us = esp_timer_get_time();
     g_boot_anim_running = true;
     xTaskCreatePinnedToCore(boot_anim_task, "boot_anim_task", 4096, nullptr, 4, &g_boot_anim_task_handle, 1);
     run_boot_connectivity_sync();
+    update_boot_screen(100, "Ready", "Starting clock");
+    int64_t boot_anim_elapsed_ms = (esp_timer_get_time() - boot_anim_start_us) / 1000;
+    int hold_ms = kBootFinalHoldMs;
+    int min_cycle_ms = BOOT_ANIM_FRAME_COUNT * kBootAnimFrameMs;
+    if (boot_anim_elapsed_ms + hold_ms < min_cycle_ms) {
+        hold_ms = (int)(min_cycle_ms - boot_anim_elapsed_ms);
+    }
+    vTaskDelay(pdMS_TO_TICKS(hold_ms));
     g_boot_anim_running = false;
     while (g_boot_anim_task_handle) {
         vTaskDelay(pdMS_TO_TICKS(20));

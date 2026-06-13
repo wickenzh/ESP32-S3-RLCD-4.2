@@ -15,11 +15,12 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.38";
+static const char *APP_VERSION = "v0.0.39";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
 static constexpr int kSecondCanvasH = 40;
+static constexpr int kBootAnimFrameMs = 100;
 
 static SDL_Window *g_window = nullptr;
 static SDL_Renderer *g_renderer = nullptr;
@@ -135,16 +136,6 @@ static void set_label_text_if_changed(lv_obj_t *label, const char *text)
     }
 }
 
-static int boot_anim_frame_for_percent(int percent)
-{
-    if (percent < 0) {
-        percent = 0;
-    } else if (percent > 100) {
-        percent = 100;
-    }
-    return (percent * (BOOT_ANIM_FRAME_COUNT - 1) + 50) / 100;
-}
-
 static void draw_boot_anim_frame_index(int frame)
 {
     if (!g_boot_anim_canvas) return;
@@ -162,11 +153,6 @@ static void draw_boot_anim_frame_index(int frame)
         }
     }
     lv_obj_invalidate(g_boot_anim_canvas);
-}
-
-static void draw_boot_anim_frame(int percent)
-{
-    draw_boot_anim_frame_index(boot_anim_frame_for_percent(percent));
 }
 
 static void style_battery_part(lv_obj_t *obj, bool filled)
@@ -252,7 +238,7 @@ static void show_boot_screen()
                          BOOT_ANIM_HEIGHT,
                          LV_IMG_CF_TRUE_COLOR);
     lv_canvas_fill_bg(g_boot_anim_canvas, lv_color_white(), LV_OPA_COVER);
-    draw_boot_anim_frame(0);
+    draw_boot_anim_frame_index(0);
 }
 
 static void update_battery_icon(int percent)
@@ -426,18 +412,13 @@ int main(int, char **)
     uint32_t boot_last_tick = boot_start;
     uint32_t boot_last_frame_tick = boot_start;
     int boot_anim_frame = 0;
-    while (SDL_GetTicks() - boot_start < 2500) {
+    while (SDL_GetTicks() - boot_start < 5700) {
         uint32_t now_tick = SDL_GetTicks();
         lv_tick_inc(now_tick - boot_last_tick);
         boot_last_tick = now_tick;
-        int percent = (int)(((now_tick - boot_start) * 100u) / 2500u);
-        int max_frame = boot_anim_frame_for_percent(percent);
-        if (max_frame < 1) {
-            max_frame = 1;
-        }
-        if (now_tick - boot_last_frame_tick >= 80) {
+        if (now_tick - boot_last_frame_tick >= kBootAnimFrameMs) {
             boot_last_frame_tick = now_tick;
-            boot_anim_frame = (boot_anim_frame + 1) % (max_frame + 1);
+            boot_anim_frame = (boot_anim_frame + 1) % BOOT_ANIM_FRAME_COUNT;
         }
         draw_boot_anim_frame_index(boot_anim_frame);
         lv_timer_handler();
