@@ -8,7 +8,7 @@ extern "C" {
 
 #define BOOT_ANIM_WIDTH 112
 #define BOOT_ANIM_HEIGHT 112
-#define BOOT_ANIM_FRAME_COUNT 32
+#define BOOT_ANIM_FRAME_COUNT 96
 #define BOOT_ANIM_BYTES_PER_FRAME 1568
 
 extern const uint8_t boot_anim_frames[BOOT_ANIM_FRAME_COUNT][BOOT_ANIM_BYTES_PER_FRAME];
