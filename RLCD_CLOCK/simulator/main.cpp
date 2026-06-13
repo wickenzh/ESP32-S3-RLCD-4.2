@@ -17,7 +17,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.48";
+static const char *APP_VERSION = "v0.0.49";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -40,6 +40,8 @@ static lv_obj_t *g_time_canvas;
 static lv_obj_t *g_second_canvas;
 static lv_obj_t *g_status_gif_canvas;
 static lv_obj_t *g_boot_anim_canvas;
+static lv_obj_t *g_day_progress_segments[60];
+static lv_obj_t *g_second_progress_segments[60];
 static std::vector<lv_color_t> g_time_canvas_pixels(kTimeCanvasW * kTimeCanvasH);
 static std::vector<lv_color_t> g_second_canvas_pixels(kSecondCanvasW * kSecondCanvasH);
 static std::vector<lv_color_t> g_status_gif_canvas_pixels(STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT);
@@ -62,6 +64,45 @@ static lv_obj_t *make_bar(lv_obj_t *parent, int x, int y, int w, int h)
     lv_obj_set_style_pad_all(bar, 0, LV_PART_MAIN);
     set_obj_black(bar, false);
     return bar;
+}
+
+static void style_progress_segment(lv_obj_t *obj, bool filled)
+{
+    lv_obj_set_style_bg_color(obj, filled ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
+}
+
+static void build_progress_row(lv_obj_t *parent, lv_obj_t **segments, int y)
+{
+    static constexpr int kSegmentX = 20;
+    static constexpr int kSegmentW = 5;
+    static constexpr int kSegmentH = 3;
+    static constexpr int kSegmentGap = 1;
+    for (int i = 0; i < 60; ++i) {
+        segments[i] = lv_obj_create(parent);
+        lv_obj_clear_flag(segments[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(segments[i], kSegmentX + i * (kSegmentW + kSegmentGap), y);
+        lv_obj_set_size(segments[i], kSegmentW, kSegmentH);
+        style_progress_segment(segments[i], false);
+    }
+}
+
+static void update_progress_row(lv_obj_t **segments, int filled)
+{
+    if (filled < 0) {
+        filled = 0;
+    } else if (filled > 60) {
+        filled = 60;
+    }
+    for (int i = 0; i < 60; ++i) {
+        if (segments[i]) {
+            style_progress_segment(segments[i], i < filled);
+        }
+    }
 }
 
 static const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
@@ -320,14 +361,14 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
-    g_weather_city_label = make_label(screen, 26, 196, 106, 22, "--");
+    g_weather_city_label = make_label(screen, 24, 198, 76, 22, "--");
     lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_weather_icon_label = make_label(screen, 28, 224, 38, 42, "");
+    g_weather_icon_label = make_label(screen, 101, 194, 34, 38, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_weather_info_label = make_label(screen, 68, 216, 64, 54, "天气等待");
+    g_weather_info_label = make_label(screen, 24, 225, 76, 50, "天气等待");
     lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(g_weather_info_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
@@ -369,6 +410,8 @@ static void build_clock_ui()
 
     lv_obj_t *top_line = make_bar(screen, 18, 54, 364, 4);
     lv_obj_t *bottom_line = make_bar(screen, 18, 184, 364, 4);
+    build_progress_row(screen, g_day_progress_segments, 59);
+    build_progress_row(screen, g_second_progress_segments, 180);
     lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
     lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
     set_obj_black(top_line, true);
@@ -385,11 +428,15 @@ static void update_time_ui(const struct tm &local)
     if (minute_key != last_minute) {
         last_minute = minute_key;
         draw_time_canvas(local);
+        int day_seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
+        int day_filled = (day_seconds * 60) / (24 * 3600);
+        update_progress_row(g_day_progress_segments, day_filled);
     }
     if (local.tm_sec != last_second) {
         last_second = local.tm_sec;
         draw_second_canvas(local);
         draw_status_gif_frame(local.tm_sec % STATUS_GIF_FRAME_COUNT);
+        update_progress_row(g_second_progress_segments, local.tm_sec + 1);
     }
 
     static const char *week_days[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
