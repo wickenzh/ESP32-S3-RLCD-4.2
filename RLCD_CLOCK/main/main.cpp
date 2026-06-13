@@ -41,7 +41,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.41";
+static const char *APP_VERSION = "v0.0.42";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -52,7 +52,7 @@ static constexpr int kProvisioningSyncBit = BIT3;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
-static constexpr int kBootAnimFrameMs = 50;
+static constexpr int kBootAnimFrameMs = 25;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
