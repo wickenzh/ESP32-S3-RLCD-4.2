@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.49";
+static const char *APP_VERSION = "v0.0.50";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -50,9 +50,15 @@ static constexpr int kWifiConnectedBit = BIT0;
 static constexpr int kTimeSyncedBit = BIT1;
 static constexpr int kWeatherReadyBit = BIT2;
 static constexpr int kProvisioningSyncBit = BIT3;
+static constexpr int kManualNtpSyncBit = BIT4;
+static constexpr int kManualWeatherSyncBit = BIT5;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
+static constexpr gpio_num_t kKeyButtonGpio = GPIO_NUM_18;
+static constexpr const char *kSetupApPassword = "12345678";
 static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
+static constexpr int kSettingsHoldMs = 2000;
+static constexpr int kSettingsTimeoutMs = 5000;
 static constexpr int kBootAnimRunFrameMs = 50;
 static constexpr int kBootWifiConnectTimeoutMs = 5000;
 static constexpr int kBootNtpRetries = 2;
@@ -76,8 +82,10 @@ static char g_wifi_ssid[33] = {};
 static char g_wifi_pass[65] = {};
 static char g_weather_api_key[96] = {};
 static char g_ap_ssid[33] = {};
+static char g_sta_ip[16] = {};
 static bool g_have_wifi_creds = false;
 static bool g_have_weather_key = false;
+static bool g_hourly_chime_enabled = false;
 static bool g_ntp_started = false;
 static bool g_wifi_radio_on = false;
 static bool g_wifi_stop_requested = false;
@@ -94,6 +102,10 @@ static uint32_t g_battery_version = 0;
 static time_t g_last_ntp_sync_time = 0;
 static time_t g_last_weather_sync_time = 0;
 static volatile bool g_boot_info_requested = false;
+static volatile bool g_settings_requested = false;
+static volatile int g_settings_selection = 0;
+static volatile uint32_t g_settings_action_seq = 0;
+static volatile TickType_t g_settings_last_activity_tick = 0;
 
 struct WeatherData {
     char city[32] = {};
@@ -120,11 +132,14 @@ static lv_obj_t *g_status_gif_canvas;
 static lv_color_t *g_status_gif_canvas_buf;
 static lv_obj_t *g_day_progress_segments[60];
 static lv_obj_t *g_second_progress_segments[60];
+static lv_obj_t *g_lower_panel_objects[11];
+static lv_obj_t *g_setup_status_labels[6];
 static lv_obj_t *g_boot_status_label;
 static lv_obj_t *g_boot_detail_label;
 static lv_obj_t *g_boot_anim_canvas;
 static lv_color_t *g_boot_anim_canvas_buf;
 static lv_obj_t *g_info_labels[5];
+static lv_obj_t *g_settings_labels[4];
 static volatile bool g_boot_anim_running = false;
 static volatile int g_boot_anim_current_frame = 0;
 static TaskHandle_t g_boot_anim_task_handle = nullptr;
@@ -347,6 +362,12 @@ static void clear_clock_object_refs()
     for (lv_obj_t *&segment : g_battery_segments) {
         segment = nullptr;
     }
+    for (lv_obj_t *&obj : g_lower_panel_objects) {
+        obj = nullptr;
+    }
+    for (lv_obj_t *&label : g_setup_status_labels) {
+        label = nullptr;
+    }
     g_last_ui_second = -1;
     g_last_ui_minute = -1;
 }
@@ -355,6 +376,43 @@ static void clear_info_object_refs()
 {
     for (lv_obj_t *&label : g_info_labels) {
         label = nullptr;
+    }
+    for (lv_obj_t *&label : g_settings_labels) {
+        label = nullptr;
+    }
+}
+
+static void remember_lower_panel_object(lv_obj_t *obj)
+{
+    for (lv_obj_t *&slot : g_lower_panel_objects) {
+        if (!slot) {
+            slot = obj;
+            return;
+        }
+    }
+}
+
+static void set_lower_panel_visible(bool visible)
+{
+    for (lv_obj_t *obj : g_lower_panel_objects) {
+        if (!obj) {
+            continue;
+        }
+        if (visible) {
+            lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    for (lv_obj_t *label : g_setup_status_labels) {
+        if (!label) {
+            continue;
+        }
+        if (visible) {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -598,6 +656,91 @@ static void update_boot_info_page()
     set_label_text_if_changed(g_info_labels[4], line);
 }
 
+static void style_settings_item(lv_obj_t *label, bool selected)
+{
+    lv_obj_set_style_bg_color(label, selected ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(label, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, selected ? lv_color_white() : lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_color(label, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(label, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(label, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(label, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(label, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(label, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(label, 5, LV_PART_MAIN);
+}
+
+static void build_settings_page()
+{
+    lv_obj_t *screen = lv_scr_act();
+    lv_obj_clean(screen);
+    clear_clock_object_refs();
+    clear_info_object_refs();
+    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = make_label(screen, 24, 18, 352, 28, "设置");
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
+    set_obj_black(top_line, true);
+
+    static const int y_positions[] = {72, 118, 164, 210};
+    for (int i = 0; i < 4; ++i) {
+        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 34, "--");
+        lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    }
+
+    lv_obj_t *hint = make_label_with_font(screen, 24, 260, 352, 22, "KEY: Select    BOOT: OK", &lv_font_montserrat_14);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+}
+
+static void update_settings_page()
+{
+    char chime[40];
+    snprintf(chime, sizeof(chime), "整点报时 %s", g_hourly_chime_enabled ? "ON" : "OFF");
+    const char *items[] = {
+        chime,
+        "同步时间",
+        "同步天气",
+        "恢复出厂设置",
+    };
+    int selected = g_settings_selection;
+    if (selected < 0 || selected > 3) {
+        selected = 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+        if (g_settings_labels[i]) {
+            set_label_text_if_changed(g_settings_labels[i], items[i]);
+            style_settings_item(g_settings_labels[i], i == selected);
+        }
+    }
+}
+
+static void update_setup_status_panel()
+{
+    char line[96];
+    if (!g_setup_status_labels[0]) {
+        return;
+    }
+    set_label_text_if_changed(g_setup_status_labels[0], "Setup Mode");
+    snprintf(line, sizeof(line), "AP SSID: %s", g_ap_ssid[0] ? g_ap_ssid : "--");
+    set_label_text_if_changed(g_setup_status_labels[1], line);
+    snprintf(line, sizeof(line), "AP Password: %s", kSetupApPassword);
+    set_label_text_if_changed(g_setup_status_labels[2], line);
+    set_label_text_if_changed(g_setup_status_labels[3], "Portal IP: 192.168.4.1");
+    snprintf(line, sizeof(line), "STA SSID: %s", g_wifi_ssid[0] ? g_wifi_ssid : "--");
+    set_label_text_if_changed(g_setup_status_labels[4], line);
+    if (g_sta_ip[0]) {
+        snprintf(line, sizeof(line), "STA IP: %s", g_sta_ip);
+    } else if (g_last_wifi_disconnect_reason) {
+        snprintf(line, sizeof(line), "STA IP: --  reason %d", g_last_wifi_disconnect_reason);
+    } else {
+        snprintf(line, sizeof(line), "STA IP: --");
+    }
+    set_label_text_if_changed(g_setup_status_labels[5], line);
+}
+
 static void update_battery_icon(int percent)
 {
     int filled = 0;
@@ -627,18 +770,23 @@ static void build_clock_ui()
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
     g_weather_city_label = make_label(screen, 24, 198, 76, 22, "--");
+    remember_lower_panel_object(g_weather_city_label);
     lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_weather_icon_label = make_label(screen, 101, 194, 34, 38, "");
+    remember_lower_panel_object(g_weather_icon_label);
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_weather_info_label = make_label(screen, 24, 225, 76, 50, "天气等待");
+    remember_lower_panel_object(g_weather_info_label);
     lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(g_weather_info_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     g_temp_label = make_label(screen, 152, 214, 96, 28, "温度 --.-℃");
     g_humi_label = make_label(screen, 152, 246, 96, 28, "湿度 --.-%");
+    remember_lower_panel_object(g_temp_label);
+    remember_lower_panel_object(g_humi_label);
     lv_obj_set_style_text_align(g_temp_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_humi_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     constexpr int canvas_w = 292;
@@ -690,6 +838,7 @@ static void build_clock_ui()
         }
     }
     g_status_gif_canvas = lv_canvas_create(screen);
+    remember_lower_panel_object(g_status_gif_canvas);
     lv_obj_clear_flag(g_status_gif_canvas, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(g_status_gif_canvas, 279, 196);
     lv_obj_set_size(g_status_gif_canvas, STATUS_GIF_WIDTH, STATUS_GIF_HEIGHT);
@@ -711,10 +860,32 @@ static void build_clock_ui()
     build_progress_row(screen, g_second_progress_segments, 180);
     lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
     lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
+    remember_lower_panel_object(panel_sep_a);
+    remember_lower_panel_object(panel_sep_b);
     set_obj_black(top_line, true);
     set_obj_black(bottom_line, true);
     set_obj_black(panel_sep_a, true);
     set_obj_black(panel_sep_b, true);
+
+    static const int setup_y[] = {194, 212, 230, 248, 266, 284};
+    static const char *setup_text[] = {
+        "Setup Mode",
+        "AP SSID: --",
+        "AP Password: --",
+        "Portal IP: 192.168.4.1",
+        "STA SSID: --",
+        "STA IP: --",
+    };
+    for (int i = 0; i < 6; ++i) {
+        g_setup_status_labels[i] = make_label_with_font(screen,
+                                                        26,
+                                                        setup_y[i],
+                                                        348,
+                                                        18,
+                                                        setup_text[i],
+                                                        &lv_font_montserrat_14);
+        lv_obj_add_flag(g_setup_status_labels[i], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static bool load_saved_config()
@@ -729,8 +900,11 @@ static bool load_saved_config()
     esp_err_t ssid_err = nvs_get_str(nvs, "ssid", g_wifi_ssid, &ssid_len);
     esp_err_t pass_err = nvs_get_str(nvs, "pass", g_wifi_pass, &pass_len);
     esp_err_t key_err = nvs_get_str(nvs, "api_key", g_weather_api_key, &key_len);
+    uint8_t chime = 0;
+    (void)nvs_get_u8(nvs, "hourly_chime", &chime);
     nvs_close(nvs);
     g_have_weather_key = key_err == ESP_OK && g_weather_api_key[0] != '\0';
+    g_hourly_chime_enabled = chime != 0;
     return ssid_err == ESP_OK && pass_err == ESP_OK && g_wifi_ssid[0] != '\0';
 }
 
@@ -749,6 +923,35 @@ static void save_config(const char *ssid, const char *pass, const char *api_key)
     strlcpy(g_weather_api_key, api_key, sizeof(g_weather_api_key));
     g_have_wifi_creds = true;
     g_have_weather_key = g_weather_api_key[0] != '\0';
+}
+
+static void save_hourly_chime_setting()
+{
+    nvs_handle_t nvs;
+    ESP_ERROR_CHECK(nvs_open("wifi", NVS_READWRITE, &nvs));
+    ESP_ERROR_CHECK(nvs_set_u8(nvs, "hourly_chime", g_hourly_chime_enabled ? 1 : 0));
+    ESP_ERROR_CHECK(nvs_commit(nvs));
+    nvs_close(nvs);
+}
+
+static void clear_saved_config()
+{
+    nvs_handle_t nvs;
+    if (nvs_open("wifi", NVS_READWRITE, &nvs) == ESP_OK) {
+        (void)nvs_erase_key(nvs, "ssid");
+        (void)nvs_erase_key(nvs, "pass");
+        (void)nvs_erase_key(nvs, "api_key");
+        (void)nvs_erase_key(nvs, "api_host");
+        ESP_ERROR_CHECK(nvs_commit(nvs));
+        nvs_close(nvs);
+    }
+    g_wifi_ssid[0] = '\0';
+    g_wifi_pass[0] = '\0';
+    g_weather_api_key[0] = '\0';
+    g_sta_ip[0] = '\0';
+    g_have_wifi_creds = false;
+    g_have_weather_key = false;
+    xEventGroupClearBits(g_app_events, kWifiConnectedBit | kWeatherReadyBit);
 }
 
 static void url_decode(char *dst, size_t dst_len, const char *src)
@@ -1144,6 +1347,7 @@ static void wifi_event_handler(void *, esp_event_base_t event_base, int32_t even
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
         g_last_wifi_disconnect_reason = event ? event->reason : -1;
+        g_sta_ip[0] = '\0';
         ESP_LOGW(TAG, "wifi disconnected, reason=%d", event ? event->reason : -1);
         xEventGroupClearBits(g_app_events, kWifiConnectedBit);
         if (g_have_wifi_creds && g_wifi_radio_on && !g_wifi_stop_requested) {
@@ -1155,6 +1359,7 @@ static void wifi_event_handler(void *, esp_event_base_t event_base, int32_t even
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "got ip: " IPSTR, IP2STR(&event->ip_info.ip));
+        snprintf(g_sta_ip, sizeof(g_sta_ip), IPSTR, IP2STR(&event->ip_info.ip));
         xEventGroupSetBits(g_app_events, kWifiConnectedBit);
     }
 }
@@ -1176,7 +1381,7 @@ static void init_wifi()
 
     wifi_config_t ap_config = {};
     strlcpy((char *)ap_config.ap.ssid, g_ap_ssid, sizeof(ap_config.ap.ssid));
-    strlcpy((char *)ap_config.ap.password, "12345678", sizeof(ap_config.ap.password));
+    strlcpy((char *)ap_config.ap.password, kSetupApPassword, sizeof(ap_config.ap.password));
     ap_config.ap.ssid_len = strlen(g_ap_ssid);
     ap_config.ap.channel = 1;
     ap_config.ap.max_connection = 4;
@@ -1210,18 +1415,25 @@ static void boot_button_task(void *)
                 pressed_since = now;
             }
             TickType_t held = now - pressed_since;
-            if (!info_requested && held >= pdMS_TO_TICKS(kBootInfoHoldMs)) {
+            if (!g_settings_requested && !info_requested && held >= pdMS_TO_TICKS(kBootInfoHoldMs)) {
                 ESP_LOGI(TAG, "boot button held for 5s, showing info page");
                 g_boot_info_requested = true;
                 info_requested = true;
             }
-            if (!triggered && held >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
+            if (!g_settings_requested && !triggered && held >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
                 ESP_LOGW(TAG, "boot button held for 20s, entering setup portal");
                 g_boot_info_requested = false;
                 start_wifi_radio(true);
                 triggered = true;
             }
         } else {
+            if (pressed_since != 0 && g_settings_requested && !triggered) {
+                TickType_t held = now - pressed_since;
+                if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
+                    g_settings_action_seq = g_settings_action_seq + 1;
+                    g_settings_last_activity_tick = now;
+                }
+            }
             if (info_requested && !triggered) {
                 ESP_LOGI(TAG, "boot button released before setup, returning to clock");
                 g_boot_info_requested = false;
@@ -1231,6 +1443,48 @@ static void boot_button_task(void *)
             info_requested = false;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+static void key_button_task(void *)
+{
+    gpio_config_t button = {};
+    button.intr_type = GPIO_INTR_DISABLE;
+    button.mode = GPIO_MODE_INPUT;
+    button.pin_bit_mask = 1ULL << kKeyButtonGpio;
+    button.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    button.pull_up_en = GPIO_PULLUP_ENABLE;
+    ESP_ERROR_CHECK(gpio_config(&button));
+
+    TickType_t pressed_since = 0;
+    bool long_handled = false;
+    for (;;) {
+        bool pressed = gpio_get_level(kKeyButtonGpio) == 0;
+        TickType_t now = xTaskGetTickCount();
+        if (pressed) {
+            if (pressed_since == 0) {
+                pressed_since = now;
+                long_handled = false;
+            }
+            if (!long_handled && now - pressed_since >= pdMS_TO_TICKS(kSettingsHoldMs)) {
+                ESP_LOGI(TAG, "key button held for 2s, showing settings page");
+                g_boot_info_requested = false;
+                g_settings_requested = true;
+                g_settings_last_activity_tick = now;
+                long_handled = true;
+            }
+        } else {
+            if (pressed_since != 0 && !long_handled && g_settings_requested) {
+                TickType_t held = now - pressed_since;
+                if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
+                    g_settings_selection = (g_settings_selection + 1) % 4;
+                    g_settings_last_activity_tick = now;
+                }
+            }
+            pressed_since = 0;
+            long_handled = false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
@@ -2041,6 +2295,8 @@ static void network_sync_task(void *)
         }
         EventBits_t loop_bits = xEventGroupGetBits(g_app_events);
         bool provisioning_sync_due = (loop_bits & kProvisioningSyncBit) != 0;
+        bool manual_ntp_due = (loop_bits & kManualNtpSyncBit) != 0;
+        bool manual_weather_due = (loop_bits & kManualWeatherSyncBit) != 0;
         if (g_setup_portal_active && !provisioning_sync_due) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
@@ -2054,8 +2310,8 @@ static void network_sync_task(void *)
                                 local.tm_yday != last_midnight_ntp_yday;
         time_t now;
         time(&now);
-        bool weather_due = g_have_weather_key && (provisioning_sync_due || next_weather_at == 0 || now >= next_weather_at);
-        bool ntp_due = (provisioning_sync_due || boot_ntp_due || midnight_ntp_due) && now >= next_ntp_retry_at;
+        bool weather_due = g_have_weather_key && (manual_weather_due || provisioning_sync_due || next_weather_at == 0 || now >= next_weather_at);
+        bool ntp_due = (manual_ntp_due || provisioning_sync_due || boot_ntp_due || midnight_ntp_due) && now >= next_ntp_retry_at;
 
         if (!ntp_due && !weather_due) {
             vTaskDelay(pdMS_TO_TICKS(10000));
@@ -2086,6 +2342,12 @@ static void network_sync_task(void *)
             if (provisioning_sync_due) {
                 xEventGroupClearBits(g_app_events, kProvisioningSyncBit);
             }
+            if (manual_ntp_due) {
+                xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
+            }
+            if (manual_weather_due) {
+                xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
+            }
         } else {
             ESP_LOGW(TAG, "wifi connect timeout during sync window");
             if (ntp_due) {
@@ -2103,8 +2365,14 @@ static void network_sync_task(void *)
     }
 }
 
+static void play_hourly_chime(int hour)
+{
+    ESP_LOGI(TAG, "hourly chime trigger: %02d:00 (audio driver placeholder)", hour);
+}
+
 static void update_time_ui(const struct tm &local)
 {
+    static int last_chime_hour_key = -1;
     int minute_key = local.tm_hour * 60 + local.tm_min;
     if (minute_key != g_last_ui_minute) {
         draw_time_canvas(local);
@@ -2128,6 +2396,44 @@ static void update_time_ui(const struct tm &local)
              local.tm_mday,
              week_days[local.tm_wday]);
     set_label_text_if_changed(g_date_label, date);
+
+    int hour_key = local.tm_yday * 24 + local.tm_hour;
+    if (g_hourly_chime_enabled && local.tm_min == 0 && local.tm_sec <= 2 && hour_key != last_chime_hour_key) {
+        last_chime_hour_key = hour_key;
+        play_hourly_chime(local.tm_hour);
+    }
+}
+
+static void handle_settings_action()
+{
+    int selected = g_settings_selection;
+    if (selected < 0 || selected > 3) {
+        selected = 0;
+    }
+    g_settings_last_activity_tick = xTaskGetTickCount();
+    switch (selected) {
+    case 0:
+        g_hourly_chime_enabled = !g_hourly_chime_enabled;
+        save_hourly_chime_setting();
+        ESP_LOGI(TAG, "hourly chime %s", g_hourly_chime_enabled ? "enabled" : "disabled");
+        break;
+    case 1:
+        ESP_LOGI(TAG, "manual ntp sync requested");
+        xEventGroupSetBits(g_app_events, kManualNtpSyncBit);
+        break;
+    case 2:
+        ESP_LOGI(TAG, "manual weather sync requested");
+        xEventGroupSetBits(g_app_events, kManualWeatherSyncBit);
+        break;
+    case 3:
+        ESP_LOGW(TAG, "factory reset requested from settings");
+        g_settings_requested = false;
+        clear_saved_config();
+        start_wifi_radio(true);
+        break;
+    default:
+        break;
+    }
 }
 
 static void ui_task(void *)
@@ -2135,6 +2441,9 @@ static void ui_task(void *)
     TickType_t last_status_update = xTaskGetTickCount() - pdMS_TO_TICKS(10000);
     uint32_t last_battery_version = (uint32_t)-1;
     bool info_page_visible = false;
+    bool settings_page_visible = false;
+    bool setup_panel_visible = false;
+    uint32_t last_settings_action_seq = g_settings_action_seq;
 
     for (;;) {
         time_t now;
@@ -2145,13 +2454,16 @@ static void ui_task(void *)
         TickType_t tick_now = xTaskGetTickCount();
         bool status_due = tick_now - last_status_update >= pdMS_TO_TICKS(10000);
         bool battery_due = g_battery_version != last_battery_version;
+        bool setup_due = g_setup_portal_active != setup_panel_visible;
 
         if (Lvgl_lock(80)) {
             bool info_requested = g_boot_info_requested;
-            if (info_requested) {
+            bool settings_requested = g_settings_requested;
+            if (info_requested && !settings_requested) {
                 if (!info_page_visible) {
                     build_boot_info_page();
                     info_page_visible = true;
+                    settings_page_visible = false;
                 }
                 update_boot_info_page();
                 lv_refr_now(nullptr);
@@ -2164,6 +2476,45 @@ static void ui_task(void *)
                 clear_clock_object_refs();
                 build_clock_ui();
                 info_page_visible = false;
+                setup_panel_visible = false;
+                status_due = true;
+                battery_due = true;
+            }
+
+            if (settings_requested) {
+                if (!settings_page_visible) {
+                    build_settings_page();
+                    settings_page_visible = true;
+                    setup_panel_visible = false;
+                }
+                if (g_settings_action_seq != last_settings_action_seq) {
+                    last_settings_action_seq = g_settings_action_seq;
+                    handle_settings_action();
+                    settings_requested = g_settings_requested;
+                }
+                if (settings_requested) {
+                    TickType_t last_activity = g_settings_last_activity_tick;
+                    if (last_activity != 0 && tick_now - last_activity >= pdMS_TO_TICKS(kSettingsTimeoutMs)) {
+                        ESP_LOGI(TAG, "settings timeout, returning to clock");
+                        g_settings_requested = false;
+                        settings_requested = false;
+                    }
+                }
+                if (settings_requested) {
+                    update_settings_page();
+                    lv_refr_now(nullptr);
+                    Lvgl_unlock();
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    continue;
+                }
+            }
+
+            if (settings_page_visible) {
+                lv_obj_clean(lv_scr_act());
+                clear_clock_object_refs();
+                build_clock_ui();
+                settings_page_visible = false;
+                setup_panel_visible = false;
                 status_due = true;
                 battery_due = true;
             }
@@ -2174,8 +2525,17 @@ static void ui_task(void *)
                 set_label_text_if_changed(g_date_label, "----/--/-- / 星期-");
             }
 
-            if (status_due || battery_due) {
+            if (status_due || battery_due || setup_due) {
                 EventBits_t bits = xEventGroupGetBits(g_app_events);
+                bool setup_active = g_setup_portal_active;
+                if (setup_active != setup_panel_visible) {
+                    set_lower_panel_visible(!setup_active);
+                    setup_panel_visible = setup_active;
+                    status_due = true;
+                }
+                if (setup_active) {
+                    update_setup_status_panel();
+                }
                 char temp[32];
                 char humi[32];
                 if (g_sensor_ok) {
@@ -2186,24 +2546,26 @@ static void ui_task(void *)
                     snprintf(humi, sizeof(humi), "湿度 --.-%%");
                 }
 
-                set_label_text_if_changed(g_temp_label, temp);
-                set_label_text_if_changed(g_humi_label, humi);
-                if (bits & kWeatherReadyBit) {
-                    char city[48];
-                    char weather[80];
-                    snprintf(city, sizeof(city), "%s", g_weather.city);
-                    snprintf(weather, sizeof(weather), "%s\n%s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
-                    set_label_text_if_changed(g_weather_city_label, city);
-                    set_label_text_if_changed(g_weather_info_label, weather);
-                    set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
-                } else if (g_have_weather_key) {
-                    set_label_text_if_changed(g_weather_city_label, "--");
-                    set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "天气等待");
-                    set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
-                } else {
-                    set_label_text_if_changed(g_weather_city_label, "--");
-                    set_label_text_if_changed(g_weather_info_label, "设置 API Key");
-                    set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                if (!setup_active) {
+                    set_label_text_if_changed(g_temp_label, temp);
+                    set_label_text_if_changed(g_humi_label, humi);
+                    if (bits & kWeatherReadyBit) {
+                        char city[48];
+                        char weather[80];
+                        snprintf(city, sizeof(city), "%s", g_weather.city);
+                        snprintf(weather, sizeof(weather), "%s\n%s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
+                        set_label_text_if_changed(g_weather_city_label, city);
+                        set_label_text_if_changed(g_weather_info_label, weather);
+                        set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
+                    } else if (g_have_weather_key) {
+                        set_label_text_if_changed(g_weather_city_label, "--");
+                        set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "天气等待");
+                        set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                    } else {
+                        set_label_text_if_changed(g_weather_city_label, "--");
+                        set_label_text_if_changed(g_weather_info_label, "设置 API Key");
+                        set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                    }
                 }
                 if (battery_due) {
                     update_battery_icon(g_battery_percent);
@@ -2295,4 +2657,5 @@ extern "C" void app_main(void)
     xTaskCreatePinnedToCore(battery_task, "battery_task", 3072, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(boot_button_task, "boot_button", 2048, nullptr, 2, nullptr, 1);
+    xTaskCreatePinnedToCore(key_button_task, "key_button", 2048, nullptr, 2, nullptr, 1);
 }

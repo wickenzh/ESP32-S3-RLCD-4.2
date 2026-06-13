@@ -17,7 +17,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.49";
+static const char *APP_VERSION = "v0.0.50";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -42,6 +42,9 @@ static lv_obj_t *g_status_gif_canvas;
 static lv_obj_t *g_boot_anim_canvas;
 static lv_obj_t *g_day_progress_segments[60];
 static lv_obj_t *g_second_progress_segments[60];
+static lv_obj_t *g_lower_panel_objects[11];
+static lv_obj_t *g_setup_status_labels[6];
+static lv_obj_t *g_settings_labels[4];
 static std::vector<lv_color_t> g_time_canvas_pixels(kTimeCanvasW * kTimeCanvasH);
 static std::vector<lv_color_t> g_second_canvas_pixels(kSecondCanvasW * kSecondCanvasH);
 static std::vector<lv_color_t> g_status_gif_canvas_pixels(STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT);
@@ -190,6 +193,30 @@ static lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int
 static lv_obj_t *make_label(lv_obj_t *parent, int x, int y, int w, int h, const char *text)
 {
     return make_label_with_font(parent, x, y, w, h, text, &zh_font_16);
+}
+
+static void remember_lower_panel_object(lv_obj_t *obj)
+{
+    for (lv_obj_t *&slot : g_lower_panel_objects) {
+        if (!slot) {
+            slot = obj;
+            return;
+        }
+    }
+}
+
+static void set_lower_panel_visible(bool visible)
+{
+    for (lv_obj_t *obj : g_lower_panel_objects) {
+        if (!obj) continue;
+        if (visible) lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    }
+    for (lv_obj_t *label : g_setup_status_labels) {
+        if (!label) continue;
+        if (visible) lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -362,18 +389,23 @@ static void build_clock_ui()
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
     g_weather_city_label = make_label(screen, 24, 198, 76, 22, "--");
+    remember_lower_panel_object(g_weather_city_label);
     lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_weather_icon_label = make_label(screen, 101, 194, 34, 38, "");
+    remember_lower_panel_object(g_weather_icon_label);
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_weather_info_label = make_label(screen, 24, 225, 76, 50, "天气等待");
+    remember_lower_panel_object(g_weather_info_label);
     lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(g_weather_info_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     g_temp_label = make_label(screen, 152, 214, 96, 28, "温度 --.-℃");
     g_humi_label = make_label(screen, 152, 246, 96, 28, "湿度 --.-%");
+    remember_lower_panel_object(g_temp_label);
+    remember_lower_panel_object(g_humi_label);
     lv_obj_set_style_text_align(g_temp_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_humi_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_time_canvas = lv_canvas_create(screen);
@@ -395,6 +427,7 @@ static void build_clock_ui()
     lv_canvas_fill_bg(g_second_canvas, lv_color_white(), LV_OPA_COVER);
 
     g_status_gif_canvas = lv_canvas_create(screen);
+    remember_lower_panel_object(g_status_gif_canvas);
     lv_obj_clear_flag(g_status_gif_canvas, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(g_status_gif_canvas, 279, 196);
     lv_obj_set_size(g_status_gif_canvas, STATUS_GIF_WIDTH, STATUS_GIF_HEIGHT);
@@ -414,10 +447,65 @@ static void build_clock_ui()
     build_progress_row(screen, g_second_progress_segments, 180);
     lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
     lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
+    remember_lower_panel_object(panel_sep_a);
+    remember_lower_panel_object(panel_sep_b);
     set_obj_black(top_line, true);
     set_obj_black(bottom_line, true);
     set_obj_black(panel_sep_a, true);
     set_obj_black(panel_sep_b, true);
+
+    static const int setup_y[] = {194, 212, 230, 248, 266, 284};
+    static const char *setup_text[] = {
+        "Setup Mode",
+        "AP SSID: WeatherClock-ABCD",
+        "AP Password: 12345678",
+        "Portal IP: 192.168.4.1",
+        "STA SSID: HomeWiFi",
+        "STA IP: --",
+    };
+    for (int i = 0; i < 6; ++i) {
+        g_setup_status_labels[i] = make_label_with_font(screen, 26, setup_y[i], 348, 18, setup_text[i], &lv_font_montserrat_14);
+        lv_obj_add_flag(g_setup_status_labels[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void style_settings_item(lv_obj_t *label, bool selected)
+{
+    lv_obj_set_style_bg_color(label, selected ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(label, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, selected ? lv_color_white() : lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_color(label, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(label, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(label, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(label, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(label, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(label, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(label, 5, LV_PART_MAIN);
+}
+
+static void build_settings_page()
+{
+    lv_obj_t *screen = lv_scr_act();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = make_label(screen, 24, 18, 352, 28, "设置");
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
+    set_obj_black(top_line, true);
+
+    const char *items[] = {"整点报时 ON", "同步时间", "同步天气", "恢复出厂设置"};
+    static const int y_positions[] = {72, 118, 164, 210};
+    for (int i = 0; i < 4; ++i) {
+        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 34, items[i]);
+        lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        style_settings_item(g_settings_labels[i], i == 1);
+    }
+
+    lv_obj_t *hint = make_label_with_font(screen, 24, 260, 352, 22, "KEY: Select    BOOT: OK", &lv_font_montserrat_14);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 }
 
 static void update_time_ui(const struct tm &local)
@@ -550,11 +638,19 @@ int main(int, char **)
     update_battery_icon(76);
 
     const char *screenshot_path = getenv("WEATHER_CLOCK_SDL_SCREENSHOT");
+    const char *preview_mode = getenv("WEATHER_CLOCK_SDL_MODE");
     if (screenshot_path && screenshot_path[0]) {
+        if (preview_mode && strcmp(preview_mode, "settings") == 0) {
+            build_settings_page();
+        } else if (preview_mode && strcmp(preview_mode, "setup") == 0) {
+            set_lower_panel_visible(false);
+        }
         time_t now = time(nullptr);
         struct tm local;
         localtime_r(&now, &local);
-        update_time_ui(local);
+        if (!(preview_mode && strcmp(preview_mode, "settings") == 0)) {
+            update_time_ui(local);
+        }
         for (int i = 0; i < 5; ++i) {
             lv_tick_inc(16);
             lv_timer_handler();
