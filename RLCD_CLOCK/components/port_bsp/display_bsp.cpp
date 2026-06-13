@@ -4,6 +4,8 @@
 #include <esp_log.h>
 #include "display_bsp.h"
 
+static constexpr int kRlcdSpiClockHz = 5 * 1000 * 1000;
+
 DisplayPort::DisplayPort(int mosi, int scl, int dc, int cs, int rst, int width, int height, spi_host_device_t spihost) : 
 mosi_(mosi), 
 scl_(scl), 
@@ -28,7 +30,7 @@ height_(height)
     esp_lcd_panel_io_spi_config_t io_config = {};
     io_config.dc_gpio_num = dc_;
     io_config.cs_gpio_num = cs_;
-    io_config.pclk_hz = 10 * 1000 * 1000;
+    io_config.pclk_hz = kRlcdSpiClockHz;
     io_config.lcd_cmd_bits = 8;
     io_config.lcd_param_bits = 8;
     io_config.spi_mode = 0;

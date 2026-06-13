@@ -43,7 +43,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.59";
+static const char *APP_VERSION = "v0.0.60";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1071,7 +1071,7 @@ static void build_clock_ui()
     }
     g_alert_icon_canvas = lv_canvas_create(g_alert_pill);
     lv_obj_clear_flag(g_alert_icon_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_alert_icon_canvas, 8, 4);
+    lv_obj_set_pos(g_alert_icon_canvas, 4, 4);
     lv_obj_set_size(g_alert_icon_canvas, WARNING_ICON_WIDTH, WARNING_ICON_HEIGHT);
     lv_obj_set_style_border_width(g_alert_icon_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_alert_icon_canvas, 0, LV_PART_MAIN);
@@ -1089,7 +1089,7 @@ static void build_clock_ui()
                        lv_color_white(),
                        lv_color_black());
     }
-    g_alert_label = make_label_with_font(g_alert_pill, 30, 4, 90, 18, "", &zh_font_16);
+    g_alert_label = make_label_with_font(g_alert_pill, 24, 4, 94, 18, "", &zh_font_16);
     lv_obj_set_style_text_color(g_alert_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_align(g_alert_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_label_set_long_mode(g_alert_label, LV_LABEL_LONG_CLIP);
