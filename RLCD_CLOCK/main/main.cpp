@@ -41,7 +41,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.39";
+static const char *APP_VERSION = "v0.0.40";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -53,7 +53,6 @@ static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
 static constexpr int kBootAnimFrameMs = 100;
-static constexpr int kBootFinalHoldMs = 2500;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
@@ -113,6 +112,7 @@ static lv_obj_t *g_boot_anim_canvas;
 static lv_color_t *g_boot_anim_canvas_buf;
 static lv_obj_t *g_info_labels[5];
 static volatile bool g_boot_anim_running = false;
+static volatile int g_boot_anim_current_frame = 0;
 static TaskHandle_t g_boot_anim_task_handle = nullptr;
 static int g_last_ui_second = -1;
 static int g_last_ui_minute = -1;
@@ -302,6 +302,7 @@ static void boot_anim_task(void *)
     while (g_boot_anim_running) {
         if (Lvgl_lock(100)) {
             draw_boot_anim_frame_index(frame);
+            g_boot_anim_current_frame = frame;
             Lvgl_unlock();
         }
         frame = (frame + 1) % BOOT_ANIM_FRAME_COUNT;
@@ -309,6 +310,30 @@ static void boot_anim_task(void *)
     }
     g_boot_anim_task_handle = nullptr;
     vTaskDelete(nullptr);
+}
+
+static void finish_boot_anim_to_last_frame()
+{
+    int start_frame = g_boot_anim_current_frame + 1;
+    if (start_frame >= BOOT_ANIM_FRAME_COUNT) {
+        start_frame = BOOT_ANIM_FRAME_COUNT - 1;
+    }
+    for (int frame = start_frame; frame < BOOT_ANIM_FRAME_COUNT; ++frame) {
+        if (Lvgl_lock(200)) {
+            draw_boot_anim_frame_index(frame);
+            g_boot_anim_current_frame = frame;
+            lv_refr_now(nullptr);
+            Lvgl_unlock();
+        }
+        vTaskDelay(pdMS_TO_TICKS(kBootAnimFrameMs));
+    }
+    if (Lvgl_lock(200)) {
+        draw_boot_anim_frame_index(BOOT_ANIM_FRAME_COUNT - 1);
+        g_boot_anim_current_frame = BOOT_ANIM_FRAME_COUNT - 1;
+        lv_refr_now(nullptr);
+        Lvgl_unlock();
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
 }
 
 static void style_battery_part(lv_obj_t *obj, bool filled)
@@ -2049,22 +2074,16 @@ extern "C" void app_main(void)
         show_boot_screen();
         Lvgl_unlock();
     }
-    int64_t boot_anim_start_us = esp_timer_get_time();
+    g_boot_anim_current_frame = 0;
     g_boot_anim_running = true;
     xTaskCreatePinnedToCore(boot_anim_task, "boot_anim_task", 4096, nullptr, 4, &g_boot_anim_task_handle, 1);
     run_boot_connectivity_sync();
     update_boot_screen(100, "Ready", "Starting clock");
-    int64_t boot_anim_elapsed_ms = (esp_timer_get_time() - boot_anim_start_us) / 1000;
-    int hold_ms = kBootFinalHoldMs;
-    int min_cycle_ms = BOOT_ANIM_FRAME_COUNT * kBootAnimFrameMs;
-    if (boot_anim_elapsed_ms + hold_ms < min_cycle_ms) {
-        hold_ms = (int)(min_cycle_ms - boot_anim_elapsed_ms);
-    }
-    vTaskDelay(pdMS_TO_TICKS(hold_ms));
     g_boot_anim_running = false;
     while (g_boot_anim_task_handle) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+    finish_boot_anim_to_last_frame();
     finish_boot_screen();
 
     xTaskCreatePinnedToCore(network_sync_task, "network_sync", 20480, nullptr, 4, nullptr, 0);
