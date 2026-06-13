@@ -36,12 +36,13 @@
 #include "lvgl_bsp.h"
 #include "dseg_digits.h"
 #include "boot_anim.h"
+#include "status_gif_60.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.46";
+static const char *APP_VERSION = "v0.0.48";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -58,6 +59,8 @@ static constexpr int kBootNtpRetries = 2;
 static constexpr int kBootStartupBudgetMs = 6000;
 static constexpr int kHttpDefaultTimeoutMs = 10000;
 static constexpr int kHttpBootTimeoutMs = 2500;
+static constexpr int kMinValidYear = 2024;
+static constexpr int kMaxValidYear = 2035;
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
@@ -113,6 +116,8 @@ static lv_obj_t *g_time_canvas;
 static lv_color_t *g_time_canvas_buf;
 static lv_obj_t *g_second_canvas;
 static lv_color_t *g_second_canvas_buf;
+static lv_obj_t *g_status_gif_canvas;
+static lv_color_t *g_status_gif_canvas_buf;
 static lv_obj_t *g_boot_status_label;
 static lv_obj_t *g_boot_detail_label;
 static lv_obj_t *g_boot_anim_canvas;
@@ -212,6 +217,27 @@ static void draw_second_canvas(const struct tm &local)
     lv_obj_invalidate(g_second_canvas);
 }
 
+static void draw_status_gif_frame(int frame)
+{
+    if (!g_status_gif_canvas) {
+        return;
+    }
+    if (frame < 0) {
+        frame = 0;
+    } else if (frame >= STATUS_GIF_FRAME_COUNT) {
+        frame = STATUS_GIF_FRAME_COUNT - 1;
+    }
+    const uint8_t *pixels = status_gif_frames[frame];
+    uint32_t bit = 0;
+    for (int y = 0; y < STATUS_GIF_HEIGHT; ++y) {
+        for (int x = 0; x < STATUS_GIF_WIDTH; ++x, ++bit) {
+            bool black = pixels[bit / 8] & (0x80 >> (bit & 7));
+            lv_canvas_set_px_color(g_status_gif_canvas, x, y, black ? lv_color_black() : lv_color_white());
+        }
+    }
+    lv_obj_invalidate(g_status_gif_canvas);
+}
+
 static lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int h, const char *text, const lv_font_t *font)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -269,6 +295,7 @@ static void clear_clock_object_refs()
     g_weather_icon_label = nullptr;
     g_time_canvas = nullptr;
     g_second_canvas = nullptr;
+    g_status_gif_canvas = nullptr;
     for (lv_obj_t *&segment : g_battery_segments) {
         segment = nullptr;
     }
@@ -551,15 +578,21 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 258, 170, 28, "温度 --.-℃");
-    g_humi_label = make_label(screen, 205, 258, 170, 28, "湿度 --.-%");
-    g_weather_city_label = make_label(screen, 20, 216, 152, 28, "--");
-    g_weather_info_label = make_label(screen, 178, 216, 162, 28, "天气等待");
-    g_weather_icon_label = make_label(screen, 344, 204, 42, 44, "");
+    g_weather_city_label = make_label(screen, 26, 196, 106, 22, "--");
+    lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    g_weather_icon_label = make_label(screen, 28, 224, 38, 42, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    g_weather_info_label = make_label(screen, 68, 216, 64, 54, "天气等待");
+    lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(g_weather_info_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    g_temp_label = make_label(screen, 152, 214, 96, 28, "温度 --.-℃");
+    g_humi_label = make_label(screen, 152, 246, 96, 28, "湿度 --.-%");
+    lv_obj_set_style_text_align(g_temp_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_align(g_humi_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     constexpr int canvas_w = 292;
     constexpr int canvas_h = 92;
     if (!g_time_canvas_buf) {
@@ -600,10 +633,38 @@ static void build_clock_ui()
         lv_canvas_fill_bg(g_second_canvas, lv_color_white(), LV_OPA_COVER);
     }
 
+    if (!g_status_gif_canvas_buf) {
+        g_status_gif_canvas_buf = (lv_color_t *)heap_caps_calloc(STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT,
+                                                                 sizeof(lv_color_t),
+                                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!g_status_gif_canvas_buf) {
+            g_status_gif_canvas_buf = (lv_color_t *)calloc(STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT, sizeof(lv_color_t));
+        }
+    }
+    g_status_gif_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_status_gif_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_status_gif_canvas, 279, 196);
+    lv_obj_set_size(g_status_gif_canvas, STATUS_GIF_WIDTH, STATUS_GIF_HEIGHT);
+    lv_obj_set_style_border_width(g_status_gif_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_status_gif_canvas, 0, LV_PART_MAIN);
+    if (g_status_gif_canvas_buf) {
+        lv_canvas_set_buffer(g_status_gif_canvas,
+                             g_status_gif_canvas_buf,
+                             STATUS_GIF_WIDTH,
+                             STATUS_GIF_HEIGHT,
+                             LV_IMG_CF_TRUE_COLOR);
+        lv_canvas_fill_bg(g_status_gif_canvas, lv_color_white(), LV_OPA_COVER);
+        draw_status_gif_frame(0);
+    }
+
     lv_obj_t *top_line = make_bar(screen, 18, 54, 364, 4);
     lv_obj_t *bottom_line = make_bar(screen, 18, 184, 364, 4);
+    lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
+    lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
     set_obj_black(top_line, true);
     set_obj_black(bottom_line, true);
+    set_obj_black(panel_sep_a, true);
+    set_obj_black(panel_sep_b, true);
 }
 
 static bool load_saved_config()
@@ -1155,7 +1216,13 @@ static void restore_system_time_from_rtc()
 {
     rtcTimeStruct_t rtc_time = {};
     Rtc_GetTime(&rtc_time);
-    if (rtc_time.year < 2024 || rtc_time.year > 2099) {
+    if (rtc_time.year < kMinValidYear || rtc_time.year > kMaxValidYear ||
+        rtc_time.month < 1 || rtc_time.month > 12 ||
+        rtc_time.day < 1 || rtc_time.day > 31 ||
+        rtc_time.hour > 23 || rtc_time.minute > 59 || rtc_time.second > 59) {
+        ESP_LOGW(TAG, "ignore invalid RTC time: %04u-%02u-%02u %02u:%02u:%02u",
+                 rtc_time.year, rtc_time.month, rtc_time.day,
+                 rtc_time.hour, rtc_time.minute, rtc_time.second);
         return;
     }
     struct tm tm_time = {};
@@ -1166,9 +1233,20 @@ static void restore_system_time_from_rtc()
     tm_time.tm_min = rtc_time.minute;
     tm_time.tm_sec = rtc_time.second;
     time_t epoch = mktime(&tm_time);
+    struct tm normalized = {};
+    localtime_r(&epoch, &normalized);
+    if (normalized.tm_year + 1900 != rtc_time.year ||
+        normalized.tm_mon + 1 != rtc_time.month ||
+        normalized.tm_mday != rtc_time.day) {
+        ESP_LOGW(TAG, "ignore normalized RTC time mismatch");
+        return;
+    }
     struct timeval now = {};
     now.tv_sec = epoch;
     settimeofday(&now, nullptr);
+    ESP_LOGI(TAG, "system time restored from RTC: %04u-%02u-%02u %02u:%02u:%02u",
+             rtc_time.year, rtc_time.month, rtc_time.day,
+             rtc_time.hour, rtc_time.minute, rtc_time.second);
 }
 
 static void sync_rtc_from_system_time()
@@ -1282,8 +1360,22 @@ static int boot_sync_remaining_ms()
     return remaining_ms > INT32_MAX ? INT32_MAX : (int)remaining_ms;
 }
 
+static bool is_system_time_plausible(struct tm *local_out = nullptr)
+{
+    time_t now;
+    time(&now);
+    struct tm local = {};
+    localtime_r(&now, &local);
+    int year = local.tm_year + 1900;
+    if (local_out) {
+        *local_out = local;
+    }
+    return year >= kMinValidYear && year <= kMaxValidYear;
+}
+
 static bool perform_ntp_sync(int max_retries = 30)
 {
+    esp_sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
     if (!g_ntp_started) {
         esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
         esp_sntp_setservername(0, "pool.ntp.org");
@@ -1296,15 +1388,15 @@ static bool perform_ntp_sync(int max_retries = 30)
     }
 
     for (int retry = 0; retry < max_retries; ++retry) {
-        time_t now;
-        time(&now);
         struct tm local = {};
-        localtime_r(&now, &local);
-        if (local.tm_year + 1900 >= 2024) {
+        if (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED &&
+            is_system_time_plausible(&local)) {
             sync_rtc_from_system_time();
             time(&g_last_ntp_sync_time);
             xEventGroupSetBits(g_app_events, kTimeSyncedBit);
-            ESP_LOGI(TAG, "ntp synced");
+            ESP_LOGI(TAG, "ntp synced: %04d-%02d-%02d %02d:%02d:%02d",
+                     local.tm_year + 1900, local.tm_mon + 1, local.tm_mday,
+                     local.tm_hour, local.tm_min, local.tm_sec);
             return true;
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -1808,14 +1900,7 @@ static bool wait_for_wifi_connected(uint32_t timeout_ms)
 
 static bool is_time_valid(struct tm *local_out = nullptr)
 {
-    time_t now;
-    time(&now);
-    struct tm local = {};
-    localtime_r(&now, &local);
-    if (local_out) {
-        *local_out = local;
-    }
-    return local.tm_year + 1900 >= 2024;
+    return is_system_time_plausible(local_out);
 }
 
 static void run_boot_connectivity_sync()
@@ -1977,6 +2062,7 @@ static void update_time_ui(const struct tm &local)
     }
     if (local.tm_sec != g_last_ui_second) {
         draw_second_canvas(local);
+        draw_status_gif_frame(local.tm_sec % STATUS_GIF_FRAME_COUNT);
         g_last_ui_second = local.tm_sec;
     }
 
@@ -2028,7 +2114,11 @@ static void ui_task(void *)
                 battery_due = true;
             }
 
-            update_time_ui(local);
+            if (is_system_time_plausible(&local)) {
+                update_time_ui(local);
+            } else {
+                set_label_text_if_changed(g_date_label, "----/--/-- / 星期-");
+            }
 
             if (status_due || battery_due) {
                 EventBits_t bits = xEventGroupGetBits(g_app_events);
@@ -2048,7 +2138,7 @@ static void ui_task(void *)
                     char city[48];
                     char weather[80];
                     snprintf(city, sizeof(city), "%s", g_weather.city);
-                    snprintf(weather, sizeof(weather), "%s %s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
+                    snprintf(weather, sizeof(weather), "%s\n%s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
                     set_label_text_if_changed(g_weather_city_label, city);
                     set_label_text_if_changed(g_weather_info_label, weather);
                     set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));

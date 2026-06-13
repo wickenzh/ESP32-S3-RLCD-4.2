@@ -76,10 +76,12 @@ Release 附件包括：
 - `weather_clock_vX.X.X_flash_package.zip`：包含 bootloader、分区表、App 固件、`flash_args` 和简短烧录说明。
 - `weather_clock_vX.X.X_merged.bin`：合并后的完整镜像，适合需要整包写入时使用。
 
-发布脚本为 `scripts/publish_gitea_release.sh`。脚本不会保存账号密码，需要运行时提供 `GITEA_TOKEN`，或者提供 `GITEA_USER` 和 `GITEA_PASSWORD`。
+发布附件上传脚本为 `scripts/publish_gitea_release.sh`。完整发版脚本为 `scripts/release_version.sh`，会依次执行固件编译、SDL 模拟器编译、代码检查、提交、打标签、推送和上传 Release 附件。脚本不会保存账号密码，需要运行时提供 `GITEA_TOKEN`，或者提供 `GITEA_USER` 和 `GITEA_PASSWORD`。
 
 ## 版本记录
 
+- `v0.0.48`：主界面时间下方区域改为三等分信息栏，并用实线分隔；第一栏显示天气 API 信息和天气图标，第二栏显示本地温湿度，第三栏显示从指定 GIF 等距抽取的 60 帧动画，动画按当前秒数每秒切换一帧；GIF 转换改为色彩映射加抖动点阵，保留卡通人物脸部细节，并优化天气栏和本地温湿度的居中对齐。
+- `v0.0.47`：修复 RTC 异常年份导致主界面显示 2092 年的问题；启动时会拒绝明显不合理的 RTC 时间，NTP 必须等待 SNTP 真正同步完成后才写回 RTC；新增一键发版脚本，串联编译、提交、标签、推送和 Gitea Release 附件上传。
 - `v0.0.46`：修复启动页天气预取在 main 任务中导致栈溢出重启的问题；启动天气同步改为独立任务并复用开机动画时间，启动收尾直接跳到 GIF 最后一帧，避免逐帧补播造成开机页停留过久；屏幕初始化后立即清白屏，减少 RLCD 残留主界面闪现。
 - `v0.0.45`：启动页优先预取天气 API，天气最多等待 6 秒；成功后进入主界面即显示天气，超时则进入主界面后后台继续同步。
 - `v0.0.44`：启动页联网同步加入 6 秒预算；天气 API 会在启动页内优先加载，超时则进入主界面后后台继续同步。

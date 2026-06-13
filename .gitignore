@@ -12,6 +12,8 @@ managed_components/
 .DS_Store
 *.swp
 *.swo
+__pycache__/
+RLCD_CLOCK/simulator/status_gif_preview.png
 
 # Generated binaries and logs
 *.bin

@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -8,6 +9,7 @@
 #include "lvgl.h"
 #include "dseg_digits.h"
 #include "boot_anim.h"
+#include "status_gif_60.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
@@ -15,7 +17,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.46";
+static const char *APP_VERSION = "v0.0.48";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -36,9 +38,11 @@ static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_battery_segments[5];
 static lv_obj_t *g_time_canvas;
 static lv_obj_t *g_second_canvas;
+static lv_obj_t *g_status_gif_canvas;
 static lv_obj_t *g_boot_anim_canvas;
 static std::vector<lv_color_t> g_time_canvas_pixels(kTimeCanvasW * kTimeCanvasH);
 static std::vector<lv_color_t> g_second_canvas_pixels(kSecondCanvasW * kSecondCanvasH);
+static std::vector<lv_color_t> g_status_gif_canvas_pixels(STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT);
 static std::vector<lv_color_t> g_boot_anim_canvas_pixels(BOOT_ANIM_WIDTH * BOOT_ANIM_HEIGHT);
 
 static void set_obj_black(lv_obj_t *obj, bool active)
@@ -108,6 +112,25 @@ static void draw_second_canvas(const struct tm &local)
     snprintf(ss, sizeof(ss), "%02d", local.tm_sec);
     draw_dseg_text(g_second_canvas, kDSEG36Font, ss, 0, 40);
     lv_obj_invalidate(g_second_canvas);
+}
+
+static void draw_status_gif_frame(int frame)
+{
+    if (!g_status_gif_canvas) return;
+    if (frame < 0) {
+        frame = 0;
+    } else if (frame >= STATUS_GIF_FRAME_COUNT) {
+        frame = STATUS_GIF_FRAME_COUNT - 1;
+    }
+    const uint8_t *pixels = status_gif_frames[frame];
+    uint32_t bit = 0;
+    for (int y = 0; y < STATUS_GIF_HEIGHT; ++y) {
+        for (int x = 0; x < STATUS_GIF_WIDTH; ++x, ++bit) {
+            bool black = pixels[bit / 8] & (0x80 >> (bit & 7));
+            lv_canvas_set_px_color(g_status_gif_canvas, x, y, black ? lv_color_black() : lv_color_white());
+        }
+    }
+    lv_obj_invalidate(g_status_gif_canvas);
 }
 
 static lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int h, const char *text, const lv_font_t *font)
@@ -297,14 +320,21 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 258, 170, 28, "温度 --.-℃");
-    g_humi_label = make_label(screen, 205, 258, 170, 28, "湿度 --.-%");
-    g_weather_city_label = make_label(screen, 20, 216, 152, 28, "--");
-    g_weather_info_label = make_label(screen, 178, 216, 162, 28, "天气等待");
-    g_weather_icon_label = make_label(screen, 344, 204, 42, 44, "");
+    g_weather_city_label = make_label(screen, 26, 196, 106, 22, "--");
+    lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    g_weather_icon_label = make_label(screen, 28, 224, 38, 42, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
+    lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    g_weather_info_label = make_label(screen, 68, 216, 64, 54, "天气等待");
+    lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(g_weather_info_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    g_temp_label = make_label(screen, 152, 214, 96, 28, "温度 --.-℃");
+    g_humi_label = make_label(screen, 152, 246, 96, 28, "湿度 --.-%");
+    lv_obj_set_style_text_align(g_temp_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_align(g_humi_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_time_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_time_canvas, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(g_time_canvas, 18, 76);
@@ -323,10 +353,28 @@ static void build_clock_ui()
     lv_canvas_set_buffer(g_second_canvas, g_second_canvas_pixels.data(), kSecondCanvasW, kSecondCanvasH, LV_IMG_CF_TRUE_COLOR);
     lv_canvas_fill_bg(g_second_canvas, lv_color_white(), LV_OPA_COVER);
 
+    g_status_gif_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_status_gif_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_status_gif_canvas, 279, 196);
+    lv_obj_set_size(g_status_gif_canvas, STATUS_GIF_WIDTH, STATUS_GIF_HEIGHT);
+    lv_obj_set_style_border_width(g_status_gif_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_status_gif_canvas, 0, LV_PART_MAIN);
+    lv_canvas_set_buffer(g_status_gif_canvas,
+                         g_status_gif_canvas_pixels.data(),
+                         STATUS_GIF_WIDTH,
+                         STATUS_GIF_HEIGHT,
+                         LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_fill_bg(g_status_gif_canvas, lv_color_white(), LV_OPA_COVER);
+    draw_status_gif_frame(0);
+
     lv_obj_t *top_line = make_bar(screen, 18, 54, 364, 4);
     lv_obj_t *bottom_line = make_bar(screen, 18, 184, 364, 4);
+    lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
+    lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
     set_obj_black(top_line, true);
     set_obj_black(bottom_line, true);
+    set_obj_black(panel_sep_a, true);
+    set_obj_black(panel_sep_b, true);
 }
 
 static void update_time_ui(const struct tm &local)
@@ -341,6 +389,7 @@ static void update_time_ui(const struct tm &local)
     if (local.tm_sec != last_second) {
         last_second = local.tm_sec;
         draw_second_canvas(local);
+        draw_status_gif_frame(local.tm_sec % STATUS_GIF_FRAME_COUNT);
     }
 
     static const char *week_days[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
@@ -377,6 +426,22 @@ static void flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *colo
     SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
     SDL_RenderPresent(g_renderer);
     lv_disp_flush_ready(drv);
+}
+
+static void save_screenshot_ppm(const char *path)
+{
+    FILE *file = fopen(path, "wb");
+    if (!file) return;
+    fprintf(file, "P6\n%d %d\n255\n", kDisplayWidth, kDisplayHeight);
+    for (uint32_t argb : g_framebuffer) {
+        uint8_t rgb[3] = {
+            (uint8_t)((argb >> 16) & 0xFF),
+            (uint8_t)((argb >> 8) & 0xFF),
+            (uint8_t)(argb & 0xFF),
+        };
+        fwrite(rgb, 1, sizeof(rgb), file);
+    }
+    fclose(file);
 }
 
 int main(int, char **)
@@ -433,9 +498,24 @@ int main(int, char **)
     set_label_text_if_changed(g_temp_label, "温度 24.6℃");
     set_label_text_if_changed(g_humi_label, "湿度 58.0%");
     set_label_text_if_changed(g_weather_city_label, "杭州");
-    set_label_text_if_changed(g_weather_info_label, "晴 26℃ 58%");
+    set_label_text_if_changed(g_weather_info_label, "晴\n26℃ 58%");
     set_label_text_if_changed(g_weather_icon_label, weather_icon_text("100"));
     update_battery_icon(76);
+
+    const char *screenshot_path = getenv("WEATHER_CLOCK_SDL_SCREENSHOT");
+    if (screenshot_path && screenshot_path[0]) {
+        time_t now = time(nullptr);
+        struct tm local;
+        localtime_r(&now, &local);
+        update_time_ui(local);
+        for (int i = 0; i < 5; ++i) {
+            lv_tick_inc(16);
+            lv_timer_handler();
+            SDL_Delay(16);
+        }
+        save_screenshot_ppm(screenshot_path);
+        return 0;
+    }
 
     uint32_t last_tick = SDL_GetTicks();
     time_t last_sec = 0;
