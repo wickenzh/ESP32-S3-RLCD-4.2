@@ -49,6 +49,7 @@ class DisplayPort {
     void RLCD_Init();
     void RLCD_ColorClear(uint8_t color);
     void RLCD_Display();
+    void RLCD_DisplayXRange(uint16_t x1, uint16_t x2);
 	#if (AlgorithmOptimization != 3)
     void RLCD_SetPortraitPixel(uint16_t x, uint16_t y, uint8_t color);      //竖屏显示
     void RLCD_SetLandscapePixel(uint16_t x, uint16_t y, uint8_t color);     //横屏显示

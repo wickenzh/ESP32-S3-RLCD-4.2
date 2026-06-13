@@ -217,6 +217,29 @@ void DisplayPort::RLCD_Display() {
 	RLCD_Sendbuffera(DispBuffer,DisplayLen);
 }
 
+void DisplayPort::RLCD_DisplayXRange(uint16_t x1, uint16_t x2) {
+    if (x1 >= (uint16_t)width_ || x2 >= (uint16_t)width_ || x1 > x2) {
+        return;
+    }
+    uint16_t start_pair = x1 >> 1;
+    uint16_t end_pair = x2 >> 1;
+    uint16_t rows_per_pair = height_ >> 2;
+    uint32_t offset = (uint32_t)start_pair * rows_per_pair;
+    uint32_t len = (uint32_t)(end_pair - start_pair + 1) * rows_per_pair;
+
+    RLCD_SendCommand(0x2A);
+    RLCD_SendData(0x12);
+    RLCD_SendData(0x2A);
+
+    RLCD_SendCommand(0x2B);
+    RLCD_SendData(start_pair & 0xFF);
+    RLCD_SendData(end_pair & 0xFF);
+
+    RLCD_SendCommand(0x2c);
+
+	RLCD_Sendbuffera(DispBuffer + offset, len);
+}
+
 void DisplayPort::RLCD_Reset(void) {
     Set_ResetIOLevel(1);
     vTaskDelay(pdMS_TO_TICKS(50));

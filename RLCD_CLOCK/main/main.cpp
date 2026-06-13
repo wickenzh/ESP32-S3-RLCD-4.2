@@ -37,12 +37,13 @@
 #include "dseg_digits.h"
 #include "boot_anim.h"
 #include "status_gif_60.h"
+#include "ui_icons.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.57";
+static const char *APP_VERSION = "v0.0.58";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -71,6 +72,11 @@ static constexpr int kHttpDefaultTimeoutMs = 10000;
 static constexpr int kHttpBootTimeoutMs = 2500;
 static constexpr int kMinValidYear = 2024;
 static constexpr int kMaxValidYear = 2035;
+static constexpr int kLowBatteryEnterPercent = 5;
+static constexpr int kLowBatteryExitPercent = 8;
+static constexpr int kDisplayPartialMaxWidth = (kDisplayWidth * 7) / 10;
+static constexpr int kMaxFlushRanges = 8;
+static constexpr int kFlushRangeMergeGap = 8;
 
 enum SettingsSyncOp {
     kSettingsSyncNone = 0,
@@ -128,9 +134,20 @@ struct WeatherData {
     char icon[8] = {};
     char temp[8] = {};
     char humidity[8] = {};
+    char lat[16] = {};
+    char lon[16] = {};
+};
+
+struct WeatherAlertData {
+    bool active = false;
+    char title[64] = {};
+    char icon[8] = {};
+    time_t updated_at = 0;
 };
 
 static WeatherData g_weather;
+static WeatherAlertData g_weather_alert;
+static bool g_low_battery_mode = false;
 
 static lv_obj_t *g_clock_root;
 static lv_obj_t *g_info_root;
@@ -143,6 +160,14 @@ static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_weather_temp_label;
 static lv_obj_t *g_weather_humi_label;
+static lv_obj_t *g_alert_pill;
+static lv_obj_t *g_alert_icon_canvas;
+static lv_color_t *g_alert_icon_canvas_buf;
+static lv_obj_t *g_alert_label;
+static lv_obj_t *g_low_battery_icon_canvas;
+static lv_color_t *g_low_battery_icon_canvas_buf;
+static lv_obj_t *g_panel_sep_a;
+static lv_obj_t *g_panel_sep_b;
 static lv_obj_t *g_battery_segments[5];
 static lv_obj_t *g_time_canvas;
 static lv_color_t *g_time_canvas_buf;
@@ -285,6 +310,30 @@ static void update_progress_canvas(lv_obj_t *canvas, int filled, int *last_fille
         invalidate_progress_segment(canvas, i);
     }
     *last_filled = filled;
+}
+
+static void draw_1bit_icon(lv_obj_t *canvas,
+                           int width,
+                           int height,
+                           int bytes_per_row,
+                           const uint8_t *bits,
+                           lv_color_t fg,
+                           lv_color_t bg)
+{
+    if (!canvas || !bits) {
+        return;
+    }
+    lv_canvas_fill_bg(canvas, bg, LV_OPA_COVER);
+    for (int y = 0; y < height; ++y) {
+        const uint8_t *row = bits + y * bytes_per_row;
+        for (int x = 0; x < width; ++x) {
+            bool set = row[x / 8] & (0x80 >> (x & 7));
+            if (set) {
+                lv_canvas_set_px_color(canvas, x, y, fg);
+            }
+        }
+    }
+    lv_obj_invalidate(canvas);
 }
 
 static const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
@@ -473,6 +522,12 @@ static void clear_clock_object_refs()
     g_weather_icon_label = nullptr;
     g_weather_temp_label = nullptr;
     g_weather_humi_label = nullptr;
+    g_alert_pill = nullptr;
+    g_alert_icon_canvas = nullptr;
+    g_alert_label = nullptr;
+    g_low_battery_icon_canvas = nullptr;
+    g_panel_sep_a = nullptr;
+    g_panel_sep_b = nullptr;
     g_time_canvas = nullptr;
     g_second_canvas = nullptr;
     g_status_gif_canvas = nullptr;
@@ -529,15 +584,69 @@ static void set_lower_panel_visible(bool visible)
             lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
         }
     }
+}
+
+static void set_setup_panel_visible(bool visible)
+{
     for (lv_obj_t *label : g_setup_status_labels) {
         if (!label) {
             continue;
         }
         if (visible) {
-            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
-        } else {
             lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
         }
+    }
+}
+
+static void set_obj_visible(lv_obj_t *obj, bool visible)
+{
+    if (!obj) {
+        return;
+    }
+    if (visible) {
+        lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static bool update_low_battery_state()
+{
+    bool previous = g_low_battery_mode;
+    if (g_battery_percent >= 0) {
+        if (!g_low_battery_mode && g_battery_percent < kLowBatteryEnterPercent) {
+            g_low_battery_mode = true;
+        } else if (g_low_battery_mode && g_battery_percent >= kLowBatteryExitPercent) {
+            g_low_battery_mode = false;
+        }
+    }
+    return previous != g_low_battery_mode;
+}
+
+static void apply_clock_mode_visibility(bool setup_active)
+{
+    bool low = g_low_battery_mode && !setup_active;
+    set_obj_visible(g_second_canvas, !low);
+    set_obj_visible(g_day_progress_canvas, !low);
+    set_obj_visible(g_second_progress_canvas, !low);
+    set_obj_visible(g_low_battery_icon_canvas, low);
+    set_lower_panel_visible(!setup_active && !low);
+    set_setup_panel_visible(setup_active);
+    set_obj_visible(g_panel_sep_a, !setup_active);
+    set_obj_visible(g_panel_sep_b, !setup_active);
+    if (low || setup_active) {
+        set_obj_visible(g_alert_pill, false);
+    }
+}
+
+static void update_alert_pill(bool show)
+{
+    bool visible = show && !g_low_battery_mode && g_weather_alert.active && g_weather_alert.title[0] != '\0';
+    set_obj_visible(g_alert_pill, visible);
+    if (visible) {
+        set_label_text_if_changed(g_alert_label, g_weather_alert.title);
     }
 }
 
@@ -937,9 +1046,54 @@ static void build_clock_ui()
     lv_obj_t *screen = create_page_root();
     g_clock_root = screen;
 
-    g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
+    g_date_label = make_label(screen, 198, 15, 182, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
+
+    g_alert_pill = lv_obj_create(screen);
+    lv_obj_clear_flag(g_alert_pill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_alert_pill, 56, 11);
+    lv_obj_set_size(g_alert_pill, 136, 26);
+    lv_obj_set_style_bg_color(g_alert_pill, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(g_alert_pill, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(g_alert_pill, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(g_alert_pill, 13, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_alert_pill, 0, LV_PART_MAIN);
+    lv_obj_add_flag(g_alert_pill, LV_OBJ_FLAG_HIDDEN);
+
+    if (!g_alert_icon_canvas_buf) {
+        g_alert_icon_canvas_buf = (lv_color_t *)heap_caps_calloc(WARNING_ICON_WIDTH * WARNING_ICON_HEIGHT,
+                                                                 sizeof(lv_color_t),
+                                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!g_alert_icon_canvas_buf) {
+            g_alert_icon_canvas_buf = (lv_color_t *)calloc(WARNING_ICON_WIDTH * WARNING_ICON_HEIGHT, sizeof(lv_color_t));
+        }
+    }
+    g_alert_icon_canvas = lv_canvas_create(g_alert_pill);
+    lv_obj_clear_flag(g_alert_icon_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_alert_icon_canvas, 8, 4);
+    lv_obj_set_size(g_alert_icon_canvas, WARNING_ICON_WIDTH, WARNING_ICON_HEIGHT);
+    lv_obj_set_style_border_width(g_alert_icon_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_alert_icon_canvas, 0, LV_PART_MAIN);
+    if (g_alert_icon_canvas_buf) {
+        lv_canvas_set_buffer(g_alert_icon_canvas,
+                             g_alert_icon_canvas_buf,
+                             WARNING_ICON_WIDTH,
+                             WARNING_ICON_HEIGHT,
+                             LV_IMG_CF_TRUE_COLOR);
+        draw_1bit_icon(g_alert_icon_canvas,
+                       WARNING_ICON_WIDTH,
+                       WARNING_ICON_HEIGHT,
+                       WARNING_ICON_BYTES_PER_ROW,
+                       warning_icon_bits,
+                       lv_color_white(),
+                       lv_color_black());
+    }
+    g_alert_label = make_label_with_font(g_alert_pill, 30, 4, 98, 18, "", &zh_font_16);
+    lv_obj_set_style_text_color(g_alert_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_align(g_alert_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_long_mode(g_alert_label, LV_LABEL_LONG_CLIP);
+
     g_weather_city_label = make_label(screen, 24, 196, 76, 20, "--");
     remember_lower_panel_object(g_weather_city_label);
     lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -1035,14 +1189,45 @@ static void build_clock_ui()
     lv_obj_t *bottom_line = make_bar(screen, 18, 184, 364, 4);
     build_progress_canvas(screen, &g_day_progress_canvas, &g_day_progress_canvas_buf, 59);
     build_progress_canvas(screen, &g_second_progress_canvas, &g_second_progress_canvas_buf, 180);
-    lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
-    lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
-    remember_lower_panel_object(panel_sep_a);
-    remember_lower_panel_object(panel_sep_b);
+    g_panel_sep_a = make_bar(screen, 139, 188, 2, 102);
+    g_panel_sep_b = make_bar(screen, 260, 188, 2, 102);
+    remember_lower_panel_object(g_panel_sep_a);
+    remember_lower_panel_object(g_panel_sep_b);
     set_obj_black(top_line, true);
     set_obj_black(bottom_line, true);
-    set_obj_black(panel_sep_a, true);
-    set_obj_black(panel_sep_b, true);
+    set_obj_black(g_panel_sep_a, true);
+    set_obj_black(g_panel_sep_b, true);
+
+    if (!g_low_battery_icon_canvas_buf) {
+        g_low_battery_icon_canvas_buf = (lv_color_t *)heap_caps_calloc(LOW_BATTERY_ICON_WIDTH * LOW_BATTERY_ICON_HEIGHT,
+                                                                       sizeof(lv_color_t),
+                                                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!g_low_battery_icon_canvas_buf) {
+            g_low_battery_icon_canvas_buf = (lv_color_t *)calloc(LOW_BATTERY_ICON_WIDTH * LOW_BATTERY_ICON_HEIGHT,
+                                                                 sizeof(lv_color_t));
+        }
+    }
+    g_low_battery_icon_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_low_battery_icon_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_low_battery_icon_canvas, 156, 214);
+    lv_obj_set_size(g_low_battery_icon_canvas, LOW_BATTERY_ICON_WIDTH, LOW_BATTERY_ICON_HEIGHT);
+    lv_obj_set_style_border_width(g_low_battery_icon_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_low_battery_icon_canvas, 0, LV_PART_MAIN);
+    lv_obj_add_flag(g_low_battery_icon_canvas, LV_OBJ_FLAG_HIDDEN);
+    if (g_low_battery_icon_canvas_buf) {
+        lv_canvas_set_buffer(g_low_battery_icon_canvas,
+                             g_low_battery_icon_canvas_buf,
+                             LOW_BATTERY_ICON_WIDTH,
+                             LOW_BATTERY_ICON_HEIGHT,
+                             LV_IMG_CF_TRUE_COLOR);
+        draw_1bit_icon(g_low_battery_icon_canvas,
+                       LOW_BATTERY_ICON_WIDTH,
+                       LOW_BATTERY_ICON_HEIGHT,
+                       LOW_BATTERY_ICON_BYTES_PER_ROW,
+                       low_battery_icon_bits,
+                       lv_color_black(),
+                       lv_color_white());
+    }
 
     static const int setup_y[] = {194, 212, 230, 248, 266, 284};
     static const char *setup_text[] = {
@@ -1842,6 +2027,7 @@ static void sample_battery()
     } else {
         g_battery_percent = -1;
     }
+    update_low_battery_state();
     ++g_battery_version;
 }
 
@@ -1921,7 +2107,9 @@ static void housekeeping_task(void *)
     for (;;) {
         TickType_t now = xTaskGetTickCount();
         if (now >= next_sensor) {
-            sample_sensor();
+            if (!g_low_battery_mode) {
+                sample_sensor();
+            }
             next_sensor = now + pdMS_TO_TICKS(60000);
         }
         if (now >= next_battery) {
@@ -2192,7 +2380,15 @@ static bool ip_geolocation_lookup(char *location, size_t location_len, char *cit
     return ok;
 }
 
-static bool qweather_lookup_city(const char *location, char *city_id, size_t city_id_len, char *city_name, size_t city_name_len)
+static bool qweather_lookup_city(const char *location,
+                                 char *city_id,
+                                 size_t city_id_len,
+                                 char *city_name,
+                                 size_t city_name_len,
+                                 char *lat_out = nullptr,
+                                 size_t lat_len = 0,
+                                 char *lon_out = nullptr,
+                                 size_t lon_len = 0)
 {
     char encoded_location[128] = {};
     if (!url_encode_component(location, encoded_location, sizeof(encoded_location))) {
@@ -2230,12 +2426,99 @@ static bool qweather_lookup_city(const char *location, char *city_id, size_t cit
         ok = json_copy_string(first, "id", city_id, city_id_len) &&
              json_copy_string(first, "name", city_name, city_name_len);
         if (ok) {
+            if (lat_out && lat_len > 0) {
+                json_copy_string(first, "lat", lat_out, lat_len);
+            }
+            if (lon_out && lon_len > 0) {
+                json_copy_string(first, "lon", lon_out, lon_len);
+            }
             ESP_LOGI(TAG, "qweather city resolved: %s id=%s", city_name, city_id);
         }
     } else {
         ESP_LOGW(TAG, "qweather city lookup failed code=%s",
                  cJSON_IsString(code) ? code->valuestring : "missing");
     }
+    cJSON_Delete(root);
+    free(response);
+    return ok;
+}
+
+static const char *warning_color_name(const char *code)
+{
+    if (!code) {
+        return "";
+    }
+    if (strcmp(code, "blue") == 0) return "蓝色";
+    if (strcmp(code, "yellow") == 0) return "黄色";
+    if (strcmp(code, "orange") == 0) return "橙色";
+    if (strcmp(code, "red") == 0) return "红色";
+    if (strcmp(code, "white") == 0) return "白色";
+    if (strcmp(code, "black") == 0) return "黑色";
+    return "";
+}
+
+static bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *alert)
+{
+    if (!lat || !lon || lat[0] == '\0' || lon[0] == '\0') {
+        alert->active = false;
+        return true;
+    }
+
+    char url[256];
+    snprintf(url, sizeof(url),
+             "https://%s/weatheralert/v1/current/%s/%s?lang=zh&localTime=true",
+             qweather_api_host(), lat, lon);
+    ESP_LOGI(TAG, "qweather alert lookup: %s,%s via %s", lat, lon, qweather_api_host());
+    char *response = (char *)malloc(16384);
+    if (!response) {
+        ESP_LOGW(TAG, "qweather alert response alloc failed");
+        return false;
+    }
+    response[0] = '\0';
+    if (http_get_text(url, response, 16384, g_weather_api_key) != ESP_OK) {
+        ESP_LOGW(TAG, "qweather alert http failed");
+        free(response);
+        return false;
+    }
+    cJSON *root = cJSON_Parse(response);
+    if (!root) {
+        log_response_preview("qweather alert", response);
+        free(response);
+        return false;
+    }
+
+    WeatherAlertData next = {};
+    bool ok = true;
+    cJSON *alerts = cJSON_GetObjectItem(root, "alerts");
+    cJSON *first = cJSON_IsArray(alerts) ? cJSON_GetArrayItem(alerts, 0) : nullptr;
+    if (first) {
+        char event_name[24] = {};
+        char color_code[16] = {};
+        char headline[64] = {};
+        cJSON *event = cJSON_GetObjectItem(first, "eventType");
+        cJSON *color = cJSON_GetObjectItem(first, "color");
+        if (event) {
+            json_copy_string(event, "name", event_name, sizeof(event_name));
+        }
+        if (color) {
+            json_copy_string(color, "code", color_code, sizeof(color_code));
+        }
+        json_copy_string(first, "headline", headline, sizeof(headline));
+        json_copy_string(first, "icon", next.icon, sizeof(next.icon));
+
+        const char *color_name = warning_color_name(color_code);
+        if (event_name[0] != '\0' && color_name[0] != '\0') {
+            snprintf(next.title, sizeof(next.title), "%s%s预警", event_name, color_name);
+        } else if (headline[0] != '\0') {
+            strlcpy(next.title, headline, sizeof(next.title));
+        } else if (event_name[0] != '\0') {
+            snprintf(next.title, sizeof(next.title), "%s预警", event_name);
+        }
+        next.active = next.title[0] != '\0';
+    }
+    time(&next.updated_at);
+    *alert = next;
+
     cJSON_Delete(root);
     free(response);
     return ok;
@@ -2290,7 +2573,7 @@ static bool qweather_fetch_now(const char *city_id, WeatherData *weather)
 
 static bool perform_weather_update()
 {
-    if (!g_have_weather_key) {
+    if (!g_have_weather_key || g_low_battery_mode) {
         xEventGroupClearBits(g_app_events, kWeatherReadyBit);
         return false;
     }
@@ -2302,18 +2585,47 @@ static bool perform_weather_update()
     WeatherData next = {};
     if (ip_geolocation_lookup(location, sizeof(location), ip_city, sizeof(ip_city))) {
         trim_ascii(location);
-        bool have_city_id = qweather_lookup_city(location, city_id, sizeof(city_id), lookup_city, sizeof(lookup_city));
+        bool have_city_id = qweather_lookup_city(location,
+                                                 city_id,
+                                                 sizeof(city_id),
+                                                 lookup_city,
+                                                 sizeof(lookup_city),
+                                                 next.lat,
+                                                 sizeof(next.lat),
+                                                 next.lon,
+                                                 sizeof(next.lon));
         if (!have_city_id && ip_city[0] != '\0') {
             ESP_LOGW(TAG, "retry qweather city lookup by ip city: %s", ip_city);
-            have_city_id = qweather_lookup_city(ip_city, city_id, sizeof(city_id), lookup_city, sizeof(lookup_city));
+            have_city_id = qweather_lookup_city(ip_city,
+                                                city_id,
+                                                sizeof(city_id),
+                                                lookup_city,
+                                                sizeof(lookup_city),
+                                                next.lat,
+                                                sizeof(next.lat),
+                                                next.lon,
+                                                sizeof(next.lon));
         }
         strlcpy(next.city, ip_city[0] ? ip_city : (lookup_city[0] ? lookup_city : location), sizeof(next.city));
         if (!have_city_id) {
             strlcpy(city_id, location, sizeof(city_id));
+            char *comma = strchr(location, ',');
+            if (comma) {
+                size_t lon_len = comma - location;
+                if (lon_len >= sizeof(next.lon)) {
+                    lon_len = sizeof(next.lon) - 1;
+                }
+                memcpy(next.lon, location, lon_len);
+                next.lon[lon_len] = '\0';
+                strlcpy(next.lat, comma + 1, sizeof(next.lat));
+            }
             ESP_LOGW(TAG, "using ip coordinates for weather now: %s", city_id);
         }
         if (qweather_fetch_now(city_id, &next)) {
             g_weather = next;
+            if (!qweather_fetch_alert(g_weather.lat, g_weather.lon, &g_weather_alert)) {
+                g_weather_alert = {};
+            }
             time(&g_last_weather_sync_time);
             xEventGroupSetBits(g_app_events, kWeatherReadyBit);
             ESP_LOGI(TAG, "weather updated: %s %s %sC %s%% icon=%s",
@@ -2447,7 +2759,7 @@ static void run_boot_connectivity_sync()
 
     update_boot_screen(42, "Wi-Fi connected", "Loading weather");
     remaining_ms = boot_sync_remaining_ms();
-    if (g_have_weather_key && remaining_ms > 250) {
+    if (g_have_weather_key && !g_low_battery_mode && remaining_ms > 250) {
         bool weather_ok = false;
         int previous_timeout = g_http_timeout_ms;
         g_http_timeout_ms = kHttpBootTimeoutMs;
@@ -2457,8 +2769,10 @@ static void run_boot_connectivity_sync()
         update_boot_screen(weather_ok ? 76 : 68,
                            weather_ok ? "Weather ready" : "Weather retry later",
                            weather_ok ? "Synchronizing time" : "Will sync in background");
-    } else if (g_have_weather_key) {
+    } else if (g_have_weather_key && !g_low_battery_mode) {
         update_boot_screen(68, "Weather retry later", "Starting clock");
+    } else if (g_low_battery_mode) {
+        update_boot_screen(58, "Weather skipped", "Low battery");
     } else {
         update_boot_screen(58, "Weather skipped", "API Key not configured");
     }
@@ -2535,7 +2849,14 @@ static void network_sync_task(void *)
                                 local.tm_yday != last_midnight_ntp_yday;
         time_t now;
         time(&now);
-        bool weather_due = g_have_weather_key && (manual_weather_due || provisioning_sync_due || next_weather_at == 0 || now >= next_weather_at);
+        bool weather_due = g_have_weather_key && !g_low_battery_mode &&
+                           (manual_weather_due || provisioning_sync_due || next_weather_at == 0 || now >= next_weather_at);
+        if (g_low_battery_mode && manual_weather_due) {
+            finish_settings_sync(kSettingsSyncWeather, "电量低，已跳过");
+            xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
         bool ntp_due = (manual_ntp_due || provisioning_sync_due || boot_ntp_due || midnight_ntp_due) && now >= next_ntp_retry_at;
 
         if (!ntp_due && !weather_due) {
@@ -2614,12 +2935,14 @@ static void update_time_ui(const struct tm &local)
     int minute_key = local.tm_hour * 60 + local.tm_min;
     if (minute_key != g_last_ui_minute) {
         draw_time_canvas(local);
-        int day_seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
-        int day_filled = (day_seconds * 60) / (24 * 3600);
-        update_progress_canvas(g_day_progress_canvas, day_filled, &g_last_day_progress_filled);
+        if (!g_low_battery_mode) {
+            int day_seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
+            int day_filled = (day_seconds * 60) / (24 * 3600);
+            update_progress_canvas(g_day_progress_canvas, day_filled, &g_last_day_progress_filled);
+        }
         g_last_ui_minute = minute_key;
     }
-    if (local.tm_sec != g_last_ui_second) {
+    if (!g_low_battery_mode && local.tm_sec != g_last_ui_second) {
         draw_second_canvas(local);
         draw_status_gif_frame(local.tm_sec % STATUS_GIF_FRAME_COUNT);
         update_progress_canvas(g_second_progress_canvas, local.tm_sec + 1, &g_last_second_progress_filled);
@@ -2698,6 +3021,8 @@ static void ui_task(void *)
     bool info_page_visible = false;
     bool settings_page_visible = false;
     bool setup_panel_visible = false;
+    bool low_mode_visible = false;
+    bool alert_visible = false;
     uint32_t last_settings_action_seq = g_settings_action_seq;
 
     auto delay_to_next_second = []() {
@@ -2722,6 +3047,7 @@ static void ui_task(void *)
         bool status_due = tick_now - last_status_update >= pdMS_TO_TICKS(10000);
         bool battery_due = g_battery_version != last_battery_version;
         bool setup_due = g_setup_portal_active != setup_panel_visible;
+        bool mode_due = g_low_battery_mode != low_mode_visible;
 
         if (Lvgl_lock(80)) {
             bool refresh_now = false;
@@ -2744,6 +3070,8 @@ static void ui_task(void *)
                 show_page(g_clock_root);
                 info_page_visible = false;
                 setup_panel_visible = false;
+                low_mode_visible = g_low_battery_mode;
+                apply_clock_mode_visibility(false);
                 status_due = true;
                 battery_due = true;
                 g_last_ui_second = -1;
@@ -2802,6 +3130,8 @@ static void ui_task(void *)
                 show_page(g_clock_root);
                 settings_page_visible = false;
                 setup_panel_visible = false;
+                low_mode_visible = g_low_battery_mode;
+                apply_clock_mode_visibility(false);
                 status_due = true;
                 battery_due = true;
                 g_last_ui_second = -1;
@@ -2816,18 +3146,33 @@ static void ui_task(void *)
                 if (g_last_ui_second != previous_second || g_last_ui_minute != previous_minute) {
                     refresh_now = true;
                 }
+                bool next_alert_visible = !g_low_battery_mode && g_weather_alert.active && (local.tm_sec % 2 == 0);
+                if (next_alert_visible != alert_visible || (next_alert_visible && status_due)) {
+                    update_alert_pill(next_alert_visible);
+                    alert_visible = next_alert_visible;
+                    refresh_now = true;
+                }
             } else {
                 set_label_text_if_changed(g_date_label, "----/--/-- / 星期-");
+                update_alert_pill(false);
+                alert_visible = false;
                 refresh_now = true;
             }
 
-            if (status_due || battery_due || setup_due) {
+            if (status_due || battery_due || setup_due || mode_due) {
                 EventBits_t bits = xEventGroupGetBits(g_app_events);
                 bool setup_active = g_setup_portal_active;
-                if (setup_active != setup_panel_visible) {
-                    set_lower_panel_visible(!setup_active);
+                if (setup_active != setup_panel_visible || mode_due) {
+                    apply_clock_mode_visibility(setup_active);
                     setup_panel_visible = setup_active;
+                    low_mode_visible = g_low_battery_mode;
                     status_due = true;
+                    g_last_ui_second = -1;
+                    g_last_ui_minute = -1;
+                    g_last_day_progress_filled = -1;
+                    g_last_second_progress_filled = -1;
+                    update_alert_pill(false);
+                    alert_visible = false;
                     refresh_now = true;
                 }
                 if (setup_active) {
@@ -2843,7 +3188,7 @@ static void ui_task(void *)
                     snprintf(humi, sizeof(humi), "湿度 --.-%%");
                 }
 
-                if (!setup_active) {
+                if (!setup_active && !g_low_battery_mode) {
                     set_label_text_if_changed(g_temp_label, temp);
                     set_label_text_if_changed(g_humi_label, humi);
                     if (bits & kWeatherReadyBit) {
@@ -2892,17 +3237,70 @@ static void ui_task(void *)
 
 static void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
+    struct FlushRange {
+        int x1;
+        int x2;
+    };
+    static FlushRange ranges[kMaxFlushRanges];
+    static int range_count = 0;
+    static bool force_full_refresh = false;
+
+    int area_x1 = area->x1 < 0 ? 0 : area->x1;
+    int area_x2 = area->x2 >= kDisplayWidth ? kDisplayWidth - 1 : area->x2;
+    if (area_x1 <= area_x2) {
+        area_x1 &= ~1;
+        area_x2 |= 1;
+        if (area_x2 >= kDisplayWidth) {
+            area_x2 = kDisplayWidth - 1;
+        }
+        if (area_x2 - area_x1 + 1 >= kDisplayPartialMaxWidth) {
+            force_full_refresh = true;
+        } else {
+            bool merged = false;
+            for (int i = 0; i < range_count; ++i) {
+                if (area_x1 <= ranges[i].x2 + kFlushRangeMergeGap &&
+                    area_x2 >= ranges[i].x1 - kFlushRangeMergeGap) {
+                    if (area_x1 < ranges[i].x1) ranges[i].x1 = area_x1;
+                    if (area_x2 > ranges[i].x2) ranges[i].x2 = area_x2;
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                if (range_count < kMaxFlushRanges) {
+                    ranges[range_count++] = {area_x1, area_x2};
+                } else {
+                    force_full_refresh = true;
+                }
+            }
+        }
+    }
+
     uint16_t *buffer = (uint16_t *)color_map;
     constexpr uint16_t kRlcdBlackThreshold = 0xC618;
     for (int y = area->y1; y <= area->y2; y++) {
         for (int x = area->x1; x <= area->x2; x++) {
-            uint8_t color = (*buffer < kRlcdBlackThreshold) ? ColorBlack : ColorWhite;
-            g_display.RLCD_SetPixel(x, y, color);
+            if (x >= 0 && x < kDisplayWidth && y >= 0 && y < kDisplayHeight) {
+                uint8_t color = (*buffer < kRlcdBlackThreshold) ? ColorBlack : ColorWhite;
+                g_display.RLCD_SetPixel(x, y, color);
+            }
             buffer++;
         }
     }
     if (lv_disp_flush_is_last(drv)) {
-        g_display.RLCD_Display();
+        int covered_width = 0;
+        for (int i = 0; i < range_count; ++i) {
+            covered_width += ranges[i].x2 - ranges[i].x1 + 1;
+        }
+        if (force_full_refresh || range_count == 0 || covered_width >= kDisplayPartialMaxWidth) {
+            g_display.RLCD_Display();
+        } else {
+            for (int i = 0; i < range_count; ++i) {
+                g_display.RLCD_DisplayXRange(ranges[i].x1, ranges[i].x2);
+            }
+        }
+        range_count = 0;
+        force_full_refresh = false;
     }
     lv_disp_flush_ready(drv);
 }
@@ -2926,6 +3324,7 @@ extern "C" void app_main(void)
     tzset();
     restore_system_time_from_rtc();
     g_shtc3 = new Shtc3Port(g_i2c);
+    sample_battery();
     init_wifi();
 
     g_display.RLCD_Init();

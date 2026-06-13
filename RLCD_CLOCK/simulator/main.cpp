@@ -10,6 +10,7 @@
 #include "dseg_digits.h"
 #include "boot_anim.h"
 #include "status_gif_60.h"
+#include "ui_icons.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
@@ -17,7 +18,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.57";
+static const char *APP_VERSION = "v0.0.58";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -37,6 +38,12 @@ static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_weather_temp_label;
 static lv_obj_t *g_weather_humi_label;
+static lv_obj_t *g_alert_pill;
+static lv_obj_t *g_alert_icon_canvas;
+static lv_obj_t *g_alert_label;
+static lv_obj_t *g_low_battery_icon_canvas;
+static lv_obj_t *g_panel_sep_a;
+static lv_obj_t *g_panel_sep_b;
 static lv_obj_t *g_battery_segments[5];
 static lv_obj_t *g_time_canvas;
 static lv_obj_t *g_second_canvas;
@@ -55,6 +62,8 @@ static std::vector<lv_color_t> g_time_canvas_pixels(kTimeCanvasW * kTimeCanvasH)
 static std::vector<lv_color_t> g_second_canvas_pixels(kSecondCanvasW * kSecondCanvasH);
 static std::vector<lv_color_t> g_status_gif_canvas_pixels(STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT);
 static std::vector<lv_color_t> g_boot_anim_canvas_pixels(BOOT_ANIM_WIDTH * BOOT_ANIM_HEIGHT);
+static std::vector<lv_color_t> g_alert_icon_canvas_pixels(WARNING_ICON_WIDTH * WARNING_ICON_HEIGHT);
+static std::vector<lv_color_t> g_low_battery_icon_canvas_pixels(LOW_BATTERY_ICON_WIDTH * LOW_BATTERY_ICON_HEIGHT);
 static constexpr int kProgressSegmentCount = 60;
 static constexpr int kProgressSegmentW = 5;
 static constexpr int kProgressSegmentH = 3;
@@ -142,6 +151,27 @@ static void update_progress_canvas(lv_obj_t *canvas, int filled, int *last_fille
         invalidate_progress_segment(canvas, i);
     }
     *last_filled = filled;
+}
+
+static void draw_1bit_icon(lv_obj_t *canvas,
+                           int width,
+                           int height,
+                           int bytes_per_row,
+                           const uint8_t *bits,
+                           lv_color_t fg,
+                           lv_color_t bg)
+{
+    if (!canvas || !bits) return;
+    lv_canvas_fill_bg(canvas, bg, LV_OPA_COVER);
+    for (int y = 0; y < height; ++y) {
+        const uint8_t *row = bits + y * bytes_per_row;
+        for (int x = 0; x < width; ++x) {
+            if (row[x / 8] & (0x80 >> (x & 7))) {
+                lv_canvas_set_px_color(canvas, x, y, fg);
+            }
+        }
+    }
+    lv_obj_invalidate(canvas);
 }
 
 static const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
@@ -260,11 +290,22 @@ static void set_lower_panel_visible(bool visible)
         if (visible) lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+static void set_setup_panel_visible(bool visible)
+{
     for (lv_obj_t *label : g_setup_status_labels) {
         if (!label) continue;
-        if (visible) lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+        if (visible) lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+static void set_obj_visible(lv_obj_t *obj, bool visible)
+{
+    if (!obj) return;
+    if (visible) lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -436,9 +477,44 @@ static void build_clock_ui()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
+    g_date_label = make_label(screen, 198, 15, 182, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
+
+    g_alert_pill = lv_obj_create(screen);
+    lv_obj_clear_flag(g_alert_pill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_alert_pill, 56, 11);
+    lv_obj_set_size(g_alert_pill, 136, 26);
+    lv_obj_set_style_bg_color(g_alert_pill, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(g_alert_pill, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(g_alert_pill, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(g_alert_pill, 13, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_alert_pill, 0, LV_PART_MAIN);
+    lv_obj_add_flag(g_alert_pill, LV_OBJ_FLAG_HIDDEN);
+
+    g_alert_icon_canvas = lv_canvas_create(g_alert_pill);
+    lv_obj_clear_flag(g_alert_icon_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_alert_icon_canvas, 8, 4);
+    lv_obj_set_size(g_alert_icon_canvas, WARNING_ICON_WIDTH, WARNING_ICON_HEIGHT);
+    lv_obj_set_style_border_width(g_alert_icon_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_alert_icon_canvas, 0, LV_PART_MAIN);
+    lv_canvas_set_buffer(g_alert_icon_canvas,
+                         g_alert_icon_canvas_pixels.data(),
+                         WARNING_ICON_WIDTH,
+                         WARNING_ICON_HEIGHT,
+                         LV_IMG_CF_TRUE_COLOR);
+    draw_1bit_icon(g_alert_icon_canvas,
+                   WARNING_ICON_WIDTH,
+                   WARNING_ICON_HEIGHT,
+                   WARNING_ICON_BYTES_PER_ROW,
+                   warning_icon_bits,
+                   lv_color_white(),
+                   lv_color_black());
+    g_alert_label = make_label_with_font(g_alert_pill, 30, 4, 98, 18, "大风蓝色预警", &zh_font_16);
+    lv_obj_set_style_text_color(g_alert_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_align(g_alert_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_long_mode(g_alert_label, LV_LABEL_LONG_CLIP);
+
     g_weather_city_label = make_label(screen, 24, 196, 76, 20, "--");
     remember_lower_panel_object(g_weather_city_label);
     lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -502,14 +578,34 @@ static void build_clock_ui()
     lv_obj_t *bottom_line = make_bar(screen, 18, 184, 364, 4);
     build_progress_canvas(screen, &g_day_progress_canvas, g_day_progress_canvas_pixels, 59);
     build_progress_canvas(screen, &g_second_progress_canvas, g_second_progress_canvas_pixels, 180);
-    lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
-    lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
-    remember_lower_panel_object(panel_sep_a);
-    remember_lower_panel_object(panel_sep_b);
+    g_panel_sep_a = make_bar(screen, 139, 188, 2, 102);
+    g_panel_sep_b = make_bar(screen, 260, 188, 2, 102);
+    remember_lower_panel_object(g_panel_sep_a);
+    remember_lower_panel_object(g_panel_sep_b);
     set_obj_black(top_line, true);
     set_obj_black(bottom_line, true);
-    set_obj_black(panel_sep_a, true);
-    set_obj_black(panel_sep_b, true);
+    set_obj_black(g_panel_sep_a, true);
+    set_obj_black(g_panel_sep_b, true);
+
+    g_low_battery_icon_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_low_battery_icon_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_low_battery_icon_canvas, 156, 214);
+    lv_obj_set_size(g_low_battery_icon_canvas, LOW_BATTERY_ICON_WIDTH, LOW_BATTERY_ICON_HEIGHT);
+    lv_obj_set_style_border_width(g_low_battery_icon_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_low_battery_icon_canvas, 0, LV_PART_MAIN);
+    lv_obj_add_flag(g_low_battery_icon_canvas, LV_OBJ_FLAG_HIDDEN);
+    lv_canvas_set_buffer(g_low_battery_icon_canvas,
+                         g_low_battery_icon_canvas_pixels.data(),
+                         LOW_BATTERY_ICON_WIDTH,
+                         LOW_BATTERY_ICON_HEIGHT,
+                         LV_IMG_CF_TRUE_COLOR);
+    draw_1bit_icon(g_low_battery_icon_canvas,
+                   LOW_BATTERY_ICON_WIDTH,
+                   LOW_BATTERY_ICON_HEIGHT,
+                   LOW_BATTERY_ICON_BYTES_PER_ROW,
+                   low_battery_icon_bits,
+                   lv_color_black(),
+                   lv_color_white());
 
     static const int setup_y[] = {194, 212, 230, 248, 266, 284};
     static const char *setup_text[] = {
@@ -523,6 +619,27 @@ static void build_clock_ui()
     for (int i = 0; i < 6; ++i) {
         g_setup_status_labels[i] = make_label_with_font(screen, 26, setup_y[i], 348, 18, setup_text[i], &lv_font_montserrat_14);
         lv_obj_add_flag(g_setup_status_labels[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void apply_low_battery_preview(bool low)
+{
+    set_obj_visible(g_second_canvas, !low);
+    set_obj_visible(g_day_progress_canvas, !low);
+    set_obj_visible(g_second_progress_canvas, !low);
+    set_lower_panel_visible(!low);
+    set_setup_panel_visible(false);
+    set_obj_visible(g_panel_sep_a, true);
+    set_obj_visible(g_panel_sep_b, true);
+    set_obj_visible(g_low_battery_icon_canvas, low);
+    set_obj_visible(g_alert_pill, false);
+}
+
+static void apply_alert_preview(bool visible)
+{
+    set_obj_visible(g_alert_pill, visible);
+    if (visible) {
+        set_label_text_if_changed(g_alert_label, "大风蓝色预警");
     }
 }
 
@@ -725,12 +842,21 @@ int main(int, char **)
             build_settings_page();
         } else if (preview_mode && strcmp(preview_mode, "setup") == 0) {
             set_lower_panel_visible(false);
+            set_setup_panel_visible(true);
+        } else if (preview_mode && strcmp(preview_mode, "alert") == 0) {
+            apply_alert_preview(true);
+        } else if (preview_mode && strcmp(preview_mode, "low") == 0) {
+            update_battery_icon(4);
+            apply_low_battery_preview(true);
         }
         time_t now = preview_time();
         struct tm local;
         localtime_r(&now, &local);
         if (!(preview_mode && strcmp(preview_mode, "settings") == 0)) {
             update_time_ui(local);
+            if (preview_mode && strcmp(preview_mode, "low") == 0) {
+                apply_low_battery_preview(true);
+            }
         }
         for (int i = 0; i < 5; ++i) {
             lv_tick_inc(16);

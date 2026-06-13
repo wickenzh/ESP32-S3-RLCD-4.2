@@ -33,5 +33,7 @@ generate_one() {
 
 generate_one boot weather_clock_boot
 generate_one main weather_clock_main
+generate_one alert weather_clock_alert
+generate_one low weather_clock_low_battery
 generate_one settings weather_clock_settings
 generate_one setup weather_clock_setup
