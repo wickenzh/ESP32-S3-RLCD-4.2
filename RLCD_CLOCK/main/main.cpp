@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.54";
+static const char *APP_VERSION = "v0.0.55";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;

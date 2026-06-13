@@ -10,6 +10,7 @@ static lv_disp_drv_t disp_drv;      		// contains callback functions
 static SemaphoreHandle_t lvgl_mux = NULL;
 
 static const char *TAG = "LvglPort";
+static constexpr int kDrawBufferRows = 40;
 
 static void Increase_lvgl_tick(void *arg)
 {
@@ -54,12 +55,18 @@ static void Lvgl_port_task(void *arg)
 void Lvgl_PortInit(int width, int height,DispFlushCb flush_cb) {
     lvgl_mux = xSemaphoreCreateMutex();
     lv_init();
-    lv_color_t *buffer1 = (lv_color_t *)heap_caps_malloc(width * height * sizeof(lv_color_t) , MALLOC_CAP_SPIRAM);
+    int buffer_rows = height < kDrawBufferRows ? height : kDrawBufferRows;
+    size_t buffer_pixels = (size_t)width * buffer_rows;
+    lv_color_t *buffer1 = (lv_color_t *)heap_caps_malloc(buffer_pixels * sizeof(lv_color_t),
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   	assert(buffer1);
-	lv_color_t *buffer2 = (lv_color_t *)heap_caps_malloc(width * height * sizeof(lv_color_t) , MALLOC_CAP_SPIRAM);
+	lv_color_t *buffer2 = (lv_color_t *)heap_caps_malloc(buffer_pixels * sizeof(lv_color_t),
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   	assert(buffer2);
 
-    lv_disp_draw_buf_init(&disp_buf, buffer1, buffer2, width * height);
+    lv_disp_draw_buf_init(&disp_buf, buffer1, buffer2, buffer_pixels);
+    ESP_LOGI(TAG, "LVGL draw buffer: %dx%d rows x2, %u bytes each",
+             width, buffer_rows, (unsigned)(buffer_pixels * sizeof(lv_color_t)));
     ESP_LOGI(TAG, "Register display driver to LVGL");
 
     lv_disp_drv_init(&disp_drv);
