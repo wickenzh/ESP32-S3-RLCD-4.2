@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.51";
+static const char *APP_VERSION = "v0.0.52";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -106,6 +106,9 @@ static volatile bool g_settings_requested = false;
 static volatile int g_settings_selection = 0;
 static volatile uint32_t g_settings_action_seq = 0;
 static volatile TickType_t g_settings_last_activity_tick = 0;
+static TickType_t g_settings_feedback_until_tick = 0;
+static bool g_factory_reset_confirm_pending = false;
+static char g_settings_feedback[48] = {};
 
 struct WeatherData {
     char city[32] = {};
@@ -132,8 +135,10 @@ static lv_obj_t *g_second_canvas;
 static lv_color_t *g_second_canvas_buf;
 static lv_obj_t *g_status_gif_canvas;
 static lv_color_t *g_status_gif_canvas_buf;
-static lv_obj_t *g_day_progress_segments[60];
-static lv_obj_t *g_second_progress_segments[60];
+static lv_obj_t *g_day_progress_canvas;
+static lv_color_t *g_day_progress_canvas_buf;
+static lv_obj_t *g_second_progress_canvas;
+static lv_color_t *g_second_progress_canvas_buf;
 static lv_obj_t *g_lower_panel_objects[11];
 static lv_obj_t *g_setup_status_labels[6];
 static lv_obj_t *g_boot_status_label;
@@ -142,6 +147,7 @@ static lv_obj_t *g_boot_anim_canvas;
 static lv_color_t *g_boot_anim_canvas_buf;
 static lv_obj_t *g_info_labels[5];
 static lv_obj_t *g_settings_labels[4];
+static lv_obj_t *g_settings_feedback_label;
 static volatile bool g_boot_anim_running = false;
 static volatile int g_boot_anim_current_frame = 0;
 static TaskHandle_t g_boot_anim_task_handle = nullptr;
@@ -177,55 +183,82 @@ static lv_obj_t *make_bar(lv_obj_t *parent, int x, int y, int w, int h)
     return bar;
 }
 
-static void style_progress_segment(lv_obj_t *obj, bool filled)
-{
-    lv_obj_set_style_bg_color(obj, filled ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(obj, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
-}
+static constexpr int kProgressSegmentCount = 60;
+static constexpr int kProgressSegmentW = 5;
+static constexpr int kProgressSegmentH = 3;
+static constexpr int kProgressSegmentGap = 1;
+static constexpr int kProgressCanvasW = kProgressSegmentCount * kProgressSegmentW + (kProgressSegmentCount - 1) * kProgressSegmentGap;
+static constexpr int kProgressCanvasH = kProgressSegmentH;
 
-static void build_progress_row(lv_obj_t *parent, lv_obj_t **segments, int y)
+static void draw_progress_segment(lv_obj_t *canvas, int index, bool filled)
 {
-    static constexpr int kSegmentCount = 60;
-    static constexpr int kSegmentX = 20;
-    static constexpr int kSegmentW = 5;
-    static constexpr int kSegmentH = 3;
-    static constexpr int kSegmentGap = 1;
-    for (int i = 0; i < kSegmentCount; ++i) {
-        segments[i] = lv_obj_create(parent);
-        lv_obj_clear_flag(segments[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_pos(segments[i], kSegmentX + i * (kSegmentW + kSegmentGap), y);
-        lv_obj_set_size(segments[i], kSegmentW, kSegmentH);
-        style_progress_segment(segments[i], false);
+    if (!canvas || index < 0 || index >= kProgressSegmentCount) {
+        return;
     }
-}
-
-static void update_progress_row(lv_obj_t **segments, int filled)
-{
-    if (filled < 0) {
-        filled = 0;
-    } else if (filled > 60) {
-        filled = 60;
-    }
-    for (int i = 0; i < 60; ++i) {
-        if (segments[i]) {
-            style_progress_segment(segments[i], i < filled);
+    int x0 = index * (kProgressSegmentW + kProgressSegmentGap);
+    for (int y = 0; y < kProgressSegmentH; ++y) {
+        for (int x = 0; x < kProgressSegmentW; ++x) {
+            bool border = x == 0 || x == kProgressSegmentW - 1 || y == 0 || y == kProgressSegmentH - 1;
+            lv_canvas_set_px_color(canvas, x0 + x, y, (filled || border) ? lv_color_black() : lv_color_white());
         }
     }
 }
 
-static void update_progress_row_delta(lv_obj_t **segments, int filled, int *last_filled)
+static void invalidate_progress_segment(lv_obj_t *canvas, int index)
 {
+    if (!canvas || index < 0 || index >= kProgressSegmentCount) {
+        return;
+    }
+    int x0 = index * (kProgressSegmentW + kProgressSegmentGap);
+    lv_area_t area = {};
+    area.x1 = static_cast<lv_coord_t>(x0);
+    area.y1 = 0;
+    area.x2 = static_cast<lv_coord_t>(x0 + kProgressSegmentW - 1);
+    area.y2 = static_cast<lv_coord_t>(kProgressSegmentH - 1);
+    lv_obj_invalidate_area(canvas, &area);
+}
+
+static void build_progress_canvas(lv_obj_t *parent, lv_obj_t **canvas, lv_color_t **buf, int y)
+{
+    if (!*buf) {
+        *buf = (lv_color_t *)heap_caps_calloc(kProgressCanvasW * kProgressCanvasH,
+                                              sizeof(lv_color_t),
+                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!*buf) {
+            *buf = (lv_color_t *)calloc(kProgressCanvasW * kProgressCanvasH, sizeof(lv_color_t));
+        }
+    }
+    *canvas = lv_canvas_create(parent);
+    lv_obj_clear_flag(*canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(*canvas, 20, y);
+    lv_obj_set_size(*canvas, kProgressCanvasW, kProgressCanvasH);
+    lv_obj_set_style_border_width(*canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(*canvas, 0, LV_PART_MAIN);
+    if (*buf) {
+        lv_canvas_set_buffer(*canvas, *buf, kProgressCanvasW, kProgressCanvasH, LV_IMG_CF_TRUE_COLOR);
+        lv_canvas_fill_bg(*canvas, lv_color_white(), LV_OPA_COVER);
+        for (int i = 0; i < kProgressSegmentCount; ++i) {
+            draw_progress_segment(*canvas, i, false);
+        }
+        lv_obj_invalidate(*canvas);
+    }
+}
+
+static void update_progress_canvas(lv_obj_t *canvas, int filled, int *last_filled)
+{
+    if (!canvas) {
+        return;
+    }
     if (filled < 0) {
         filled = 0;
-    } else if (filled > 60) {
-        filled = 60;
+    } else if (filled > kProgressSegmentCount) {
+        filled = kProgressSegmentCount;
     }
     if (*last_filled < 0 || filled < *last_filled) {
-        update_progress_row(segments, filled);
+        for (int i = 0; i < kProgressSegmentCount; ++i) {
+            draw_progress_segment(canvas, i, i < filled);
+        }
+        lv_obj_invalidate(canvas);
         *last_filled = filled;
         return;
     }
@@ -233,9 +266,8 @@ static void update_progress_row_delta(lv_obj_t **segments, int filled, int *last
         return;
     }
     for (int i = *last_filled; i < filled; ++i) {
-        if (i >= 0 && i < 60 && segments[i]) {
-            style_progress_segment(segments[i], true);
-        }
+        draw_progress_segment(canvas, i, true);
+        invalidate_progress_segment(canvas, i);
     }
     *last_filled = filled;
 }
@@ -395,12 +427,8 @@ static void clear_clock_object_refs()
     g_time_canvas = nullptr;
     g_second_canvas = nullptr;
     g_status_gif_canvas = nullptr;
-    for (lv_obj_t *&segment : g_day_progress_segments) {
-        segment = nullptr;
-    }
-    for (lv_obj_t *&segment : g_second_progress_segments) {
-        segment = nullptr;
-    }
+    g_day_progress_canvas = nullptr;
+    g_second_progress_canvas = nullptr;
     for (lv_obj_t *&segment : g_battery_segments) {
         segment = nullptr;
     }
@@ -425,6 +453,7 @@ static void clear_info_object_refs()
     for (lv_obj_t *&label : g_settings_labels) {
         label = nullptr;
     }
+    g_settings_feedback_label = nullptr;
 }
 
 static void remember_lower_panel_object(lv_obj_t *obj)
@@ -736,7 +765,10 @@ static void build_settings_page()
         lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     }
 
-    lv_obj_t *hint = make_label_with_font(screen, 24, 260, 352, 22, "KEY: Select    BOOT: OK", &lv_font_montserrat_14);
+    g_settings_feedback_label = make_label(screen, 24, 248, 352, 22, "");
+    lv_obj_set_style_text_align(g_settings_feedback_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    lv_obj_t *hint = make_label_with_font(screen, 24, 270, 352, 22, "KEY: Select    BOOT: OK", &lv_font_montserrat_14);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 }
 
@@ -748,7 +780,7 @@ static void update_settings_page()
         chime,
         "同步时间",
         "同步天气",
-        "恢复出厂设置",
+        g_factory_reset_confirm_pending ? "再次确认恢复" : "恢复出厂设置",
     };
     int selected = g_settings_selection;
     if (selected < 0 || selected > 3) {
@@ -760,6 +792,21 @@ static void update_settings_page()
             style_settings_item(g_settings_labels[i], i == selected);
         }
     }
+    if (g_settings_feedback_label) {
+        TickType_t now = xTaskGetTickCount();
+        if (g_settings_feedback[0] && now < g_settings_feedback_until_tick) {
+            set_label_text_if_changed(g_settings_feedback_label, g_settings_feedback);
+        } else {
+            g_settings_feedback[0] = '\0';
+            set_label_text_if_changed(g_settings_feedback_label, "");
+        }
+    }
+}
+
+static void set_settings_feedback(const char *text, uint32_t duration_ms)
+{
+    strlcpy(g_settings_feedback, text, sizeof(g_settings_feedback));
+    g_settings_feedback_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
 }
 
 static void update_setup_status_panel()
@@ -907,8 +954,8 @@ static void build_clock_ui()
 
     lv_obj_t *top_line = make_bar(screen, 18, 54, 364, 4);
     lv_obj_t *bottom_line = make_bar(screen, 18, 184, 364, 4);
-    build_progress_row(screen, g_day_progress_segments, 59);
-    build_progress_row(screen, g_second_progress_segments, 180);
+    build_progress_canvas(screen, &g_day_progress_canvas, &g_day_progress_canvas_buf, 59);
+    build_progress_canvas(screen, &g_second_progress_canvas, &g_second_progress_canvas_buf, 180);
     lv_obj_t *panel_sep_a = make_bar(screen, 139, 188, 2, 102);
     lv_obj_t *panel_sep_b = make_bar(screen, 260, 188, 2, 102);
     remember_lower_panel_object(panel_sep_a);
@@ -1530,6 +1577,8 @@ static void key_button_task(void *)
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
                     g_settings_selection = (g_settings_selection + 1) % 4;
                     g_settings_last_activity_tick = now;
+                    g_factory_reset_confirm_pending = false;
+                    g_settings_feedback[0] = '\0';
                 }
             }
             pressed_since = 0;
@@ -2348,7 +2397,7 @@ static void network_sync_task(void *)
         bool provisioning_sync_due = (loop_bits & kProvisioningSyncBit) != 0;
         bool manual_ntp_due = (loop_bits & kManualNtpSyncBit) != 0;
         bool manual_weather_due = (loop_bits & kManualWeatherSyncBit) != 0;
-        if (g_setup_portal_active && !provisioning_sync_due) {
+        if (g_setup_portal_active && !provisioning_sync_due && !manual_ntp_due && !manual_weather_due) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
@@ -2373,8 +2422,11 @@ static void network_sync_task(void *)
         acquire_network_awake_lock();
         start_wifi_radio(false);
         if (wait_for_wifi_connected(45000)) {
+            bool ntp_ok = false;
+            bool weather_ok = false;
             if (ntp_due) {
                 if (perform_ntp_sync()) {
+                    ntp_ok = true;
                     boot_ntp_due = false;
                     next_ntp_retry_at = 0;
                     if (is_time_valid(&local) && local.tm_hour == 0) {
@@ -2386,7 +2438,7 @@ static void network_sync_task(void *)
                 }
             }
             if (weather_due) {
-                perform_weather_update();
+                weather_ok = perform_weather_update();
                 time(&next_weather_at);
                 next_weather_at += 60 * 60;
             }
@@ -2394,13 +2446,23 @@ static void network_sync_task(void *)
                 xEventGroupClearBits(g_app_events, kProvisioningSyncBit);
             }
             if (manual_ntp_due) {
+                set_settings_feedback(ntp_ok ? "时间同步完成" : "时间同步失败", 3000);
                 xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
             }
             if (manual_weather_due) {
+                set_settings_feedback(weather_ok ? "天气同步完成" : "天气同步失败", 3000);
                 xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
             }
         } else {
             ESP_LOGW(TAG, "wifi connect timeout during sync window");
+            if (manual_ntp_due) {
+                set_settings_feedback("时间同步失败", 3000);
+                xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
+            }
+            if (manual_weather_due) {
+                set_settings_feedback("天气同步失败", 3000);
+                xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
+            }
             if (ntp_due) {
                 time(&next_ntp_retry_at);
                 next_ntp_retry_at += 5 * 60;
@@ -2429,13 +2491,13 @@ static void update_time_ui(const struct tm &local)
         draw_time_canvas(local);
         int day_seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
         int day_filled = (day_seconds * 60) / (24 * 3600);
-        update_progress_row_delta(g_day_progress_segments, day_filled, &g_last_day_progress_filled);
+        update_progress_canvas(g_day_progress_canvas, day_filled, &g_last_day_progress_filled);
         g_last_ui_minute = minute_key;
     }
     if (local.tm_sec != g_last_ui_second) {
         draw_second_canvas(local);
         draw_status_gif_frame(local.tm_sec % STATUS_GIF_FRAME_COUNT);
-        update_progress_row_delta(g_second_progress_segments, local.tm_sec + 1, &g_last_second_progress_filled);
+        update_progress_canvas(g_second_progress_canvas, local.tm_sec + 1, &g_last_second_progress_filled);
         g_last_ui_second = local.tm_sec;
     }
 
@@ -2462,23 +2524,36 @@ static void handle_settings_action()
         selected = 0;
     }
     g_settings_last_activity_tick = xTaskGetTickCount();
+    if (selected != 3) {
+        g_factory_reset_confirm_pending = false;
+    }
     switch (selected) {
     case 0:
         g_hourly_chime_enabled = !g_hourly_chime_enabled;
         save_hourly_chime_setting();
+        set_settings_feedback(g_hourly_chime_enabled ? "整点报时 ON" : "整点报时 OFF", 2500);
         ESP_LOGI(TAG, "hourly chime %s", g_hourly_chime_enabled ? "enabled" : "disabled");
         break;
     case 1:
+        set_settings_feedback("正在同步时间...", 8000);
         ESP_LOGI(TAG, "manual ntp sync requested");
         xEventGroupSetBits(g_app_events, kManualNtpSyncBit);
         break;
     case 2:
+        set_settings_feedback("正在同步天气...", 8000);
         ESP_LOGI(TAG, "manual weather sync requested");
         xEventGroupSetBits(g_app_events, kManualWeatherSyncBit);
         break;
     case 3:
+        if (!g_factory_reset_confirm_pending) {
+            g_factory_reset_confirm_pending = true;
+            set_settings_feedback("再次按 BOOT 确认", kSettingsTimeoutMs);
+            ESP_LOGW(TAG, "factory reset confirmation requested");
+            break;
+        }
         ESP_LOGW(TAG, "factory reset requested from settings");
         g_settings_requested = false;
+        g_factory_reset_confirm_pending = false;
         clear_saved_config();
         start_wifi_radio(true);
         break;

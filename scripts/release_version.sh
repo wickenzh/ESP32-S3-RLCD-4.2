@@ -33,6 +33,7 @@ cd "$PROJECT_DIR"
 . /Users/zhwickner/esp/esp-idf/export.sh
 idf.py build
 cmake --build simulator/build
+"$ROOT_DIR/scripts/generate_previews.sh"
 
 cd "$ROOT_DIR"
 git diff --check
