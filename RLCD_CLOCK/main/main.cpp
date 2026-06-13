@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.52";
+static const char *APP_VERSION = "v0.0.53";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -59,6 +59,7 @@ static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
 static constexpr int kSettingsHoldMs = 2000;
 static constexpr int kSettingsTimeoutMs = 5000;
+static constexpr int kSettingsManualSyncTimeoutMs = 60000;
 static constexpr int kBootAnimRunFrameMs = 50;
 static constexpr int kBootWifiConnectTimeoutMs = 5000;
 static constexpr int kBootNtpRetries = 2;
@@ -67,6 +68,12 @@ static constexpr int kHttpDefaultTimeoutMs = 10000;
 static constexpr int kHttpBootTimeoutMs = 2500;
 static constexpr int kMinValidYear = 2024;
 static constexpr int kMaxValidYear = 2035;
+
+enum SettingsSyncOp {
+    kSettingsSyncNone = 0,
+    kSettingsSyncNtp = 1,
+    kSettingsSyncWeather = 2,
+};
 
 static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
@@ -106,6 +113,8 @@ static volatile bool g_settings_requested = false;
 static volatile int g_settings_selection = 0;
 static volatile uint32_t g_settings_action_seq = 0;
 static volatile TickType_t g_settings_last_activity_tick = 0;
+static volatile int g_settings_sync_op = kSettingsSyncNone;
+static volatile TickType_t g_settings_sync_deadline_tick = 0;
 static TickType_t g_settings_feedback_until_tick = 0;
 static bool g_factory_reset_confirm_pending = false;
 static char g_settings_feedback[48] = {};
@@ -780,7 +789,7 @@ static void update_settings_page()
         chime,
         "同步时间",
         "同步天气",
-        g_factory_reset_confirm_pending ? "再次确认恢复" : "恢复出厂设置",
+        g_factory_reset_confirm_pending ? "确认恢复出厂设置" : "恢复出厂设置",
     };
     int selected = g_settings_selection;
     if (selected < 0 || selected > 3) {
@@ -807,6 +816,32 @@ static void set_settings_feedback(const char *text, uint32_t duration_ms)
 {
     strlcpy(g_settings_feedback, text, sizeof(g_settings_feedback));
     g_settings_feedback_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
+}
+
+static bool is_settings_sync_busy()
+{
+    return g_settings_sync_op != kSettingsSyncNone;
+}
+
+static void begin_settings_sync(SettingsSyncOp op, const char *text)
+{
+    TickType_t now = xTaskGetTickCount();
+    g_settings_sync_op = op;
+    g_settings_sync_deadline_tick = now + pdMS_TO_TICKS(kSettingsManualSyncTimeoutMs);
+    g_settings_last_activity_tick = now;
+    set_settings_feedback(text, kSettingsManualSyncTimeoutMs);
+}
+
+static void finish_settings_sync(SettingsSyncOp op, const char *text)
+{
+    if (g_settings_sync_op != op) {
+        return;
+    }
+    TickType_t now = xTaskGetTickCount();
+    g_settings_sync_op = kSettingsSyncNone;
+    g_settings_sync_deadline_tick = 0;
+    g_settings_last_activity_tick = now;
+    set_settings_feedback(text, 3500);
 }
 
 static void update_setup_status_panel()
@@ -1575,10 +1610,12 @@ static void key_button_task(void *)
             if (pressed_since != 0 && !long_handled && g_settings_requested) {
                 TickType_t held = now - pressed_since;
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
-                    g_settings_selection = (g_settings_selection + 1) % 4;
                     g_settings_last_activity_tick = now;
-                    g_factory_reset_confirm_pending = false;
-                    g_settings_feedback[0] = '\0';
+                    if (!is_settings_sync_busy()) {
+                        g_settings_selection = (g_settings_selection + 1) % 4;
+                        g_factory_reset_confirm_pending = false;
+                        g_settings_feedback[0] = '\0';
+                    }
                 }
             }
             pressed_since = 0;
@@ -2389,14 +2426,28 @@ static void network_sync_task(void *)
     int last_midnight_ntp_yday = -1;
 
     for (;;) {
-        if (!g_have_wifi_creds) {
-            vTaskDelay(pdMS_TO_TICKS(5000));
-            continue;
-        }
         EventBits_t loop_bits = xEventGroupGetBits(g_app_events);
         bool provisioning_sync_due = (loop_bits & kProvisioningSyncBit) != 0;
         bool manual_ntp_due = (loop_bits & kManualNtpSyncBit) != 0;
         bool manual_weather_due = (loop_bits & kManualWeatherSyncBit) != 0;
+        if (!g_have_wifi_creds) {
+            if (manual_ntp_due) {
+                finish_settings_sync(kSettingsSyncNtp, "未配置 WiFi");
+                xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
+            }
+            if (manual_weather_due) {
+                finish_settings_sync(kSettingsSyncWeather, "未配置 WiFi");
+                xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
+            }
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+        if (manual_weather_due && !g_have_weather_key) {
+            finish_settings_sync(kSettingsSyncWeather, "未配置 API Key");
+            xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
         if (g_setup_portal_active && !provisioning_sync_due && !manual_ntp_due && !manual_weather_due) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
@@ -2446,21 +2497,21 @@ static void network_sync_task(void *)
                 xEventGroupClearBits(g_app_events, kProvisioningSyncBit);
             }
             if (manual_ntp_due) {
-                set_settings_feedback(ntp_ok ? "时间同步完成" : "时间同步失败", 3000);
+                finish_settings_sync(kSettingsSyncNtp, ntp_ok ? "时间同步完成" : "时间同步失败");
                 xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
             }
             if (manual_weather_due) {
-                set_settings_feedback(weather_ok ? "天气同步完成" : "天气同步失败", 3000);
+                finish_settings_sync(kSettingsSyncWeather, weather_ok ? "天气同步完成" : "天气同步失败");
                 xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
             }
         } else {
             ESP_LOGW(TAG, "wifi connect timeout during sync window");
             if (manual_ntp_due) {
-                set_settings_feedback("时间同步失败", 3000);
+                finish_settings_sync(kSettingsSyncNtp, "时间同步失败");
                 xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
             }
             if (manual_weather_due) {
-                set_settings_feedback("天气同步失败", 3000);
+                finish_settings_sync(kSettingsSyncWeather, "天气同步失败");
                 xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
             }
             if (ntp_due) {
@@ -2524,6 +2575,10 @@ static void handle_settings_action()
         selected = 0;
     }
     g_settings_last_activity_tick = xTaskGetTickCount();
+    if (is_settings_sync_busy()) {
+        set_settings_feedback("请等待同步完成", 2000);
+        return;
+    }
     if (selected != 3) {
         g_factory_reset_confirm_pending = false;
     }
@@ -2535,12 +2590,12 @@ static void handle_settings_action()
         ESP_LOGI(TAG, "hourly chime %s", g_hourly_chime_enabled ? "enabled" : "disabled");
         break;
     case 1:
-        set_settings_feedback("正在同步时间...", 8000);
+        begin_settings_sync(kSettingsSyncNtp, "正在同步时间...");
         ESP_LOGI(TAG, "manual ntp sync requested");
         xEventGroupSetBits(g_app_events, kManualNtpSyncBit);
         break;
     case 2:
-        set_settings_feedback("正在同步天气...", 8000);
+        begin_settings_sync(kSettingsSyncWeather, "正在同步天气...");
         ESP_LOGI(TAG, "manual weather sync requested");
         xEventGroupSetBits(g_app_events, kManualWeatherSyncBit);
         break;
@@ -2630,9 +2685,26 @@ static void ui_task(void *)
                     handle_settings_action();
                     settings_requested = g_settings_requested;
                 }
+                if (settings_requested && is_settings_sync_busy()) {
+                    TickType_t deadline = g_settings_sync_deadline_tick;
+                    if (deadline != 0 && tick_now >= deadline) {
+                        int op = g_settings_sync_op;
+                        ESP_LOGW(TAG, "settings manual sync timeout: op=%d", op);
+                        if (op == kSettingsSyncNtp) {
+                            xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
+                            finish_settings_sync(kSettingsSyncNtp, "时间同步超时");
+                        } else if (op == kSettingsSyncWeather) {
+                            xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
+                            finish_settings_sync(kSettingsSyncWeather, "天气同步超时");
+                        } else {
+                            g_settings_sync_op = kSettingsSyncNone;
+                            g_settings_sync_deadline_tick = 0;
+                        }
+                    }
+                }
                 if (settings_requested) {
                     TickType_t last_activity = g_settings_last_activity_tick;
-                    if (last_activity != 0 && tick_now - last_activity >= pdMS_TO_TICKS(kSettingsTimeoutMs)) {
+                    if (!is_settings_sync_busy() && last_activity != 0 && tick_now - last_activity >= pdMS_TO_TICKS(kSettingsTimeoutMs)) {
                         ESP_LOGI(TAG, "settings timeout, returning to clock");
                         g_settings_requested = false;
                         settings_requested = false;

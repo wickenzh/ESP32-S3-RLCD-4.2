@@ -17,7 +17,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.52";
+static const char *APP_VERSION = "v0.0.53";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -552,7 +552,7 @@ static void build_settings_page()
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
-    const char *items[] = {"整点报时 ON", "同步时间", "同步天气", "再次确认恢复"};
+    const char *items[] = {"整点报时 ON", "同步时间", "同步天气", "确认恢复出厂设置"};
     static const int y_positions[] = {72, 118, 164, 210};
     for (int i = 0; i < 4; ++i) {
         g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 34, items[i]);
