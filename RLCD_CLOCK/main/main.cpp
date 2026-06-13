@@ -40,7 +40,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.37";
+static const char *APP_VERSION = "v0.0.38";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -109,6 +109,9 @@ static lv_obj_t *g_boot_detail_label;
 static lv_obj_t *g_boot_anim_canvas;
 static lv_color_t *g_boot_anim_canvas_buf;
 static lv_obj_t *g_info_labels[5];
+static volatile bool g_boot_anim_running = false;
+static volatile int g_boot_anim_progress = 0;
+static TaskHandle_t g_boot_anim_task_handle = nullptr;
 static int g_last_ui_second = -1;
 static int g_last_ui_minute = -1;
 
@@ -280,12 +283,16 @@ static int boot_anim_frame_for_percent(int percent)
     return (percent * (BOOT_ANIM_FRAME_COUNT - 1) + 50) / 100;
 }
 
-static void draw_boot_anim_frame(int percent)
+static void draw_boot_anim_frame_index(int frame)
 {
     if (!g_boot_anim_canvas) {
         return;
     }
-    int frame = boot_anim_frame_for_percent(percent);
+    if (frame < 0) {
+        frame = 0;
+    } else if (frame >= BOOT_ANIM_FRAME_COUNT) {
+        frame = BOOT_ANIM_FRAME_COUNT - 1;
+    }
     const uint8_t *pixels = boot_anim_frames[frame];
     uint32_t bit = 0;
     for (int y = 0; y < BOOT_ANIM_HEIGHT; ++y) {
@@ -295,6 +302,33 @@ static void draw_boot_anim_frame(int percent)
         }
     }
     lv_obj_invalidate(g_boot_anim_canvas);
+}
+
+static void draw_boot_anim_frame(int percent)
+{
+    draw_boot_anim_frame_index(boot_anim_frame_for_percent(percent));
+}
+
+static void boot_anim_task(void *)
+{
+    int frame = 0;
+    while (g_boot_anim_running) {
+        int max_frame = boot_anim_frame_for_percent(g_boot_anim_progress);
+        if (max_frame < 1) {
+            max_frame = 1;
+        }
+        if (frame > max_frame) {
+            frame = 0;
+        }
+        if (Lvgl_lock(100)) {
+            draw_boot_anim_frame_index(frame);
+            Lvgl_unlock();
+        }
+        frame = (frame + 1) % (max_frame + 1);
+        vTaskDelay(pdMS_TO_TICKS(160));
+    }
+    g_boot_anim_task_handle = nullptr;
+    vTaskDelete(nullptr);
 }
 
 static void style_battery_part(lv_obj_t *obj, bool filled)
@@ -405,6 +439,7 @@ static void update_boot_screen(int percent, const char *status, const char *deta
     } else if (percent > 100) {
         percent = 100;
     }
+    g_boot_anim_progress = percent;
     if (Lvgl_lock(2000)) {
         if (g_boot_status_label) {
             set_label_text_if_changed(g_boot_status_label, status);
@@ -412,7 +447,6 @@ static void update_boot_screen(int percent, const char *status, const char *deta
         if (g_boot_detail_label) {
             set_label_text_if_changed(g_boot_detail_label, detail);
         }
-        draw_boot_anim_frame(percent);
         lv_refr_now(nullptr);
         Lvgl_unlock();
     }
@@ -2036,7 +2070,14 @@ extern "C" void app_main(void)
         show_boot_screen();
         Lvgl_unlock();
     }
+    g_boot_anim_progress = 0;
+    g_boot_anim_running = true;
+    xTaskCreatePinnedToCore(boot_anim_task, "boot_anim_task", 4096, nullptr, 4, &g_boot_anim_task_handle, 1);
     run_boot_connectivity_sync();
+    g_boot_anim_running = false;
+    while (g_boot_anim_task_handle) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
     finish_boot_screen();
 
     xTaskCreatePinnedToCore(network_sync_task, "network_sync", 20480, nullptr, 4, nullptr, 0);

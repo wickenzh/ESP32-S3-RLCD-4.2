@@ -15,7 +15,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.37";
+static const char *APP_VERSION = "v0.0.38";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -145,10 +145,14 @@ static int boot_anim_frame_for_percent(int percent)
     return (percent * (BOOT_ANIM_FRAME_COUNT - 1) + 50) / 100;
 }
 
-static void draw_boot_anim_frame(int percent)
+static void draw_boot_anim_frame_index(int frame)
 {
     if (!g_boot_anim_canvas) return;
-    int frame = boot_anim_frame_for_percent(percent);
+    if (frame < 0) {
+        frame = 0;
+    } else if (frame >= BOOT_ANIM_FRAME_COUNT) {
+        frame = BOOT_ANIM_FRAME_COUNT - 1;
+    }
     const uint8_t *pixels = boot_anim_frames[frame];
     uint32_t bit = 0;
     for (int y = 0; y < BOOT_ANIM_HEIGHT; ++y) {
@@ -158,6 +162,11 @@ static void draw_boot_anim_frame(int percent)
         }
     }
     lv_obj_invalidate(g_boot_anim_canvas);
+}
+
+static void draw_boot_anim_frame(int percent)
+{
+    draw_boot_anim_frame_index(boot_anim_frame_for_percent(percent));
 }
 
 static void style_battery_part(lv_obj_t *obj, bool filled)
@@ -415,12 +424,22 @@ int main(int, char **)
     show_boot_screen();
     uint32_t boot_start = SDL_GetTicks();
     uint32_t boot_last_tick = boot_start;
+    uint32_t boot_last_frame_tick = boot_start;
+    int boot_anim_frame = 0;
     while (SDL_GetTicks() - boot_start < 2500) {
         uint32_t now_tick = SDL_GetTicks();
         lv_tick_inc(now_tick - boot_last_tick);
         boot_last_tick = now_tick;
         int percent = (int)(((now_tick - boot_start) * 100u) / 2500u);
-        draw_boot_anim_frame(percent);
+        int max_frame = boot_anim_frame_for_percent(percent);
+        if (max_frame < 1) {
+            max_frame = 1;
+        }
+        if (now_tick - boot_last_frame_tick >= 80) {
+            boot_last_frame_tick = now_tick;
+            boot_anim_frame = (boot_anim_frame + 1) % (max_frame + 1);
+        }
+        draw_boot_anim_frame_index(boot_anim_frame);
         lv_timer_handler();
         SDL_Delay(30);
     }

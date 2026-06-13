@@ -15,7 +15,7 @@
 
 ## 固件功能逻辑
 
-- 开机后显示启动页，包含项目名称、版本号、启动状态和进度条。
+- 开机后显示启动页，包含项目名称、版本号、启动状态和 GIF 抽帧动画。
 - 如果已经保存 WiFi 信息，开机后会连接 WiFi，并进行一次 NTP 时间同步和天气同步。
 - 如果没有 WiFi 信息，设备会进入配网模式，AP 名称格式为 `WeatherClock-XXXX`。
 - 配网方式：连接设备 AP 后打开 `192.168.4.1`，输入 WiFi 名称、WiFi 密码和 QWeather API Key。
@@ -52,43 +52,22 @@ BOOT 键用于查看系统信息和进入配网模式：
 - 电池百分比和电池电压。
 - 当前软件版本号。
 
-## 仓库目录
+## 项目目录结构
 
-- `RLCD_CLOCK/`：当前主 ESP-IDF 固件工程和 SDL 预览工程。
+- `RLCD_CLOCK/`：当前主工程目录，包含 ESP-IDF 固件、组件、配置文件和 SDL 预览工程。
+- `RLCD_CLOCK/main/`：天气时钟应用主体代码、字体资源、天气图标字体和开机动画抽帧资源。
+- `RLCD_CLOCK/components/`：板级 BSP、显示驱动、I2C、传感器和厂商依赖组件。
+- `RLCD_CLOCK/managed_components/`：ESP-IDF 管理的第三方组件，目前主要是 LVGL。
+- `RLCD_CLOCK/simulator/`：LVGL SDL 本地预览工程，用于在烧录前检查界面效果。
 - `docs/`：原理图、芯片手册、传感器资料和其他硬件文档。
-- `examples/esp-idf/ESP32-S3-RLCD-4.2-Demo/`：厂商 ESP-IDF 参考例程。
-- `assets/weather-icons/QWeather-Icons-1.8.0/`：和风天气图标 SVG、字体和源文件。
+- `examples/esp-idf/`：厂商提供的 ESP-IDF 示例工程，作为硬件驱动和外设逻辑参考。
+- `assets/weather-icons/`：和风天气图标 SVG、字体和源文件。
 - `assets/gif_video/`：后续 UI 或媒体功能可能会使用的 GIF 和音频资源。
-- `README.md`：项目说明、使用方式、功能逻辑和版本记录。
-
-## 编译与烧录
-
-编译固件：
-
-```bash
-cd "/Users/zhwickner/Documents/Codex/2026-05-30/ESP32-S3-RLCD-4.2/RLCD_CLOCK" && . /Users/zhwickner/esp/esp-idf/export.sh && idf.py build
-```
-
-编译 SDL 预览：
-
-```bash
-cd "/Users/zhwickner/Documents/Codex/2026-05-30/ESP32-S3-RLCD-4.2/RLCD_CLOCK" && cmake --build simulator/build
-```
-
-烧录并打开串口监视器，请根据实际串口替换 `-p` 后面的端口：
-
-```bash
-cd "/Users/zhwickner/Documents/Codex/2026-05-30/ESP32-S3-RLCD-4.2/RLCD_CLOCK" && . /Users/zhwickner/esp/esp-idf/export.sh && export PATH="/Users/zhwickner/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20251107/xtensa-esp-elf/bin:$PATH" && idf.py -p /dev/cu.usbmodem2020_12_222 flash monitor
-```
-
-只打开串口监视器：
-
-```bash
-cd "/Users/zhwickner/Documents/Codex/2026-05-30/ESP32-S3-RLCD-4.2/RLCD_CLOCK" && . /Users/zhwickner/esp/esp-idf/export.sh && export PATH="/Users/zhwickner/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20251107/xtensa-esp-elf/bin:$PATH" && idf.py -p /dev/cu.usbmodem2020_12_222 monitor
-```
+- `README.md`：项目说明、功能逻辑、目录结构和版本记录。
 
 ## 版本记录
 
+- `v0.0.38`：删除 README 中的编译烧录命令，补充项目目录结构说明，并将开机 GIF 改为启动页期间连续播放。
 - `v0.0.37`：将开机页原进度条替换为 GIF 抽帧动画，动画按启动百分比播放一个完整周期，并上移标题、状态和版本文字以避免遮挡。
 - `v0.0.36`：调整主界面布局，电池图标移到左上角，日期和星期合并到右上角，移除底部 WiFi/AP/NTP 状态文字，并修复 Boot 信息页返回主界面后电池图标偶发空白的问题。
 - `v0.0.35`：新增 BOOT 键信息页，记录上一次 NTP/天气同步时间和电池电压，整理仓库资料、示例和资源目录，并新增 README。
