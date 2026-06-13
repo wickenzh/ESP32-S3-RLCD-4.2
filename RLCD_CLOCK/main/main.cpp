@@ -34,12 +34,13 @@
 #include "i2c_equipment.h"
 #include "lvgl_bsp.h"
 #include "dseg_digits.h"
+#include "boot_anim.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.36";
+static const char *APP_VERSION = "v0.0.37";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -105,7 +106,8 @@ static lv_obj_t *g_second_canvas;
 static lv_color_t *g_second_canvas_buf;
 static lv_obj_t *g_boot_status_label;
 static lv_obj_t *g_boot_detail_label;
-static lv_obj_t *g_boot_progress_fill;
+static lv_obj_t *g_boot_anim_canvas;
+static lv_color_t *g_boot_anim_canvas_buf;
 static lv_obj_t *g_info_labels[5];
 static int g_last_ui_second = -1;
 static int g_last_ui_minute = -1;
@@ -268,6 +270,33 @@ static void clear_info_object_refs()
     }
 }
 
+static int boot_anim_frame_for_percent(int percent)
+{
+    if (percent < 0) {
+        percent = 0;
+    } else if (percent > 100) {
+        percent = 100;
+    }
+    return (percent * (BOOT_ANIM_FRAME_COUNT - 1) + 50) / 100;
+}
+
+static void draw_boot_anim_frame(int percent)
+{
+    if (!g_boot_anim_canvas) {
+        return;
+    }
+    int frame = boot_anim_frame_for_percent(percent);
+    const uint8_t *pixels = boot_anim_frames[frame];
+    uint32_t bit = 0;
+    for (int y = 0; y < BOOT_ANIM_HEIGHT; ++y) {
+        for (int x = 0; x < BOOT_ANIM_WIDTH; ++x, ++bit) {
+            bool black = pixels[bit / 8] & (0x80 >> (bit & 7));
+            lv_canvas_set_px_color(g_boot_anim_canvas, x, y, black ? lv_color_black() : lv_color_white());
+        }
+    }
+    lv_obj_invalidate(g_boot_anim_canvas);
+}
+
 static void style_battery_part(lv_obj_t *obj, bool filled)
 {
     lv_obj_set_style_bg_color(obj, filled ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
@@ -330,38 +359,41 @@ static void show_boot_screen()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = make_label_with_font(screen, 28, 72, 344, 30, "RLCD Weather Clock", &lv_font_montserrat_16);
+    lv_obj_t *title = make_label_with_font(screen, 28, 30, 344, 30, "RLCD Weather Clock", &lv_font_montserrat_16);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    g_boot_status_label = make_label_with_font(screen, 28, 112, 344, 24, "Starting...", &lv_font_montserrat_16);
+    g_boot_status_label = make_label_with_font(screen, 28, 64, 344, 24, "Starting...", &lv_font_montserrat_16);
     lv_obj_set_style_text_align(g_boot_status_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    g_boot_detail_label = make_label_with_font(screen, 28, 232, 344, 22, "Preparing system", &lv_font_montserrat_14);
+    g_boot_detail_label = make_label_with_font(screen, 28, 256, 344, 22, "Preparing system", &lv_font_montserrat_14);
     lv_obj_set_style_text_align(g_boot_detail_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    lv_obj_t *version = make_label_with_font(screen, 28, 202, 344, 24, APP_VERSION, &lv_font_montserrat_16);
+    lv_obj_t *version = make_label_with_font(screen, 28, 226, 344, 24, APP_VERSION, &lv_font_montserrat_16);
     lv_obj_set_style_text_align(version, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    lv_obj_t *frame = lv_obj_create(screen);
-    lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(frame, 70, 156);
-    lv_obj_set_size(frame, 260, 20);
-    lv_obj_set_style_bg_color(frame, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(frame, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(frame, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(frame, 2, LV_PART_MAIN);
-    lv_obj_set_style_radius(frame, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(frame, 2, LV_PART_MAIN);
-
-    g_boot_progress_fill = lv_obj_create(frame);
-    lv_obj_clear_flag(g_boot_progress_fill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_boot_progress_fill, 0, 0);
-    lv_obj_set_size(g_boot_progress_fill, 0, 12);
-    lv_obj_set_style_bg_color(g_boot_progress_fill, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(g_boot_progress_fill, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(g_boot_progress_fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(g_boot_progress_fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(g_boot_progress_fill, 0, LV_PART_MAIN);
+    if (!g_boot_anim_canvas_buf) {
+        g_boot_anim_canvas_buf = (lv_color_t *)heap_caps_calloc(BOOT_ANIM_WIDTH * BOOT_ANIM_HEIGHT,
+                                                                sizeof(lv_color_t),
+                                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!g_boot_anim_canvas_buf) {
+            g_boot_anim_canvas_buf = (lv_color_t *)calloc(BOOT_ANIM_WIDTH * BOOT_ANIM_HEIGHT, sizeof(lv_color_t));
+        }
+    }
+    g_boot_anim_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_boot_anim_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_boot_anim_canvas, 144, 100);
+    lv_obj_set_size(g_boot_anim_canvas, BOOT_ANIM_WIDTH, BOOT_ANIM_HEIGHT);
+    lv_obj_set_style_border_width(g_boot_anim_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_boot_anim_canvas, 0, LV_PART_MAIN);
+    if (g_boot_anim_canvas_buf) {
+        lv_canvas_set_buffer(g_boot_anim_canvas,
+                             g_boot_anim_canvas_buf,
+                             BOOT_ANIM_WIDTH,
+                             BOOT_ANIM_HEIGHT,
+                             LV_IMG_CF_TRUE_COLOR);
+        lv_canvas_fill_bg(g_boot_anim_canvas, lv_color_white(), LV_OPA_COVER);
+        draw_boot_anim_frame(0);
+    }
 
     lv_refr_now(nullptr);
 }
@@ -380,9 +412,7 @@ static void update_boot_screen(int percent, const char *status, const char *deta
         if (g_boot_detail_label) {
             set_label_text_if_changed(g_boot_detail_label, detail);
         }
-        if (g_boot_progress_fill) {
-            lv_obj_set_width(g_boot_progress_fill, (percent * 255 + 99) / 100);
-        }
+        draw_boot_anim_frame(percent);
         lv_refr_now(nullptr);
         Lvgl_unlock();
     }
@@ -396,7 +426,7 @@ static void finish_boot_screen()
         clear_info_object_refs();
         g_boot_status_label = nullptr;
         g_boot_detail_label = nullptr;
-        g_boot_progress_fill = nullptr;
+        g_boot_anim_canvas = nullptr;
         build_clock_ui();
         lv_refr_now(nullptr);
         Lvgl_unlock();

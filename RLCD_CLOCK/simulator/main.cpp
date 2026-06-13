@@ -7,6 +7,7 @@
 
 #include "lvgl.h"
 #include "dseg_digits.h"
+#include "boot_anim.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
@@ -14,7 +15,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.36";
+static const char *APP_VERSION = "v0.0.37";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -34,8 +35,10 @@ static lv_obj_t *g_weather_icon_label;
 static lv_obj_t *g_battery_segments[5];
 static lv_obj_t *g_time_canvas;
 static lv_obj_t *g_second_canvas;
+static lv_obj_t *g_boot_anim_canvas;
 static std::vector<lv_color_t> g_time_canvas_pixels(kTimeCanvasW * kTimeCanvasH);
 static std::vector<lv_color_t> g_second_canvas_pixels(kSecondCanvasW * kSecondCanvasH);
+static std::vector<lv_color_t> g_boot_anim_canvas_pixels(BOOT_ANIM_WIDTH * BOOT_ANIM_HEIGHT);
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -132,6 +135,31 @@ static void set_label_text_if_changed(lv_obj_t *label, const char *text)
     }
 }
 
+static int boot_anim_frame_for_percent(int percent)
+{
+    if (percent < 0) {
+        percent = 0;
+    } else if (percent > 100) {
+        percent = 100;
+    }
+    return (percent * (BOOT_ANIM_FRAME_COUNT - 1) + 50) / 100;
+}
+
+static void draw_boot_anim_frame(int percent)
+{
+    if (!g_boot_anim_canvas) return;
+    int frame = boot_anim_frame_for_percent(percent);
+    const uint8_t *pixels = boot_anim_frames[frame];
+    uint32_t bit = 0;
+    for (int y = 0; y < BOOT_ANIM_HEIGHT; ++y) {
+        for (int x = 0; x < BOOT_ANIM_WIDTH; ++x, ++bit) {
+            bool black = pixels[bit / 8] & (0x80 >> (bit & 7));
+            lv_canvas_set_px_color(g_boot_anim_canvas, x, y, black ? lv_color_black() : lv_color_white());
+        }
+    }
+    lv_obj_invalidate(g_boot_anim_canvas);
+}
+
 static void style_battery_part(lv_obj_t *obj, bool filled)
 {
     lv_obj_set_style_bg_color(obj, filled ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
@@ -194,35 +222,28 @@ static void show_boot_screen()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = make_label_with_font(screen, 28, 72, 344, 30, "RLCD Weather Clock", &lv_font_montserrat_16);
+    lv_obj_t *title = make_label_with_font(screen, 28, 30, 344, 30, "RLCD Weather Clock", &lv_font_montserrat_16);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    lv_obj_t *status = make_label_with_font(screen, 28, 112, 344, 24, "Starting...", &lv_font_montserrat_16);
+    lv_obj_t *status = make_label_with_font(screen, 28, 64, 344, 24, "Starting...", &lv_font_montserrat_16);
     lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    lv_obj_t *version = make_label_with_font(screen, 28, 202, 344, 24, APP_VERSION, &lv_font_montserrat_16);
+    lv_obj_t *version = make_label_with_font(screen, 28, 226, 344, 24, APP_VERSION, &lv_font_montserrat_16);
     lv_obj_set_style_text_align(version, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
-    lv_obj_t *frame = lv_obj_create(screen);
-    lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(frame, 70, 156);
-    lv_obj_set_size(frame, 260, 20);
-    lv_obj_set_style_bg_color(frame, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(frame, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(frame, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(frame, 2, LV_PART_MAIN);
-    lv_obj_set_style_radius(frame, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(frame, 2, LV_PART_MAIN);
-
-    lv_obj_t *fill = lv_obj_create(frame);
-    lv_obj_clear_flag(fill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(fill, 0, 0);
-    lv_obj_set_size(fill, 255, 12);
-    lv_obj_set_style_bg_color(fill, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(fill, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(fill, 0, LV_PART_MAIN);
+    g_boot_anim_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_boot_anim_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_boot_anim_canvas, 144, 100);
+    lv_obj_set_size(g_boot_anim_canvas, BOOT_ANIM_WIDTH, BOOT_ANIM_HEIGHT);
+    lv_obj_set_style_border_width(g_boot_anim_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_boot_anim_canvas, 0, LV_PART_MAIN);
+    lv_canvas_set_buffer(g_boot_anim_canvas,
+                         g_boot_anim_canvas_pixels.data(),
+                         BOOT_ANIM_WIDTH,
+                         BOOT_ANIM_HEIGHT,
+                         LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_fill_bg(g_boot_anim_canvas, lv_color_white(), LV_OPA_COVER);
+    draw_boot_anim_frame(0);
 }
 
 static void update_battery_icon(int percent)
@@ -392,9 +413,19 @@ int main(int, char **)
     lv_disp_drv_register(&disp_drv);
 
     show_boot_screen();
-    lv_timer_handler();
-    SDL_Delay(2500);
+    uint32_t boot_start = SDL_GetTicks();
+    uint32_t boot_last_tick = boot_start;
+    while (SDL_GetTicks() - boot_start < 2500) {
+        uint32_t now_tick = SDL_GetTicks();
+        lv_tick_inc(now_tick - boot_last_tick);
+        boot_last_tick = now_tick;
+        int percent = (int)(((now_tick - boot_start) * 100u) / 2500u);
+        draw_boot_anim_frame(percent);
+        lv_timer_handler();
+        SDL_Delay(30);
+    }
     lv_obj_clean(lv_scr_act());
+    g_boot_anim_canvas = nullptr;
     build_clock_ui();
     set_label_text_if_changed(g_temp_label, "本地 24.6℃");
     set_label_text_if_changed(g_humi_label, "湿度 58.0%");

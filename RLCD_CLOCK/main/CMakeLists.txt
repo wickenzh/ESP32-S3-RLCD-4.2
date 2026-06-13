@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "boot_anim.c"
         "qweather_icons_36.c"
         "zh_font_16.c"
     INCLUDE_DIRS "."

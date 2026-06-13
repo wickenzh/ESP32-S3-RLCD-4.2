@@ -15,6 +15,7 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 
 add_executable(weather_clock_sdl
     "main.cpp"
+    "../main/boot_anim.c"
     "../main/qweather_icons_36.c"
     "../main/zh_font_16.c")
 
