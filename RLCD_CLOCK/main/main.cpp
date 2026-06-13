@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.50";
+static const char *APP_VERSION = "v0.0.51";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -123,6 +123,8 @@ static lv_obj_t *g_humi_label;
 static lv_obj_t *g_weather_city_label;
 static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
+static lv_obj_t *g_weather_temp_label;
+static lv_obj_t *g_weather_humi_label;
 static lv_obj_t *g_battery_segments[5];
 static lv_obj_t *g_time_canvas;
 static lv_color_t *g_time_canvas_buf;
@@ -146,6 +148,9 @@ static TaskHandle_t g_boot_anim_task_handle = nullptr;
 static TaskHandle_t g_boot_sync_task_handle = nullptr;
 static int g_last_ui_second = -1;
 static int g_last_ui_minute = -1;
+static int g_last_day_progress_filled = -1;
+static int g_last_second_progress_filled = -1;
+static int g_last_status_gif_frame = -1;
 
 static void apply_station_config(bool reconnect);
 static bool wait_for_wifi_connected(uint32_t timeout_ms);
@@ -210,6 +215,29 @@ static void update_progress_row(lv_obj_t **segments, int filled)
             style_progress_segment(segments[i], i < filled);
         }
     }
+}
+
+static void update_progress_row_delta(lv_obj_t **segments, int filled, int *last_filled)
+{
+    if (filled < 0) {
+        filled = 0;
+    } else if (filled > 60) {
+        filled = 60;
+    }
+    if (*last_filled < 0 || filled < *last_filled) {
+        update_progress_row(segments, filled);
+        *last_filled = filled;
+        return;
+    }
+    if (filled == *last_filled) {
+        return;
+    }
+    for (int i = *last_filled; i < filled; ++i) {
+        if (i >= 0 && i < 60 && segments[i]) {
+            style_progress_segment(segments[i], true);
+        }
+    }
+    *last_filled = filled;
 }
 
 static const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
@@ -285,14 +313,26 @@ static void draw_status_gif_frame(int frame)
         frame = STATUS_GIF_FRAME_COUNT - 1;
     }
     const uint8_t *pixels = status_gif_frames[frame];
+    const uint8_t *prev_pixels = g_last_status_gif_frame >= 0 ? status_gif_frames[g_last_status_gif_frame] : nullptr;
     uint32_t bit = 0;
+    bool changed = false;
     for (int y = 0; y < STATUS_GIF_HEIGHT; ++y) {
         for (int x = 0; x < STATUS_GIF_WIDTH; ++x, ++bit) {
             bool black = pixels[bit / 8] & (0x80 >> (bit & 7));
+            if (prev_pixels) {
+                bool prev_black = prev_pixels[bit / 8] & (0x80 >> (bit & 7));
+                if (black == prev_black) {
+                    continue;
+                }
+            }
             lv_canvas_set_px_color(g_status_gif_canvas, x, y, black ? lv_color_black() : lv_color_white());
+            changed = true;
         }
     }
-    lv_obj_invalidate(g_status_gif_canvas);
+    if (changed || g_last_status_gif_frame != frame) {
+        lv_obj_invalidate(g_status_gif_canvas);
+    }
+    g_last_status_gif_frame = frame;
 }
 
 static lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int h, const char *text, const lv_font_t *font)
@@ -350,6 +390,8 @@ static void clear_clock_object_refs()
     g_weather_city_label = nullptr;
     g_weather_info_label = nullptr;
     g_weather_icon_label = nullptr;
+    g_weather_temp_label = nullptr;
+    g_weather_humi_label = nullptr;
     g_time_canvas = nullptr;
     g_second_canvas = nullptr;
     g_status_gif_canvas = nullptr;
@@ -370,6 +412,9 @@ static void clear_clock_object_refs()
     }
     g_last_ui_second = -1;
     g_last_ui_minute = -1;
+    g_last_day_progress_filled = -1;
+    g_last_second_progress_filled = -1;
+    g_last_status_gif_frame = -1;
 }
 
 static void clear_info_object_refs()
@@ -769,7 +814,7 @@ static void build_clock_ui()
     g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
-    g_weather_city_label = make_label(screen, 24, 198, 76, 22, "--");
+    g_weather_city_label = make_label(screen, 24, 196, 76, 20, "--");
     remember_lower_panel_object(g_weather_city_label);
     lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_weather_icon_label = make_label(screen, 101, 194, 34, 38, "");
@@ -778,10 +823,16 @@ static void build_clock_ui()
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_weather_info_label = make_label(screen, 24, 225, 76, 50, "天气等待");
+    g_weather_info_label = make_label(screen, 24, 218, 76, 20, "天气等待");
     remember_lower_panel_object(g_weather_info_label);
-    lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(g_weather_info_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    g_weather_temp_label = make_label(screen, 30, 242, 68, 20, "--℃");
+    g_weather_humi_label = make_label(screen, 30, 264, 68, 20, "--%");
+    remember_lower_panel_object(g_weather_temp_label);
+    remember_lower_panel_object(g_weather_humi_label);
+    lv_obj_set_style_text_align(g_weather_temp_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_align(g_weather_humi_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     g_temp_label = make_label(screen, 152, 214, 96, 28, "温度 --.-℃");
     g_humi_label = make_label(screen, 152, 246, 96, 28, "湿度 --.-%");
@@ -1484,7 +1535,7 @@ static void key_button_task(void *)
             pressed_since = 0;
             long_handled = false;
         }
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -2378,13 +2429,13 @@ static void update_time_ui(const struct tm &local)
         draw_time_canvas(local);
         int day_seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
         int day_filled = (day_seconds * 60) / (24 * 3600);
-        update_progress_row(g_day_progress_segments, day_filled);
+        update_progress_row_delta(g_day_progress_segments, day_filled, &g_last_day_progress_filled);
         g_last_ui_minute = minute_key;
     }
     if (local.tm_sec != g_last_ui_second) {
         draw_second_canvas(local);
         draw_status_gif_frame(local.tm_sec % STATUS_GIF_FRAME_COUNT);
-        update_progress_row(g_second_progress_segments, local.tm_sec + 1);
+        update_progress_row_delta(g_second_progress_segments, local.tm_sec + 1, &g_last_second_progress_filled);
         g_last_ui_second = local.tm_sec;
     }
 
@@ -2445,6 +2496,18 @@ static void ui_task(void *)
     bool setup_panel_visible = false;
     uint32_t last_settings_action_seq = g_settings_action_seq;
 
+    auto delay_to_next_second = []() {
+        int64_t us = esp_timer_get_time();
+        int64_t until_next = 1000000 - (us % 1000000);
+        int delay_ms = (int)(until_next / 1000) + 5;
+        if (delay_ms < 10) {
+            delay_ms = 10;
+        } else if (delay_ms > 1005) {
+            delay_ms = 1005;
+        }
+        return pdMS_TO_TICKS(delay_ms);
+    };
+
     for (;;) {
         time_t now;
         time(&now);
@@ -2468,7 +2531,7 @@ static void ui_task(void *)
                 update_boot_info_page();
                 lv_refr_now(nullptr);
                 Lvgl_unlock();
-                vTaskDelay(pdMS_TO_TICKS(1000));
+                vTaskDelay(pdMS_TO_TICKS(250));
                 continue;
             }
             if (info_page_visible) {
@@ -2551,19 +2614,27 @@ static void ui_task(void *)
                     set_label_text_if_changed(g_humi_label, humi);
                     if (bits & kWeatherReadyBit) {
                         char city[48];
-                        char weather[80];
+                        char temp[24];
+                        char humi[24];
                         snprintf(city, sizeof(city), "%s", g_weather.city);
-                        snprintf(weather, sizeof(weather), "%s\n%s℃ %s%%", g_weather.text, g_weather.temp, g_weather.humidity);
+                        snprintf(temp, sizeof(temp), "%s℃", g_weather.temp);
+                        snprintf(humi, sizeof(humi), "%s%%", g_weather.humidity);
                         set_label_text_if_changed(g_weather_city_label, city);
-                        set_label_text_if_changed(g_weather_info_label, weather);
+                        set_label_text_if_changed(g_weather_info_label, g_weather.text);
+                        set_label_text_if_changed(g_weather_temp_label, temp);
+                        set_label_text_if_changed(g_weather_humi_label, humi);
                         set_label_text_if_changed(g_weather_icon_label, weather_icon_text(g_weather.icon));
                     } else if (g_have_weather_key) {
                         set_label_text_if_changed(g_weather_city_label, "--");
                         set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "天气等待");
+                        set_label_text_if_changed(g_weather_temp_label, "--℃");
+                        set_label_text_if_changed(g_weather_humi_label, "--%");
                         set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
                     } else {
                         set_label_text_if_changed(g_weather_city_label, "--");
                         set_label_text_if_changed(g_weather_info_label, "设置 API Key");
+                        set_label_text_if_changed(g_weather_temp_label, "--℃");
+                        set_label_text_if_changed(g_weather_humi_label, "--%");
                         set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
                     }
                 }
@@ -2578,7 +2649,7 @@ static void ui_task(void *)
             lv_refr_now(nullptr);
             Lvgl_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(delay_to_next_second());
     }
 }
 
