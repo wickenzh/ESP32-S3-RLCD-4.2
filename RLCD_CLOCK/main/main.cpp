@@ -42,7 +42,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.53";
+static const char *APP_VERSION = "v0.0.54";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -129,6 +129,9 @@ struct WeatherData {
 
 static WeatherData g_weather;
 
+static lv_obj_t *g_clock_root;
+static lv_obj_t *g_info_root;
+static lv_obj_t *g_settings_root;
 static lv_obj_t *g_date_label;
 static lv_obj_t *g_temp_label;
 static lv_obj_t *g_humi_label;
@@ -402,6 +405,39 @@ static void set_label_text_if_changed(lv_obj_t *label, const char *text)
     }
 }
 
+static lv_obj_t *create_page_root()
+{
+    lv_obj_t *root = lv_obj_create(lv_scr_act());
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(root, 0, 0);
+    lv_obj_set_size(root, kDisplayWidth, kDisplayHeight);
+    lv_obj_set_style_bg_color(root, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(root, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(root, 0, LV_PART_MAIN);
+    return root;
+}
+
+static void set_page_visible(lv_obj_t *page, bool visible)
+{
+    if (!page) {
+        return;
+    }
+    if (visible) {
+        lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(page);
+    } else {
+        lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void show_page(lv_obj_t *page)
+{
+    set_page_visible(g_clock_root, page == g_clock_root);
+    set_page_visible(g_info_root, page == g_info_root);
+    set_page_visible(g_settings_root, page == g_settings_root);
+}
+
 static void format_time_or_dash(time_t value, char *out, size_t out_len)
 {
     if (value <= 0) {
@@ -425,6 +461,7 @@ static void format_time_or_dash(time_t value, char *out, size_t out_len)
 
 static void clear_clock_object_refs()
 {
+    g_clock_root = nullptr;
     g_date_label = nullptr;
     g_temp_label = nullptr;
     g_humi_label = nullptr;
@@ -456,6 +493,8 @@ static void clear_clock_object_refs()
 
 static void clear_info_object_refs()
 {
+    g_info_root = nullptr;
+    g_settings_root = nullptr;
     for (lv_obj_t *&label : g_info_labels) {
         label = nullptr;
     }
@@ -677,6 +716,7 @@ static void finish_boot_screen()
         g_boot_detail_label = nullptr;
         g_boot_anim_canvas = nullptr;
         build_clock_ui();
+        show_page(g_clock_root);
         lv_refr_now(nullptr);
         Lvgl_unlock();
     }
@@ -684,12 +724,12 @@ static void finish_boot_screen()
 
 static void build_boot_info_page()
 {
-    lv_obj_t *screen = lv_scr_act();
-    lv_obj_clean(screen);
-    clear_clock_object_refs();
-    clear_info_object_refs();
-    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
-    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    if (g_info_root) {
+        return;
+    }
+    lv_obj_t *screen = create_page_root();
+    g_info_root = screen;
+    lv_obj_add_flag(g_info_root, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *title = make_label_with_font(screen, 24, 18, 352, 26, "SYSTEM INFO", &lv_font_montserrat_16);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -755,12 +795,12 @@ static void style_settings_item(lv_obj_t *label, bool selected)
 
 static void build_settings_page()
 {
-    lv_obj_t *screen = lv_scr_act();
-    lv_obj_clean(screen);
-    clear_clock_object_refs();
-    clear_info_object_refs();
-    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
-    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    if (g_settings_root) {
+        return;
+    }
+    lv_obj_t *screen = create_page_root();
+    g_settings_root = screen;
+    lv_obj_add_flag(g_settings_root, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *title = make_label(screen, 24, 18, 352, 28, "设置");
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -888,10 +928,11 @@ static void update_battery_icon(int percent)
 
 static void build_clock_ui()
 {
-    lv_obj_t *screen = lv_scr_act();
-    clear_info_object_refs();
-    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
-    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    if (g_clock_root) {
+        return;
+    }
+    lv_obj_t *screen = create_page_root();
+    g_clock_root = screen;
 
     g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
     lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
@@ -1446,7 +1487,7 @@ static void start_wifi_radio(bool enable_setup_portal)
         apply_station_config(false);
     }
     ESP_ERROR_CHECK(esp_wifi_start());
-    esp_err_t ps_err = esp_wifi_set_ps(enable_setup_portal ? WIFI_PS_NONE : WIFI_PS_MIN_MODEM);
+    esp_err_t ps_err = esp_wifi_set_ps(enable_setup_portal ? WIFI_PS_NONE : WIFI_PS_MAX_MODEM);
     if (ps_err != ESP_OK) {
         ESP_LOGW(TAG, "wifi power save setup failed: %s", esp_err_to_name(ps_err));
     }
@@ -1527,88 +1568,75 @@ static void init_wifi()
     }
 }
 
-static void boot_button_task(void *)
+static void button_task(void *)
 {
     gpio_config_t button = {};
     button.intr_type = GPIO_INTR_DISABLE;
     button.mode = GPIO_MODE_INPUT;
-    button.pin_bit_mask = 1ULL << kBootButtonGpio;
+    button.pin_bit_mask = (1ULL << kBootButtonGpio) | (1ULL << kKeyButtonGpio);
     button.pull_down_en = GPIO_PULLDOWN_DISABLE;
     button.pull_up_en = GPIO_PULLUP_ENABLE;
     ESP_ERROR_CHECK(gpio_config(&button));
 
-    TickType_t pressed_since = 0;
-    bool triggered = false;
-    bool info_requested = false;
+    TickType_t boot_pressed_since = 0;
+    bool boot_setup_triggered = false;
+    bool boot_info_requested = false;
+    TickType_t key_pressed_since = 0;
+    bool key_long_handled = false;
+
     for (;;) {
-        bool pressed = gpio_get_level(kBootButtonGpio) == 0;
         TickType_t now = xTaskGetTickCount();
-        if (pressed) {
-            if (pressed_since == 0) {
-                pressed_since = now;
+        bool boot_pressed = gpio_get_level(kBootButtonGpio) == 0;
+        bool key_pressed = gpio_get_level(kKeyButtonGpio) == 0;
+
+        if (boot_pressed) {
+            if (boot_pressed_since == 0) {
+                boot_pressed_since = now;
             }
-            TickType_t held = now - pressed_since;
-            if (!g_settings_requested && !info_requested && held >= pdMS_TO_TICKS(kBootInfoHoldMs)) {
+            TickType_t held = now - boot_pressed_since;
+            if (!g_settings_requested && !boot_info_requested && held >= pdMS_TO_TICKS(kBootInfoHoldMs)) {
                 ESP_LOGI(TAG, "boot button held for 5s, showing info page");
                 g_boot_info_requested = true;
-                info_requested = true;
+                boot_info_requested = true;
             }
-            if (!g_settings_requested && !triggered && held >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
+            if (!g_settings_requested && !boot_setup_triggered && held >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
                 ESP_LOGW(TAG, "boot button held for 20s, entering setup portal");
                 g_boot_info_requested = false;
                 start_wifi_radio(true);
-                triggered = true;
+                boot_setup_triggered = true;
             }
         } else {
-            if (pressed_since != 0 && g_settings_requested && !triggered) {
-                TickType_t held = now - pressed_since;
+            if (boot_pressed_since != 0 && g_settings_requested && !boot_setup_triggered) {
+                TickType_t held = now - boot_pressed_since;
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
                     g_settings_action_seq = g_settings_action_seq + 1;
                     g_settings_last_activity_tick = now;
                 }
             }
-            if (info_requested && !triggered) {
+            if (boot_info_requested && !boot_setup_triggered) {
                 ESP_LOGI(TAG, "boot button released before setup, returning to clock");
                 g_boot_info_requested = false;
             }
-            pressed_since = 0;
-            triggered = false;
-            info_requested = false;
+            boot_pressed_since = 0;
+            boot_setup_triggered = false;
+            boot_info_requested = false;
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
 
-static void key_button_task(void *)
-{
-    gpio_config_t button = {};
-    button.intr_type = GPIO_INTR_DISABLE;
-    button.mode = GPIO_MODE_INPUT;
-    button.pin_bit_mask = 1ULL << kKeyButtonGpio;
-    button.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    button.pull_up_en = GPIO_PULLUP_ENABLE;
-    ESP_ERROR_CHECK(gpio_config(&button));
-
-    TickType_t pressed_since = 0;
-    bool long_handled = false;
-    for (;;) {
-        bool pressed = gpio_get_level(kKeyButtonGpio) == 0;
-        TickType_t now = xTaskGetTickCount();
-        if (pressed) {
-            if (pressed_since == 0) {
-                pressed_since = now;
-                long_handled = false;
+        if (key_pressed) {
+            if (key_pressed_since == 0) {
+                key_pressed_since = now;
+                key_long_handled = false;
             }
-            if (!long_handled && now - pressed_since >= pdMS_TO_TICKS(kSettingsHoldMs)) {
+            if (!key_long_handled && now - key_pressed_since >= pdMS_TO_TICKS(kSettingsHoldMs)) {
                 ESP_LOGI(TAG, "key button held for 2s, showing settings page");
                 g_boot_info_requested = false;
                 g_settings_requested = true;
                 g_settings_last_activity_tick = now;
-                long_handled = true;
+                key_long_handled = true;
             }
         } else {
-            if (pressed_since != 0 && !long_handled && g_settings_requested) {
-                TickType_t held = now - pressed_since;
+            if (key_pressed_since != 0 && !key_long_handled && g_settings_requested) {
+                TickType_t held = now - key_pressed_since;
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
                     g_settings_last_activity_tick = now;
                     if (!is_settings_sync_busy()) {
@@ -1618,8 +1646,8 @@ static void key_button_task(void *)
                     }
                 }
             }
-            pressed_since = 0;
-            long_handled = false;
+            key_pressed_since = 0;
+            key_long_handled = false;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -1774,18 +1802,15 @@ static bool read_battery_percent(int *percent)
     return true;
 }
 
-static void battery_task(void *)
+static void sample_battery()
 {
-    for (;;) {
-        int percent = -1;
-        if (read_battery_percent(&percent)) {
-            g_battery_percent = percent;
-        } else {
-            g_battery_percent = -1;
-        }
-        ++g_battery_version;
-        vTaskDelay(pdMS_TO_TICKS(5 * 60 * 1000));
+    int percent = -1;
+    if (read_battery_percent(&percent)) {
+        g_battery_percent = percent;
+    } else {
+        g_battery_percent = -1;
     }
+    ++g_battery_version;
 }
 
 static int boot_sync_remaining_ms()
@@ -1846,17 +1871,32 @@ static bool perform_ntp_sync(int max_retries = 30)
     return false;
 }
 
-static void sensor_task(void *)
+static void sample_sensor()
 {
+    float temp = 0.0f;
+    float humi = 0.0f;
+    g_sensor_ok = g_shtc3 && g_shtc3->Shtc3_ReadTempHumi(&temp, &humi) == 0;
+    if (g_sensor_ok) {
+        g_temperature = temp;
+        g_humidity = humi;
+    }
+}
+
+static void housekeeping_task(void *)
+{
+    TickType_t next_sensor = 0;
+    TickType_t next_battery = 0;
     for (;;) {
-        float temp = 0.0f;
-        float humi = 0.0f;
-        g_sensor_ok = g_shtc3 && g_shtc3->Shtc3_ReadTempHumi(&temp, &humi) == 0;
-        if (g_sensor_ok) {
-            g_temperature = temp;
-            g_humidity = humi;
+        TickType_t now = xTaskGetTickCount();
+        if (now >= next_sensor) {
+            sample_sensor();
+            next_sensor = now + pdMS_TO_TICKS(60000);
         }
-        vTaskDelay(pdMS_TO_TICKS(60000));
+        if (now >= next_battery) {
+            sample_battery();
+            next_battery = now + pdMS_TO_TICKS(5 * 60 * 1000);
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -2655,6 +2695,7 @@ static void ui_task(void *)
             if (info_requested && !settings_requested) {
                 if (!info_page_visible) {
                     build_boot_info_page();
+                    show_page(g_info_root);
                     info_page_visible = true;
                     settings_page_visible = false;
                 }
@@ -2665,19 +2706,21 @@ static void ui_task(void *)
                 continue;
             }
             if (info_page_visible) {
-                lv_obj_clean(lv_scr_act());
-                clear_clock_object_refs();
-                build_clock_ui();
+                show_page(g_clock_root);
                 info_page_visible = false;
                 setup_panel_visible = false;
                 status_due = true;
                 battery_due = true;
+                g_last_ui_second = -1;
+                g_last_ui_minute = -1;
             }
 
             if (settings_requested) {
                 if (!settings_page_visible) {
                     build_settings_page();
+                    show_page(g_settings_root);
                     settings_page_visible = true;
+                    info_page_visible = false;
                     setup_panel_visible = false;
                 }
                 if (g_settings_action_seq != last_settings_action_seq) {
@@ -2720,13 +2763,13 @@ static void ui_task(void *)
             }
 
             if (settings_page_visible) {
-                lv_obj_clean(lv_scr_act());
-                clear_clock_object_refs();
-                build_clock_ui();
+                show_page(g_clock_root);
                 settings_page_visible = false;
                 setup_panel_visible = false;
                 status_due = true;
                 battery_due = true;
+                g_last_ui_second = -1;
+                g_last_ui_minute = -1;
             }
 
             if (is_system_time_plausible(&local)) {
@@ -2871,9 +2914,7 @@ extern "C" void app_main(void)
     finish_boot_screen();
 
     xTaskCreatePinnedToCore(network_sync_task, "network_sync", 20480, nullptr, 4, nullptr, 0);
-    xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, nullptr, 3, nullptr, 1);
-    xTaskCreatePinnedToCore(battery_task, "battery_task", 3072, nullptr, 3, nullptr, 1);
+    xTaskCreatePinnedToCore(housekeeping_task, "housekeeping", 5120, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
-    xTaskCreatePinnedToCore(boot_button_task, "boot_button", 2048, nullptr, 2, nullptr, 1);
-    xTaskCreatePinnedToCore(key_button_task, "key_button", 2048, nullptr, 2, nullptr, 1);
+    xTaskCreatePinnedToCore(button_task, "button_task", 3072, nullptr, 2, nullptr, 1);
 }
