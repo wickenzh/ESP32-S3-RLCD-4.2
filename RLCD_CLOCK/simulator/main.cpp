@@ -15,13 +15,12 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.45";
+static const char *APP_VERSION = "v0.0.46";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
 static constexpr int kSecondCanvasH = 40;
 static constexpr int kBootAnimRunFrameMs = 50;
-static constexpr int kBootAnimFinishFrameMs = 10;
 
 static SDL_Window *g_window = nullptr;
 static SDL_Renderer *g_renderer = nullptr;
@@ -424,11 +423,6 @@ int main(int, char **)
         draw_boot_anim_frame_index(boot_anim_frame);
         lv_timer_handler();
         SDL_Delay(30);
-    }
-    for (int frame = boot_anim_frame + 1; frame < BOOT_ANIM_FRAME_COUNT; ++frame) {
-        draw_boot_anim_frame_index(frame);
-        lv_timer_handler();
-        SDL_Delay(kBootAnimFinishFrameMs);
     }
     draw_boot_anim_frame_index(BOOT_ANIM_FRAME_COUNT - 1);
     lv_timer_handler();

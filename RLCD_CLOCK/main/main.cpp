@@ -41,7 +41,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.45";
+static const char *APP_VERSION = "v0.0.46";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -53,7 +53,6 @@ static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr int kBootInfoHoldMs = 5000;
 static constexpr int kBootSetupHoldMs = 20000;
 static constexpr int kBootAnimRunFrameMs = 50;
-static constexpr int kBootAnimFinishFrameMs = 10;
 static constexpr int kBootWifiConnectTimeoutMs = 5000;
 static constexpr int kBootNtpRetries = 2;
 static constexpr int kBootStartupBudgetMs = 6000;
@@ -122,6 +121,7 @@ static lv_obj_t *g_info_labels[5];
 static volatile bool g_boot_anim_running = false;
 static volatile int g_boot_anim_current_frame = 0;
 static TaskHandle_t g_boot_anim_task_handle = nullptr;
+static TaskHandle_t g_boot_sync_task_handle = nullptr;
 static int g_last_ui_second = -1;
 static int g_last_ui_minute = -1;
 
@@ -322,19 +322,6 @@ static void boot_anim_task(void *)
 
 static void finish_boot_anim_to_last_frame()
 {
-    int start_frame = g_boot_anim_current_frame + 1;
-    if (start_frame >= BOOT_ANIM_FRAME_COUNT) {
-        start_frame = BOOT_ANIM_FRAME_COUNT - 1;
-    }
-    for (int frame = start_frame; frame < BOOT_ANIM_FRAME_COUNT; ++frame) {
-        if (Lvgl_lock(200)) {
-            draw_boot_anim_frame_index(frame);
-            g_boot_anim_current_frame = frame;
-            lv_refr_now(nullptr);
-            Lvgl_unlock();
-        }
-        vTaskDelay(pdMS_TO_TICKS(kBootAnimFinishFrameMs));
-    }
     if (Lvgl_lock(200)) {
         draw_boot_anim_frame_index(BOOT_ANIM_FRAME_COUNT - 1);
         g_boot_anim_current_frame = BOOT_ANIM_FRAME_COUNT - 1;
@@ -1892,6 +1879,13 @@ static void run_boot_connectivity_sync()
     g_boot_sync_deadline_us = 0;
 }
 
+static void boot_connectivity_task(void *)
+{
+    run_boot_connectivity_sync();
+    g_boot_sync_task_handle = nullptr;
+    vTaskDelete(nullptr);
+}
+
 static void network_sync_task(void *)
 {
     vTaskDelay(pdMS_TO_TICKS(2500));
@@ -2122,6 +2116,8 @@ extern "C" void app_main(void)
     init_wifi();
 
     g_display.RLCD_Init();
+    g_display.RLCD_ColorClear(ColorWhite);
+    g_display.RLCD_Display();
     Lvgl_PortInit(kDisplayWidth, kDisplayHeight, flush_callback);
     if (Lvgl_lock(-1)) {
         show_boot_screen();
@@ -2130,7 +2126,18 @@ extern "C" void app_main(void)
     g_boot_anim_current_frame = 0;
     g_boot_anim_running = true;
     xTaskCreatePinnedToCore(boot_anim_task, "boot_anim_task", 4096, nullptr, 4, &g_boot_anim_task_handle, 1);
-    run_boot_connectivity_sync();
+    xTaskCreatePinnedToCore(boot_connectivity_task,
+                            "boot_sync",
+                            20480,
+                            nullptr,
+                            4,
+                            &g_boot_sync_task_handle,
+                            0);
+    int waited_ms = 0;
+    while (g_boot_sync_task_handle && waited_ms < kBootStartupBudgetMs + 500) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        waited_ms += 20;
+    }
     update_boot_screen(100, "Ready", "Starting clock");
     g_boot_anim_running = false;
     while (g_boot_anim_task_handle) {
