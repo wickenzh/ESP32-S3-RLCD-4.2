@@ -63,7 +63,20 @@ BOOT 键用于查看系统信息和进入配网模式：
 - `examples/esp-idf/`：厂商提供的 ESP-IDF 示例工程，作为硬件驱动和外设逻辑参考。
 - `assets/weather-icons/`：和风天气图标 SVG、字体和源文件。
 - `assets/gif_video/`：后续 UI 或媒体功能可能会使用的 GIF 和音频资源。
+- `scripts/`：项目辅助脚本，目前包含 Gitea Release 发布脚本。
 - `README.md`：项目说明、功能逻辑、目录结构和版本记录。
+
+## 发布与下载
+
+每个正式测试版本都会同步 Git 标签，并在 Gitea Release 中上传编译好的固件产物，方便直接下载测试。
+
+Release 附件包括：
+
+- `weather_clock_vX.X.X.bin`：App 固件。
+- `weather_clock_vX.X.X_flash_package.zip`：包含 bootloader、分区表、App 固件、`flash_args` 和简短烧录说明。
+- `weather_clock_vX.X.X_merged.bin`：合并后的完整镜像，适合需要整包写入时使用。
+
+发布脚本为 `scripts/publish_gitea_release.sh`。脚本不会保存账号密码，需要运行时提供 `GITEA_TOKEN`，或者提供 `GITEA_USER` 和 `GITEA_PASSWORD`。
 
 ## 版本记录
 
