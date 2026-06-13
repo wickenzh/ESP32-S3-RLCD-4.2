@@ -39,7 +39,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.35";
+static const char *APP_VERSION = "v0.0.36";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -93,14 +93,11 @@ struct WeatherData {
 static WeatherData g_weather;
 
 static lv_obj_t *g_date_label;
-static lv_obj_t *g_week_label;
 static lv_obj_t *g_temp_label;
 static lv_obj_t *g_humi_label;
 static lv_obj_t *g_weather_city_label;
 static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
-static lv_obj_t *g_wifi_label;
-static lv_obj_t *g_sync_label;
 static lv_obj_t *g_battery_segments[5];
 static lv_obj_t *g_time_canvas;
 static lv_color_t *g_time_canvas_buf;
@@ -250,14 +247,11 @@ static void format_time_or_dash(time_t value, char *out, size_t out_len)
 static void clear_clock_object_refs()
 {
     g_date_label = nullptr;
-    g_week_label = nullptr;
     g_temp_label = nullptr;
     g_humi_label = nullptr;
     g_weather_city_label = nullptr;
     g_weather_info_label = nullptr;
     g_weather_icon_label = nullptr;
-    g_wifi_label = nullptr;
-    g_sync_label = nullptr;
     g_time_canvas = nullptr;
     g_second_canvas = nullptr;
     for (lv_obj_t *&segment : g_battery_segments) {
@@ -298,7 +292,7 @@ static void build_battery_icon(lv_obj_t *parent)
 {
     lv_obj_t *frame = lv_obj_create(parent);
     lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(frame, 342, 17);
+    lv_obj_set_pos(frame, 20, 17);
     lv_obj_set_size(frame, 34, 16);
     style_battery_frame(frame);
 
@@ -312,7 +306,7 @@ static void build_battery_icon(lv_obj_t *parent)
 
     lv_obj_t *tip = lv_obj_create(parent);
     lv_obj_clear_flag(tip, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(tip, 377, 22);
+    lv_obj_set_pos(tip, 55, 22);
     lv_obj_set_size(tip, 3, 6);
     style_battery_part(tip, true);
     lv_obj_set_style_border_width(tip, 0, LV_PART_MAIN);
@@ -468,12 +462,6 @@ static void update_boot_info_page()
 
 static void update_battery_icon(int percent)
 {
-    static int last_percent = -999;
-    if (percent == last_percent) {
-        return;
-    }
-    last_percent = percent;
-
     int filled = 0;
     if (percent >= 0) {
         if (percent > 100) {
@@ -497,21 +485,18 @@ static void build_clock_ui()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    g_date_label = make_label_with_font(screen, 20, 15, 198, 26, "----/--/--", &lv_font_montserrat_16);
-    g_week_label = make_label(screen, 242, 16, 68, 30, "---");
+    g_date_label = make_label(screen, 116, 15, 264, 26, "----/--/-- / 星期-");
+    lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     build_battery_icon(screen);
-    g_temp_label = make_label(screen, 20, 232, 160, 26, "本地 --.-℃");
-    g_humi_label = make_label(screen, 200, 232, 160, 26, "湿度 --.-%");
-    g_weather_city_label = make_label(screen, 20, 202, 126, 26, "城市 --");
-    g_weather_info_label = make_label(screen, 150, 202, 190, 26, "天气等待");
-    g_weather_icon_label = make_label(screen, 344, 186, 42, 44, "");
+    g_temp_label = make_label(screen, 20, 258, 170, 28, "本地 --.-℃");
+    g_humi_label = make_label(screen, 205, 258, 170, 28, "湿度 --.-%");
+    g_weather_city_label = make_label(screen, 20, 216, 140, 28, "城市 --");
+    g_weather_info_label = make_label(screen, 166, 216, 174, 28, "天气等待");
+    g_weather_icon_label = make_label(screen, 344, 204, 42, 44, "");
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_wifi_label = make_label_with_font(screen, 20, 270, 230, 22, "AP 192.168.4.1", &lv_font_montserrat_14);
-    g_sync_label = make_label_with_font(screen, 265, 270, 120, 22, "NTP WAIT", &lv_font_montserrat_14);
-
     constexpr int canvas_w = 292;
     constexpr int canvas_h = 92;
     if (!g_time_canvas_buf) {
@@ -1880,12 +1865,14 @@ static void update_time_ui(const struct tm &local)
         g_last_ui_second = local.tm_sec;
     }
 
-    char date[32];
-    snprintf(date, sizeof(date), "%04d/%02d/%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
+    static const char *week_days[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
+    char date[48];
+    snprintf(date, sizeof(date), "%04d/%02d/%02d / %s",
+             local.tm_year + 1900,
+             local.tm_mon + 1,
+             local.tm_mday,
+             week_days[local.tm_wday]);
     set_label_text_if_changed(g_date_label, date);
-
-    static const char *week_days[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
-    set_label_text_if_changed(g_week_label, week_days[local.tm_wday]);
 }
 
 static void ui_task(void *)
@@ -1940,17 +1927,6 @@ static void ui_task(void *)
                     snprintf(humi, sizeof(humi), "湿度 --.-%%");
                 }
 
-                char wifi[48];
-                if (bits & kWifiConnectedBit) {
-                    snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA OK  AP %s" : "STA OK", g_ap_ssid);
-                } else if (g_have_wifi_creds && !g_wifi_radio_on) {
-                    snprintf(wifi, sizeof(wifi), "WIFI OFF  AP OFF");
-                } else if (g_have_wifi_creds) {
-                    snprintf(wifi, sizeof(wifi), g_setup_portal_active ? "STA WAIT  AP %s" : "STA WAIT", g_ap_ssid);
-                } else {
-                    snprintf(wifi, sizeof(wifi), "SETUP AP %s", g_ap_ssid);
-                }
-
                 set_label_text_if_changed(g_temp_label, temp);
                 set_label_text_if_changed(g_humi_label, humi);
                 if (bits & kWeatherReadyBit) {
@@ -1974,8 +1950,6 @@ static void ui_task(void *)
                     update_battery_icon(g_battery_percent);
                     last_battery_version = g_battery_version;
                 }
-                set_label_text_if_changed(g_wifi_label, wifi);
-                set_label_text_if_changed(g_sync_label, (bits & kTimeSyncedBit) ? "NTP OK" : "NTP WAIT");
                 if (status_due) {
                     last_status_update = tick_now;
                 }
