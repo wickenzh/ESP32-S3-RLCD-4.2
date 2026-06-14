@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.1.1";
+static const char *APP_VERSION = "v1.1.2";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -3511,6 +3511,9 @@ static void request_setup_prompt_once()
 
 static void play_hourly_chime(int hour, bool enforce_quiet_hours = true)
 {
+    if (g_low_battery_mode) {
+        return;
+    }
     if (enforce_quiet_hours && (hour < 7 || hour > 22)) {
         return;
     }
@@ -3550,7 +3553,8 @@ static bool update_time_ui(const struct tm &local)
     changed |= set_label_text_if_changed(g_date_label, date);
 
     int hour_key = local.tm_yday * 24 + local.tm_hour;
-    if (g_hourly_chime_enabled && local.tm_min == 0 && local.tm_sec <= 2 && hour_key != last_chime_hour_key) {
+    if (g_hourly_chime_enabled && !g_low_battery_mode &&
+        local.tm_min == 0 && local.tm_sec <= 2 && hour_key != last_chime_hour_key) {
         last_chime_hour_key = hour_key;
         play_hourly_chime(local.tm_hour);
     }
