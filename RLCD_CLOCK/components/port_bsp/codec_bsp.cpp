@@ -12,7 +12,7 @@ extern const uint8_t hourly_chime_pcm_end[] asm("_binary_hourly_chime_pcm_end");
 
 void CodecPort::CodecPort_MusicTask(void *arg) {
 	CodecPort *codec = (CodecPort *)arg;
-	codec->CodecPort_SetSpeakerVol(80);
+	codec->CodecPort_SetSpeakerVol(60);
 	for(;;) {
 		size_t bytes_write = 0;
   	  	size_t bytes_sizt = hourly_chime_pcm_end - hourly_chime_pcm_start;
@@ -29,7 +29,7 @@ void CodecPort::CodecPort_MusicTask(void *arg) {
 
 void CodecPort::CodecPort_EchoTask(void *arg) {
 	CodecPort *codec = (CodecPort *)arg;
-	codec->CodecPort_SetSpeakerVol(80);
+	codec->CodecPort_SetSpeakerVol(60);
 	codec->CodecPort_SetMicGain(25);
 	uint8_t *data_ptr = (uint8_t *)heap_caps_malloc(1024 * sizeof(uint8_t), MALLOC_CAP_SPIRAM);
 	codec->CodecPort_SetInfo("es8311 & es7210",1,44100,2,16);
@@ -155,7 +155,7 @@ bool CodecPort::CodecPort_PlayHourlyChime(void) {
         ESP_LOGW(TAG, "codec is not ready");
         return false;
     }
-    CodecPort_SetSpeakerVol(80);
+    CodecPort_SetSpeakerVol(60);
     CodecPort_SetInfo("es8311", 1, 44100, 2, 16);
     const size_t bytes_size = hourly_chime_pcm_end - hourly_chime_pcm_start;
     const uint8_t *data_ptr = hourly_chime_pcm_start;

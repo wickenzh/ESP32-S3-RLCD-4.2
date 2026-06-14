@@ -44,7 +44,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.8";
+static const char *APP_VERSION = "v1.0.9";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1372,7 +1372,7 @@ static bool load_saved_config()
     esp_err_t pass_err = nvs_get_str(nvs, "pass", g_wifi_pass, &pass_len);
     esp_err_t key_err = nvs_get_str(nvs, "api_key", g_weather_api_key, &key_len);
     uint8_t chime = 0;
-    (void)nvs_get_u8(nvs, "hourly_chime", &chime);
+    (void)nvs_get_u8(nvs, "hourly_chime_v2", &chime);
     nvs_close(nvs);
     g_have_weather_key = key_err == ESP_OK && g_weather_api_key[0] != '\0';
     g_hourly_chime_enabled = chime != 0;
@@ -1400,7 +1400,7 @@ static void save_hourly_chime_setting()
 {
     nvs_handle_t nvs;
     ESP_ERROR_CHECK(nvs_open("wifi", NVS_READWRITE, &nvs));
-    ESP_ERROR_CHECK(nvs_set_u8(nvs, "hourly_chime", g_hourly_chime_enabled ? 1 : 0));
+    ESP_ERROR_CHECK(nvs_set_u8(nvs, "hourly_chime_v2", g_hourly_chime_enabled ? 1 : 0));
     ESP_ERROR_CHECK(nvs_commit(nvs));
     nvs_close(nvs);
 }
