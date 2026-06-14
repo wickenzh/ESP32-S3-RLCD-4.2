@@ -18,7 +18,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v1.0.19";
+static const char *APP_VERSION = "v1.0.20";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;

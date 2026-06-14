@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.19";
+static const char *APP_VERSION = "v1.0.20";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -90,9 +90,15 @@ static DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 static I2cMasterBus g_i2c(14, 13, 0);
 static Shtc3Port *g_shtc3 = nullptr;
 static CodecPort *g_codec = nullptr;
-static volatile bool g_chime_playing = false;
+static portMUX_TYPE g_audio_state_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool g_audio_playing = false;
 static volatile bool g_startup_screen_active = true;
 static volatile bool g_setup_prompt_pending = false;
+#if CONFIG_PM_ENABLE
+static esp_pm_lock_handle_t g_network_pm_lock = nullptr;
+static esp_pm_lock_handle_t g_audio_pm_lock = nullptr;
+static int g_network_pm_lock_depth = 0;
+#endif
 static adc_oneshot_unit_handle_t g_battery_adc = nullptr;
 static adc_cali_handle_t g_battery_adc_cali = nullptr;
 static bool g_battery_adc_ready = false;
@@ -224,13 +230,41 @@ static int g_last_status_gif_frame = -1;
 static int g_last_temp_trend_drawn = 99;
 static int g_last_humi_trend_drawn = 99;
 
-static void apply_station_config(bool reconnect);
+static bool apply_station_config(bool reconnect);
 static bool wait_for_wifi_connected(uint32_t timeout_ms);
 static void trim_ascii(char *text);
 static void build_clock_ui();
 static void run_boot_connectivity_sync();
 static void request_setup_prompt_once();
 static bool start_setup_prompt_playback();
+
+static bool try_mark_audio_playing()
+{
+    bool acquired = false;
+    portENTER_CRITICAL(&g_audio_state_mux);
+    if (!g_audio_playing) {
+        g_audio_playing = true;
+        acquired = true;
+    }
+    portEXIT_CRITICAL(&g_audio_state_mux);
+    return acquired;
+}
+
+static void clear_audio_playing()
+{
+    portENTER_CRITICAL(&g_audio_state_mux);
+    g_audio_playing = false;
+    portEXIT_CRITICAL(&g_audio_state_mux);
+}
+
+static bool is_audio_playing()
+{
+    bool playing = false;
+    portENTER_CRITICAL(&g_audio_state_mux);
+    playing = g_audio_playing;
+    portEXIT_CRITICAL(&g_audio_state_mux);
+    return playing;
+}
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -472,6 +506,10 @@ static void draw_status_gif_frame(int frame)
     const uint8_t *prev_pixels = g_last_status_gif_frame >= 0 ? status_gif_frames[g_last_status_gif_frame] : nullptr;
     uint32_t bit = 0;
     bool changed = false;
+    int min_x = STATUS_GIF_WIDTH;
+    int min_y = STATUS_GIF_HEIGHT;
+    int max_x = -1;
+    int max_y = -1;
     for (int y = 0; y < STATUS_GIF_HEIGHT; ++y) {
         for (int x = 0; x < STATUS_GIF_WIDTH; ++x, ++bit) {
             bool black = pixels[bit / 8] & (0x80 >> (bit & 7));
@@ -483,10 +521,23 @@ static void draw_status_gif_frame(int frame)
             }
             lv_canvas_set_px_color(g_status_gif_canvas, x, y, black ? lv_color_black() : lv_color_white());
             changed = true;
+            if (x < min_x) min_x = x;
+            if (x > max_x) max_x = x;
+            if (y < min_y) min_y = y;
+            if (y > max_y) max_y = y;
         }
     }
     if (changed || g_last_status_gif_frame != frame) {
-        lv_obj_invalidate(g_status_gif_canvas);
+        if (changed && min_x <= max_x && min_y <= max_y) {
+            lv_area_t area = {};
+            area.x1 = static_cast<lv_coord_t>(min_x);
+            area.y1 = static_cast<lv_coord_t>(min_y);
+            area.x2 = static_cast<lv_coord_t>(max_x);
+            area.y2 = static_cast<lv_coord_t>(max_y);
+            lv_obj_invalidate_area(g_status_gif_canvas, &area);
+        } else {
+            lv_obj_invalidate(g_status_gif_canvas);
+        }
     }
     g_last_status_gif_frame = frame;
 }
@@ -1383,33 +1434,59 @@ static bool load_saved_config()
     return ssid_err == ESP_OK && pass_err == ESP_OK && g_wifi_ssid[0] != '\0';
 }
 
-static void save_config(const char *ssid, const char *pass, const char *api_key)
+static bool save_config(const char *ssid, const char *pass, const char *api_key)
 {
     nvs_handle_t nvs;
-    ESP_ERROR_CHECK(nvs_open("wifi", NVS_READWRITE, &nvs));
-    ESP_ERROR_CHECK(nvs_set_str(nvs, "ssid", ssid));
-    ESP_ERROR_CHECK(nvs_set_str(nvs, "pass", pass));
-    ESP_ERROR_CHECK(nvs_set_str(nvs, "api_key", api_key));
+    esp_err_t err = nvs_open("wifi", NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "nvs open failed while saving config: %s", esp_err_to_name(err));
+        return false;
+    }
+    err = nvs_set_str(nvs, "ssid", ssid);
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs, "pass", pass);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs, "api_key", api_key);
+    }
     (void)nvs_erase_key(nvs, "api_host");
-    ESP_ERROR_CHECK(nvs_commit(nvs));
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
     nvs_close(nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "nvs save config failed: %s", esp_err_to_name(err));
+        return false;
+    }
     strlcpy(g_wifi_ssid, ssid, sizeof(g_wifi_ssid));
     strlcpy(g_wifi_pass, pass, sizeof(g_wifi_pass));
     strlcpy(g_weather_api_key, api_key, sizeof(g_weather_api_key));
     g_have_wifi_creds = true;
     g_have_weather_key = g_weather_api_key[0] != '\0';
+    return true;
 }
 
-static void save_hourly_chime_setting()
+static bool save_hourly_chime_setting()
 {
     nvs_handle_t nvs;
-    ESP_ERROR_CHECK(nvs_open("wifi", NVS_READWRITE, &nvs));
-    ESP_ERROR_CHECK(nvs_set_u8(nvs, "hourly_chime_v2", g_hourly_chime_enabled ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_commit(nvs));
+    esp_err_t err = nvs_open("wifi", NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "nvs open failed while saving hourly reminder: %s", esp_err_to_name(err));
+        return false;
+    }
+    err = nvs_set_u8(nvs, "hourly_chime_v2", g_hourly_chime_enabled ? 1 : 0);
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
     nvs_close(nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "nvs save hourly reminder failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
 }
 
-static void clear_saved_config()
+static bool clear_saved_config()
 {
     nvs_handle_t nvs;
     if (nvs_open("wifi", NVS_READWRITE, &nvs) == ESP_OK) {
@@ -1417,8 +1494,15 @@ static void clear_saved_config()
         (void)nvs_erase_key(nvs, "pass");
         (void)nvs_erase_key(nvs, "api_key");
         (void)nvs_erase_key(nvs, "api_host");
-        ESP_ERROR_CHECK(nvs_commit(nvs));
+        esp_err_t err = nvs_commit(nvs);
         nvs_close(nvs);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "nvs clear config failed: %s", esp_err_to_name(err));
+            return false;
+        }
+    } else {
+        ESP_LOGW(TAG, "nvs open failed while clearing config");
+        return false;
     }
     g_wifi_ssid[0] = '\0';
     g_wifi_pass[0] = '\0';
@@ -1427,6 +1511,7 @@ static void clear_saved_config()
     g_have_wifi_creds = false;
     g_have_weather_key = false;
     xEventGroupClearBits(g_app_events, kWifiConnectedBit | kWeatherReadyBit);
+    return true;
 }
 
 static void url_decode(char *dst, size_t dst_len, const char *src)
@@ -1494,8 +1579,10 @@ static bool save_credentials_from_body(const char *body)
              ssid, (unsigned)strlen(pass), api_key[0] ? "set" : "empty");
     g_last_wifi_disconnect_reason = 0;
     xEventGroupClearBits(g_app_events, kWifiConnectedBit);
-    save_config(ssid, pass, api_key);
-    apply_station_config(true);
+    if (!save_config(ssid, pass, api_key)) {
+        return false;
+    }
+    (void)apply_station_config(true);
     return true;
 }
 
@@ -1587,21 +1674,27 @@ static void append_wifi_scan_list(char *html, size_t html_len)
     html_append(html, html_len, "</div></section>");
 }
 
-static void apply_station_config(bool reconnect)
+static bool apply_station_config(bool reconnect)
 {
     wifi_config_t sta_config = {};
     strlcpy((char *)sta_config.sta.ssid, g_wifi_ssid, sizeof(sta_config.sta.ssid));
     strlcpy((char *)sta_config.sta.password, g_wifi_pass, sizeof(sta_config.sta.password));
     sta_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
     sta_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &sta_config);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "wifi sta config failed: %s", esp_err_to_name(err));
+        return false;
+    }
     if (reconnect) {
         esp_wifi_disconnect();
-        esp_err_t err = esp_wifi_connect();
+        err = esp_wifi_connect();
         if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
             ESP_LOGW(TAG, "wifi connect failed to start: %s", esp_err_to_name(err));
+            return false;
         }
     }
+    return true;
 }
 
 static void stop_http_server()
@@ -1720,104 +1813,155 @@ static esp_err_t empty_asset_handler(httpd_req_t *req)
     return httpd_resp_send(req, "", 0);
 }
 
-static void start_http_server()
+static bool start_http_server()
 {
     if (g_http_server) {
         g_setup_portal_active = true;
-        return;
+        return true;
     }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.stack_size = 8192;
     config.lru_purge_enable = true;
-    ESP_ERROR_CHECK(httpd_start(&g_http_server, &config));
+    esp_err_t err = httpd_start(&g_http_server, &config);
+    if (err != ESP_OK) {
+        g_http_server = nullptr;
+        g_setup_portal_active = false;
+        ESP_LOGW(TAG, "http server start failed: %s", esp_err_to_name(err));
+        return false;
+    }
 
     httpd_uri_t root = {};
     root.uri = "/";
     root.method = HTTP_GET;
     root.handler = root_get_handler;
-    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &root));
+    err = httpd_register_uri_handler(g_http_server, &root);
 
     httpd_uri_t save = {};
     save.uri = "/save";
     save.method = HTTP_POST;
     save.handler = save_post_handler;
-    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &save));
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(g_http_server, &save);
+    }
 
     httpd_uri_t save_get = {};
     save_get.uri = "/save";
     save_get.method = HTTP_GET;
     save_get.handler = save_get_handler;
-    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &save_get));
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(g_http_server, &save_get);
+    }
 
     httpd_uri_t favicon = {};
     favicon.uri = "/favicon.ico";
     favicon.method = HTTP_GET;
     favicon.handler = empty_asset_handler;
-    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &favicon));
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(g_http_server, &favicon);
+    }
 
     httpd_uri_t apple_icon = {};
     apple_icon.uri = "/apple-touch-icon.png";
     apple_icon.method = HTTP_GET;
     apple_icon.handler = empty_asset_handler;
-    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &apple_icon));
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(g_http_server, &apple_icon);
+    }
 
     httpd_uri_t apple_icon_precomposed = {};
     apple_icon_precomposed.uri = "/apple-touch-icon-precomposed.png";
     apple_icon_precomposed.method = HTTP_GET;
     apple_icon_precomposed.handler = empty_asset_handler;
-    ESP_ERROR_CHECK(httpd_register_uri_handler(g_http_server, &apple_icon_precomposed));
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(g_http_server, &apple_icon_precomposed);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "http uri register failed: %s", esp_err_to_name(err));
+        httpd_stop(g_http_server);
+        g_http_server = nullptr;
+        g_setup_portal_active = false;
+        return false;
+    }
     g_setup_portal_active = true;
+    return true;
 }
 
-static void start_wifi_radio(bool enable_setup_portal)
+static bool start_wifi_radio(bool enable_setup_portal)
 {
     bool entering_setup_portal = enable_setup_portal && !g_setup_portal_active;
     if (g_wifi_radio_on) {
         if (enable_setup_portal && !g_setup_portal_active) {
-            start_http_server();
+            if (!start_http_server()) {
+                return false;
+            }
         }
         if (g_have_wifi_creds) {
-            apply_station_config(true);
+            (void)apply_station_config(true);
         }
         if (entering_setup_portal) {
             request_setup_prompt_once();
         }
-        return;
+        return true;
     }
 
     g_wifi_stop_requested = false;
-    ESP_ERROR_CHECK(esp_wifi_set_mode(enable_setup_portal ? WIFI_MODE_APSTA : WIFI_MODE_STA));
-    if (g_have_wifi_creds) {
-        apply_station_config(false);
+    esp_err_t err = esp_wifi_set_mode(enable_setup_portal ? WIFI_MODE_APSTA : WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "wifi set mode failed: %s", esp_err_to_name(err));
+        return false;
     }
-    ESP_ERROR_CHECK(esp_wifi_start());
+    if (g_have_wifi_creds) {
+        (void)apply_station_config(false);
+    }
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "wifi start failed: %s", esp_err_to_name(err));
+        return false;
+    }
     esp_err_t ps_err = esp_wifi_set_ps(enable_setup_portal ? WIFI_PS_NONE : WIFI_PS_MAX_MODEM);
     if (ps_err != ESP_OK) {
         ESP_LOGW(TAG, "wifi power save setup failed: %s", esp_err_to_name(ps_err));
     }
     g_wifi_radio_on = true;
     if (enable_setup_portal) {
-        start_http_server();
+        if (!start_http_server()) {
+            g_wifi_stop_requested = true;
+            (void)esp_wifi_disconnect();
+            (void)esp_wifi_stop();
+            g_wifi_radio_on = false;
+            return false;
+        }
         if (entering_setup_portal) {
             request_setup_prompt_once();
         }
     }
+    return true;
 }
 
 static void stop_wifi_radio(bool force_setup_portal = false)
 {
-    if (!g_wifi_radio_on || !g_have_wifi_creds) {
+    if (!g_wifi_radio_on) {
         return;
     }
     if (g_setup_portal_active && !force_setup_portal) {
         return;
     }
+    if (!g_have_wifi_creds && !force_setup_portal) {
+        return;
+    }
     stop_http_server();
     g_wifi_stop_requested = true;
-    esp_wifi_disconnect();
-    ESP_ERROR_CHECK(esp_wifi_stop());
-    g_wifi_radio_on = false;
+    esp_err_t err = esp_wifi_disconnect();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGW(TAG, "wifi disconnect during stop failed: %s", esp_err_to_name(err));
+    }
+    err = esp_wifi_stop();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGW(TAG, "wifi stop failed: %s", esp_err_to_name(err));
+    } else {
+        g_wifi_radio_on = false;
+    }
     xEventGroupClearBits(g_app_events, kWifiConnectedBit);
     ESP_LOGI(TAG, "wifi radio off");
 }
@@ -1962,6 +2106,16 @@ static void init_power_management()
         ESP_LOGI(TAG, "power management: max=%dMHz min=%dMHz light sleep enabled",
                  pm_config.max_freq_mhz, pm_config.min_freq_mhz);
     }
+    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "network_sync", &g_network_pm_lock);
+    if (err != ESP_OK) {
+        g_network_pm_lock = nullptr;
+        ESP_LOGW(TAG, "network pm lock create failed: %s", esp_err_to_name(err));
+    }
+    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "audio_play", &g_audio_pm_lock);
+    if (err != ESP_OK) {
+        g_audio_pm_lock = nullptr;
+        ESP_LOGW(TAG, "audio pm lock create failed: %s", esp_err_to_name(err));
+    }
 #else
     ESP_LOGW(TAG, "power management disabled in sdkconfig");
 #endif
@@ -1969,10 +2123,58 @@ static void init_power_management()
 
 static void acquire_network_awake_lock()
 {
+#if CONFIG_PM_ENABLE
+    if (!g_network_pm_lock) {
+        return;
+    }
+    if (g_network_pm_lock_depth++ == 0) {
+        esp_err_t err = esp_pm_lock_acquire(g_network_pm_lock);
+        if (err != ESP_OK) {
+            --g_network_pm_lock_depth;
+            ESP_LOGW(TAG, "network pm lock acquire failed: %s", esp_err_to_name(err));
+        }
+    }
+#endif
 }
 
 static void release_network_awake_lock()
 {
+#if CONFIG_PM_ENABLE
+    if (!g_network_pm_lock || g_network_pm_lock_depth <= 0) {
+        return;
+    }
+    --g_network_pm_lock_depth;
+    if (g_network_pm_lock_depth == 0) {
+        esp_err_t err = esp_pm_lock_release(g_network_pm_lock);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "network pm lock release failed: %s", esp_err_to_name(err));
+        }
+    }
+#endif
+}
+
+static void acquire_audio_awake_lock()
+{
+#if CONFIG_PM_ENABLE
+    if (g_audio_pm_lock) {
+        esp_err_t err = esp_pm_lock_acquire(g_audio_pm_lock);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "audio pm lock acquire failed: %s", esp_err_to_name(err));
+        }
+    }
+#endif
+}
+
+static void release_audio_awake_lock()
+{
+#if CONFIG_PM_ENABLE
+    if (g_audio_pm_lock) {
+        esp_err_t err = esp_pm_lock_release(g_audio_pm_lock);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "audio pm lock release failed: %s", esp_err_to_name(err));
+        }
+    }
+#endif
 }
 
 static void restore_system_time_from_rtc()
@@ -2306,11 +2508,18 @@ static void housekeeping_task(void *)
     TickType_t start_tick = xTaskGetTickCount();
     TickType_t next_sensor = next_sensor_sample_tick(start_tick);
     TickType_t next_battery = next_battery_sample_tick(start_tick);
+    bool last_time_valid = is_system_time_plausible();
     if (!g_low_battery_mode) {
         sample_sensor();
     }
     for (;;) {
         TickType_t now = xTaskGetTickCount();
+        bool time_valid = is_system_time_plausible();
+        if (time_valid && !last_time_valid) {
+            next_sensor = next_sensor_sample_tick(now);
+            next_battery = next_battery_sample_tick(now);
+        }
+        last_time_valid = time_valid;
         if (now >= next_sensor) {
             if (!g_low_battery_mode) {
                 sample_sensor();
@@ -2982,7 +3191,13 @@ static void run_boot_connectivity_sync()
     update_boot_screen(18, "Connecting Wi-Fi", g_wifi_ssid);
     acquire_network_awake_lock();
     g_boot_sync_deadline_us = esp_timer_get_time() + (int64_t)kBootStartupBudgetMs * 1000;
-    start_wifi_radio(false);
+    if (!start_wifi_radio(false)) {
+        update_boot_screen(100, "Wi-Fi start failed", "Starting clock");
+        vTaskDelay(pdMS_TO_TICKS(200));
+        release_network_awake_lock();
+        g_boot_sync_deadline_us = 0;
+        return;
+    }
     int remaining_ms = boot_sync_remaining_ms();
     uint32_t wifi_timeout_ms = remaining_ms > 0 && remaining_ms < kBootWifiConnectTimeoutMs
                                    ? remaining_ms
@@ -3137,7 +3352,28 @@ static void network_sync_task(void *)
 
         ESP_LOGI(TAG, "wifi radio on for sync: ntp=%d weather=%d", ntp_due, weather_due);
         acquire_network_awake_lock();
-        start_wifi_radio(false);
+        if (!start_wifi_radio(false)) {
+            ESP_LOGW(TAG, "wifi start failed during sync window");
+            if (manual_ntp_due) {
+                finish_settings_sync(kSettingsSyncNtp, "时间同步失败");
+                xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
+            }
+            if (manual_weather_due) {
+                finish_settings_sync(kSettingsSyncWeather, "天气同步失败");
+                xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
+            }
+            if (ntp_due) {
+                time(&next_ntp_retry_at);
+                next_ntp_retry_at += 5 * 60;
+            }
+            if (weather_due) {
+                time(&next_weather_at);
+                next_weather_at = next_weather_sync_time(next_weather_at);
+            }
+            release_network_awake_lock();
+            wait_for_network_sync_event(1000);
+            continue;
+        }
         if (wait_for_wifi_connected(45000)) {
             bool ntp_ok = false;
             bool weather_ok = false;
@@ -3200,12 +3436,14 @@ static void hourly_chime_task(void *arg)
     if (!g_codec) {
         g_codec = new CodecPort(g_i2c, "S3_RLCD_4_2");
     }
+    acquire_audio_awake_lock();
     if (g_codec && g_codec->CodecPort_PlayHourlyChimeSlot(source_slot)) {
         ESP_LOGI(TAG, "hourly chime played source=%d", source_slot);
     } else {
         ESP_LOGW(TAG, "hourly chime skipped source=%d", source_slot);
     }
-    g_chime_playing = false;
+    release_audio_awake_lock();
+    clear_audio_playing();
     if (g_setup_prompt_pending && !g_startup_screen_active) {
         vTaskDelay(pdMS_TO_TICKS(120));
         (void)start_setup_prompt_playback();
@@ -3218,24 +3456,25 @@ static void setup_prompt_task(void *)
     if (!g_codec) {
         g_codec = new CodecPort(g_i2c, "S3_RLCD_4_2");
     }
+    acquire_audio_awake_lock();
     if (g_codec && g_codec->CodecPort_PlayWifiPrompt()) {
         ESP_LOGI(TAG, "setup prompt played");
     } else {
         ESP_LOGW(TAG, "setup prompt skipped");
     }
-    g_chime_playing = false;
+    release_audio_awake_lock();
+    clear_audio_playing();
     vTaskDelete(nullptr);
 }
 
 static bool start_chime_playback(int source_slot)
 {
-    if (g_chime_playing) {
+    if (!try_mark_audio_playing()) {
         return false;
     }
-    g_chime_playing = true;
     BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task, "hourly_chime", 6144, (void *)(intptr_t)source_slot, 4, nullptr, 1);
     if (ok != pdPASS) {
-        g_chime_playing = false;
+        clear_audio_playing();
         ESP_LOGW(TAG, "failed to create hourly chime task");
         return false;
     }
@@ -3244,14 +3483,13 @@ static bool start_chime_playback(int source_slot)
 
 static bool start_setup_prompt_playback()
 {
-    if (g_chime_playing) {
+    if (!try_mark_audio_playing()) {
         return false;
     }
     g_setup_prompt_pending = false;
-    g_chime_playing = true;
     BaseType_t ok = xTaskCreatePinnedToCore(setup_prompt_task, "setup_prompt", 6144, nullptr, 4, nullptr, 1);
     if (ok != pdPASS) {
-        g_chime_playing = false;
+        clear_audio_playing();
         g_setup_prompt_pending = true;
         ESP_LOGW(TAG, "failed to create setup prompt task");
         return false;
@@ -3261,7 +3499,7 @@ static bool start_setup_prompt_playback()
 
 static void request_setup_prompt_once()
 {
-    if (g_startup_screen_active || g_chime_playing) {
+    if (g_startup_screen_active || is_audio_playing()) {
         g_setup_prompt_pending = true;
         ESP_LOGI(TAG, "setup prompt pending");
         return;
@@ -3335,8 +3573,15 @@ static void handle_settings_action()
     }
     switch (selected) {
     case 0:
-        g_hourly_chime_enabled = !g_hourly_chime_enabled;
-        save_hourly_chime_setting();
+        {
+            bool previous = g_hourly_chime_enabled;
+            g_hourly_chime_enabled = !g_hourly_chime_enabled;
+            if (!save_hourly_chime_setting()) {
+                g_hourly_chime_enabled = previous;
+                set_settings_feedback("保存失败", 2500);
+                break;
+            }
+        }
         set_settings_feedback(g_hourly_chime_enabled ? "整点提醒 ON" : "整点提醒 OFF", 2500);
         ESP_LOGI(TAG, "hourly chime %s", g_hourly_chime_enabled ? "enabled" : "disabled");
         if (g_hourly_chime_enabled) {
@@ -3361,10 +3606,16 @@ static void handle_settings_action()
             break;
         }
         ESP_LOGW(TAG, "factory reset requested from settings");
+        if (!clear_saved_config()) {
+            set_settings_feedback("恢复失败", 2500);
+            break;
+        }
+        if (!start_wifi_radio(true)) {
+            set_settings_feedback("配网启动失败", 2500);
+            break;
+        }
         g_settings_requested = false;
         g_factory_reset_confirm_pending = false;
-        clear_saved_config();
-        start_wifi_radio(true);
         break;
     case 4:
         g_settings_requested = false;
@@ -3630,9 +3881,14 @@ static void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t
     static int range_count = 0;
     static bool force_full_refresh = false;
 
-    int area_x1 = area->x1 < 0 ? 0 : area->x1;
-    int area_x2 = area->x2 >= kDisplayWidth ? kDisplayWidth - 1 : area->x2;
-    if (area_x1 <= area_x2) {
+    int clipped_x1 = area->x1 < 0 ? 0 : area->x1;
+    int clipped_x2 = area->x2 >= kDisplayWidth ? kDisplayWidth - 1 : area->x2;
+    int clipped_y1 = area->y1 < 0 ? 0 : area->y1;
+    int clipped_y2 = area->y2 >= kDisplayHeight ? kDisplayHeight - 1 : area->y2;
+    bool touches_visible_area = clipped_x1 <= clipped_x2 && clipped_y1 <= clipped_y2;
+    if (touches_visible_area) {
+        int area_x1 = clipped_x1;
+        int area_x2 = clipped_x2;
         area_x1 &= ~1;
         area_x2 |= 1;
         if (area_x2 >= kDisplayWidth) {
@@ -3661,15 +3917,17 @@ static void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t
         }
     }
 
-    uint16_t *buffer = (uint16_t *)color_map;
     constexpr uint16_t kRlcdBlackThreshold = 0xC618;
-    for (int y = area->y1; y <= area->y2; y++) {
-        for (int x = area->x1; x <= area->x2; x++) {
-            if (x >= 0 && x < kDisplayWidth && y >= 0 && y < kDisplayHeight) {
-                uint8_t color = (*buffer < kRlcdBlackThreshold) ? ColorBlack : ColorWhite;
+    if (touches_visible_area) {
+        int area_width = area->x2 - area->x1 + 1;
+        uint16_t *buffer = (uint16_t *)color_map;
+        for (int y = clipped_y1; y <= clipped_y2; ++y) {
+            uint16_t *row = buffer + (y - area->y1) * area_width + (clipped_x1 - area->x1);
+            for (int x = clipped_x1; x <= clipped_x2; ++x) {
+                uint8_t color = (*row < kRlcdBlackThreshold) ? ColorBlack : ColorWhite;
                 g_display.RLCD_SetPixel(x, y, color);
+                ++row;
             }
-            buffer++;
         }
     }
     if (lv_disp_flush_is_last(drv)) {
@@ -3677,9 +3935,9 @@ static void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t
         for (int i = 0; i < range_count; ++i) {
             covered_width += ranges[i].x2 - ranges[i].x1 + 1;
         }
-        if (force_full_refresh || range_count == 0 || covered_width >= kDisplayPartialMaxWidth) {
+        if (force_full_refresh || covered_width >= kDisplayPartialMaxWidth) {
             g_display.RLCD_Display();
-        } else {
+        } else if (range_count > 0) {
             for (int i = 0; i < range_count; ++i) {
                 g_display.RLCD_DisplayXRange(ranges[i].x1, ranges[i].x2);
             }
