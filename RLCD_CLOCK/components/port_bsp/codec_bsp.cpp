@@ -17,7 +17,7 @@ void CodecPort::CodecPort_MusicTask(void *arg) {
 		size_t bytes_write = 0;
   	  	size_t bytes_sizt = hourly_chime_pcm_end - hourly_chime_pcm_start;
   	  	uint8_t *data_ptr = (uint8_t *)hourly_chime_pcm_start;
-		codec->CodecPort_SetInfo("es8311",1,24000,2,16);
+		codec->CodecPort_SetInfo("es8311",1,24000,4,16);
 		do
 		{
 			codec->CodecPort_PlayWrite(data_ptr, 256);
@@ -128,10 +128,13 @@ int CodecPort::CodecPort_EchoRead(void *ptr,int ptr_len) {
 }
 
 void CodecPort::CodecPort_SetInfo(const char *strName,int open_en,int sample_rate,int channel,int bits_per_sample) {
-	esp_codec_dev_sample_info_t fs = {};
+    esp_codec_dev_sample_info_t fs = {};
     	fs.sample_rate = sample_rate;
     	fs.channel = channel;
     	fs.bits_per_sample = bits_per_sample;
+        if (channel == 4) {
+            fs.channel_mask = 0x0F;
+        }
 	if(open_en) {
         if (!initialized) return;
 		if(!strcmp(strName,"es8311")) {
@@ -155,7 +158,7 @@ bool CodecPort::CodecPort_PlayHourlyChime(void) {
         return false;
     }
     CodecPort_SetSpeakerVol(90);
-    CodecPort_SetInfo("es8311", 1, 24000, 2, 16);
+    CodecPort_SetInfo("es8311", 1, 24000, 4, 16);
     const size_t bytes_size = hourly_chime_pcm_end - hourly_chime_pcm_start;
     const uint8_t *data_ptr = hourly_chime_pcm_start;
     size_t bytes_written = 0;
