@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.15";
+static const char *APP_VERSION = "v1.0.16";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -2147,6 +2147,45 @@ static bool is_system_time_plausible(struct tm *local_out = nullptr)
     return year >= kMinValidYear && year <= kMaxValidYear;
 }
 
+static bool is_tm_plausible(const struct tm &local)
+{
+    int year = local.tm_year + 1900;
+    return year >= kMinValidYear && year <= kMaxValidYear;
+}
+
+static bool is_night_slow_window(const struct tm &local)
+{
+    return local.tm_hour >= 22 || local.tm_hour < 6;
+}
+
+static int periodic_sample_minutes(const struct tm &local, int day_minutes, int night_minutes)
+{
+    return is_night_slow_window(local) ? night_minutes : day_minutes;
+}
+
+static time_t next_weather_sync_time(time_t from)
+{
+    struct tm candidate = {};
+    localtime_r(&from, &candidate);
+    if (!is_tm_plausible(candidate)) {
+        return from + 60 * 60;
+    }
+    candidate.tm_sec = 0;
+    candidate.tm_min = 0;
+    candidate.tm_hour += 1;
+    time_t next = mktime(&candidate);
+    for (int i = 0; i < 30; ++i) {
+        struct tm local = {};
+        localtime_r(&next, &local);
+        if (!is_night_slow_window(local) || (local.tm_hour % 2 == 0)) {
+            return next;
+        }
+        local.tm_hour += 1;
+        next = mktime(&local);
+    }
+    return from + 60 * 60;
+}
+
 static bool perform_ntp_sync(int max_retries = 30)
 {
     esp_sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
@@ -2228,18 +2267,35 @@ static TickType_t next_sensor_sample_tick(TickType_t now)
     if (!is_system_time_plausible(&local)) {
         return now + pdMS_TO_TICKS(60000);
     }
-    int seconds_to_next_minute = 60 - local.tm_sec;
-    if (seconds_to_next_minute <= 0 || seconds_to_next_minute > 60) {
-        seconds_to_next_minute = 60;
+    int interval_seconds = periodic_sample_minutes(local, 1, 2) * 60;
+    int seconds_into_hour = local.tm_min * 60 + local.tm_sec;
+    int seconds_to_next = interval_seconds - (seconds_into_hour % interval_seconds);
+    if (seconds_to_next <= 0 || seconds_to_next > interval_seconds) {
+        seconds_to_next = interval_seconds;
     }
-    return now + pdMS_TO_TICKS(seconds_to_next_minute * 1000);
+    return now + pdMS_TO_TICKS(seconds_to_next * 1000);
+}
+
+static TickType_t next_battery_sample_tick(TickType_t now)
+{
+    struct tm local = {};
+    if (!is_system_time_plausible(&local)) {
+        return now + pdMS_TO_TICKS(5 * 60 * 1000);
+    }
+    int interval_seconds = periodic_sample_minutes(local, 5, 10) * 60;
+    int seconds_into_hour = local.tm_min * 60 + local.tm_sec;
+    int seconds_to_next = interval_seconds - (seconds_into_hour % interval_seconds);
+    if (seconds_to_next <= 0 || seconds_to_next > interval_seconds) {
+        seconds_to_next = interval_seconds;
+    }
+    return now + pdMS_TO_TICKS(seconds_to_next * 1000);
 }
 
 static void housekeeping_task(void *)
 {
     TickType_t start_tick = xTaskGetTickCount();
     TickType_t next_sensor = next_sensor_sample_tick(start_tick);
-    TickType_t next_battery = 0;
+    TickType_t next_battery = next_battery_sample_tick(start_tick);
     if (!g_low_battery_mode) {
         sample_sensor();
     }
@@ -2253,7 +2309,7 @@ static void housekeeping_task(void *)
         }
         if (now >= next_battery) {
             sample_battery();
-            next_battery = now + pdMS_TO_TICKS(5 * 60 * 1000);
+            next_battery = next_battery_sample_tick(xTaskGetTickCount());
         }
         TickType_t next_wake = next_sensor < next_battery ? next_sensor : next_battery;
         TickType_t delay_ticks = next_wake > now ? next_wake - now : pdMS_TO_TICKS(1000);
@@ -3013,7 +3069,7 @@ static void network_sync_task(void *)
     time_t next_weather_at = 0;
     if (initial_bits & kWeatherReadyBit) {
         time(&next_weather_at);
-        next_weather_at += 60 * 60;
+        next_weather_at = next_weather_sync_time(next_weather_at);
     }
     time_t next_ntp_retry_at = 0;
     int last_midnight_ntp_yday = -1;
@@ -3091,7 +3147,7 @@ static void network_sync_task(void *)
             if (weather_due) {
                 weather_ok = perform_weather_update();
                 time(&next_weather_at);
-                next_weather_at += 60 * 60;
+                next_weather_at = next_weather_sync_time(next_weather_at);
             }
             if (provisioning_sync_due) {
                 xEventGroupClearBits(g_app_events, kProvisioningSyncBit);
@@ -3120,7 +3176,7 @@ static void network_sync_task(void *)
             }
             if (weather_due) {
                 time(&next_weather_at);
-                next_weather_at += 60 * 60;
+                next_weather_at = next_weather_sync_time(next_weather_at);
             }
         }
         stop_wifi_radio(provisioning_sync_due);
