@@ -18,7 +18,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v1.0.14";
+static const char *APP_VERSION = "v1.0.15";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -55,7 +55,7 @@ static lv_obj_t *g_day_progress_canvas;
 static lv_obj_t *g_second_progress_canvas;
 static lv_obj_t *g_lower_panel_objects[13];
 static lv_obj_t *g_setup_status_labels[6];
-static lv_obj_t *g_settings_labels[9];
+static lv_obj_t *g_settings_labels[5];
 static lv_obj_t *g_settings_feedback_label;
 static int g_last_day_progress_filled = -1;
 static int g_last_second_progress_filled = -1;
@@ -721,21 +721,10 @@ static void build_settings_page()
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
-    const char *items[] = {
-        "整点报时 ON",
-        "同步时间",
-        "同步天气",
-        "确认恢复出厂设置",
-        "关于本机",
-        "音频测试 L",
-        "音频测试 R",
-        "音频测试 M",
-        "音频测试 MR",
-    };
-    static const int y_start = 58;
-    static const int y_step = 21;
-    for (int i = 0; i < 9; ++i) {
-        g_settings_labels[i] = make_label(screen, 48, y_start + i * y_step, 304, 20, items[i]);
+    const char *items[] = {"整点报时 ON", "同步时间", "同步天气", "确认恢复出厂设置", "关于本机"};
+    static const int y_positions[] = {62, 100, 138, 176, 214};
+    for (int i = 0; i < 5; ++i) {
+        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 30, items[i]);
         lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         style_settings_item(g_settings_labels[i], i == 1);

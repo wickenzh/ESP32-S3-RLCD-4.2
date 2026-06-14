@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.14";
+static const char *APP_VERSION = "v1.0.15";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -60,7 +60,7 @@ static constexpr gpio_num_t kKeyButtonGpio = GPIO_NUM_18;
 static constexpr const char *kSetupApPassword = "12345678";
 static constexpr int kSettingsHoldMs = 2000;
 static constexpr int kSettingsTimeoutMs = 5000;
-static constexpr int kSettingsItemCount = 9;
+static constexpr int kSettingsItemCount = 5;
 static constexpr int kSettingsManualSyncTimeoutMs = 60000;
 static constexpr int kButtonIdlePollMs = 250;
 static constexpr int kButtonActivePollMs = 100;
@@ -988,10 +988,9 @@ static void build_settings_page()
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
-    static const int y_start = 58;
-    static const int y_step = 21;
+    static const int y_positions[] = {62, 100, 138, 176, 214};
     for (int i = 0; i < kSettingsItemCount; ++i) {
-        g_settings_labels[i] = make_label(screen, 48, y_start + i * y_step, 304, 20, "--");
+        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 30, "--");
         lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     }
@@ -1014,10 +1013,6 @@ static bool update_settings_page()
         "同步天气",
         g_factory_reset_confirm_pending ? "确认恢复出厂设置" : "恢复出厂设置",
         "关于本机",
-        "音频测试 L",
-        "音频测试 R",
-        "音频测试 M",
-        "音频测试 MR",
     };
     int selected = g_settings_selection;
     if (selected < 0 || selected >= kSettingsItemCount) {
@@ -3168,7 +3163,7 @@ static void play_hourly_chime(int hour, bool enforce_quiet_hours = true)
     if (enforce_quiet_hours && (hour < 7 || hour > 22)) {
         return;
     }
-    (void)start_chime_playback(2);
+    (void)start_chime_playback(3);
 }
 
 static bool update_time_ui(const struct tm &local)
@@ -3265,21 +3260,6 @@ static void handle_settings_action()
         g_info_page_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(kSettingsTimeoutMs);
         ESP_LOGI(TAG, "system info requested from settings");
         break;
-    case 5:
-    case 6:
-    case 7:
-    case 8: {
-        int source = selected - 5;
-        char feedback[32];
-        static const char *names[] = {"L", "R", "M", "MR"};
-        snprintf(feedback, sizeof(feedback), "播放音频 %s", names[source]);
-        set_settings_feedback(feedback, 3500);
-        if (!start_chime_playback(source)) {
-            set_settings_feedback("音频播放中", 2000);
-        }
-        ESP_LOGI(TAG, "audio source diagnostic requested: source=%d", source);
-        break;
-    }
     default:
         break;
     }

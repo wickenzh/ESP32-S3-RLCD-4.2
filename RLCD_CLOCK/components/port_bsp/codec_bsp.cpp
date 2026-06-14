@@ -154,7 +154,7 @@ bool CodecPort::CodecPort_IsReady(void) const {
 }
 
 bool CodecPort::CodecPort_PlayHourlyChime(void) {
-    return CodecPort_PlayHourlyChimeSlot(2);
+    return CodecPort_PlayHourlyChimeSlot(3);
 }
 
 bool CodecPort::CodecPort_PlayHourlyChimeSlot(int source_slot) {
