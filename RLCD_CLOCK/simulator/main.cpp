@@ -18,7 +18,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v1.0.5";
+static const char *APP_VERSION = "v1.0.6";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -569,7 +569,7 @@ static void build_clock_ui()
     lv_obj_set_style_text_align(g_humi_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_temp_trend_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_temp_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_temp_trend_canvas, 236, 221);
+    lv_obj_set_pos(g_temp_trend_canvas, 241, 215);
     lv_obj_set_size(g_temp_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
     lv_obj_set_style_border_width(g_temp_trend_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_temp_trend_canvas, 0, LV_PART_MAIN);
@@ -581,7 +581,7 @@ static void build_clock_ui()
     update_trend_icon(g_temp_trend_canvas, 1);
     g_humi_trend_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_humi_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_humi_trend_canvas, 236, 253);
+    lv_obj_set_pos(g_humi_trend_canvas, 241, 249);
     lv_obj_set_size(g_humi_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
     lv_obj_set_style_border_width(g_humi_trend_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_humi_trend_canvas, 0, LV_PART_MAIN);
