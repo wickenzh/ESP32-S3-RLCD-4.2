@@ -44,7 +44,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.6";
+static const char *APP_VERSION = "v1.0.7";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -57,10 +57,9 @@ static constexpr int kManualWeatherSyncBit = BIT5;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr gpio_num_t kKeyButtonGpio = GPIO_NUM_18;
 static constexpr const char *kSetupApPassword = "12345678";
-static constexpr int kBootInfoHoldMs = 5000;
-static constexpr int kBootSetupHoldMs = 20000;
 static constexpr int kSettingsHoldMs = 2000;
 static constexpr int kSettingsTimeoutMs = 5000;
+static constexpr int kSettingsItemCount = 5;
 static constexpr int kSettingsManualSyncTimeoutMs = 60000;
 static constexpr int kButtonIdlePollMs = 250;
 static constexpr int kButtonActivePollMs = 100;
@@ -131,6 +130,7 @@ static volatile uint32_t g_settings_action_seq = 0;
 static volatile TickType_t g_settings_last_activity_tick = 0;
 static volatile int g_settings_sync_op = kSettingsSyncNone;
 static volatile TickType_t g_settings_sync_deadline_tick = 0;
+static volatile TickType_t g_info_page_until_tick = 0;
 static TickType_t g_settings_feedback_until_tick = 0;
 static bool g_factory_reset_confirm_pending = false;
 static char g_settings_feedback[48] = {};
@@ -208,7 +208,7 @@ static lv_obj_t *g_boot_detail_label;
 static lv_obj_t *g_boot_anim_canvas;
 static lv_color_t *g_boot_anim_canvas_buf;
 static lv_obj_t *g_info_labels[5];
-static lv_obj_t *g_settings_labels[4];
+static lv_obj_t *g_settings_labels[kSettingsItemCount];
 static lv_obj_t *g_settings_feedback_label;
 static volatile bool g_boot_anim_running = false;
 static volatile int g_boot_anim_current_frame = 0;
@@ -987,14 +987,14 @@ static void build_settings_page()
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
-    static const int y_positions[] = {72, 118, 164, 210};
-    for (int i = 0; i < 4; ++i) {
-        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 34, "--");
+    static const int y_positions[] = {62, 100, 138, 176, 214};
+    for (int i = 0; i < kSettingsItemCount; ++i) {
+        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 30, "--");
         lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     }
 
-    g_settings_feedback_label = make_label(screen, 24, 248, 352, 22, "");
+    g_settings_feedback_label = make_label(screen, 24, 246, 352, 20, "");
     lv_obj_set_style_text_align(g_settings_feedback_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     lv_obj_t *hint = make_label_with_font(screen, 24, 270, 352, 22, "KEY: Select    BOOT: OK", &lv_font_montserrat_14);
@@ -1011,12 +1011,13 @@ static bool update_settings_page()
         "同步时间",
         "同步天气",
         g_factory_reset_confirm_pending ? "确认恢复出厂设置" : "恢复出厂设置",
+        "关于本机",
     };
     int selected = g_settings_selection;
-    if (selected < 0 || selected > 3) {
+    if (selected < 0 || selected >= kSettingsItemCount) {
         selected = 0;
     }
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < kSettingsItemCount; ++i) {
         if (g_settings_labels[i]) {
             changed |= set_label_text_if_changed(g_settings_labels[i], items[i]);
             style_settings_item(g_settings_labels[i], i == selected);
@@ -1214,7 +1215,7 @@ static void build_clock_ui()
     }
     g_humi_trend_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_humi_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_humi_trend_canvas, 241, 249);
+    lv_obj_set_pos(g_humi_trend_canvas, 241, 248);
     lv_obj_set_size(g_humi_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
     lv_obj_set_style_border_width(g_humi_trend_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_humi_trend_canvas, 0, LV_PART_MAIN);
@@ -1875,8 +1876,6 @@ static void button_task(void *)
     ESP_ERROR_CHECK(gpio_config(&button));
 
     TickType_t boot_pressed_since = 0;
-    bool boot_setup_triggered = false;
-    bool boot_info_requested = false;
     TickType_t key_pressed_since = 0;
     bool key_long_handled = false;
 
@@ -1889,33 +1888,15 @@ static void button_task(void *)
             if (boot_pressed_since == 0) {
                 boot_pressed_since = now;
             }
-            TickType_t held = now - boot_pressed_since;
-            if (!g_settings_requested && !boot_info_requested && held >= pdMS_TO_TICKS(kBootInfoHoldMs)) {
-                ESP_LOGI(TAG, "boot button held for 5s, showing info page");
-                g_boot_info_requested = true;
-                boot_info_requested = true;
-            }
-            if (!g_settings_requested && !boot_setup_triggered && held >= pdMS_TO_TICKS(kBootSetupHoldMs)) {
-                ESP_LOGW(TAG, "boot button held for 20s, entering setup portal");
-                g_boot_info_requested = false;
-                start_wifi_radio(true);
-                boot_setup_triggered = true;
-            }
         } else {
-            if (boot_pressed_since != 0 && g_settings_requested && !boot_setup_triggered) {
+            if (boot_pressed_since != 0 && g_settings_requested) {
                 TickType_t held = now - boot_pressed_since;
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
                     g_settings_action_seq = g_settings_action_seq + 1;
                     g_settings_last_activity_tick = now;
                 }
             }
-            if (boot_info_requested && !boot_setup_triggered) {
-                ESP_LOGI(TAG, "boot button released before setup, returning to clock");
-                g_boot_info_requested = false;
-            }
             boot_pressed_since = 0;
-            boot_setup_triggered = false;
-            boot_info_requested = false;
         }
 
         if (key_pressed) {
@@ -1936,7 +1917,7 @@ static void button_task(void *)
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
                     g_settings_last_activity_tick = now;
                     if (!is_settings_sync_busy()) {
-                        g_settings_selection = (g_settings_selection + 1) % 4;
+                        g_settings_selection = (g_settings_selection + 1) % kSettingsItemCount;
                         g_factory_reset_confirm_pending = false;
                         g_settings_feedback[0] = '\0';
                     }
@@ -3160,9 +3141,9 @@ static void hourly_chime_task(void *)
     vTaskDelete(nullptr);
 }
 
-static void play_hourly_chime(int hour)
+static void play_hourly_chime(int hour, bool enforce_quiet_hours = true)
 {
-    if (hour < 7 || hour > 22) {
+    if (enforce_quiet_hours && (hour < 7 || hour > 22)) {
         return;
     }
     if (g_chime_playing) {
@@ -3219,7 +3200,7 @@ static bool update_time_ui(const struct tm &local)
 static void handle_settings_action()
 {
     int selected = g_settings_selection;
-    if (selected < 0 || selected > 3) {
+    if (selected < 0 || selected >= kSettingsItemCount) {
         selected = 0;
     }
     g_settings_last_activity_tick = xTaskGetTickCount();
@@ -3236,6 +3217,9 @@ static void handle_settings_action()
         save_hourly_chime_setting();
         set_settings_feedback(g_hourly_chime_enabled ? "整点报时 ON" : "整点报时 OFF", 2500);
         ESP_LOGI(TAG, "hourly chime %s", g_hourly_chime_enabled ? "enabled" : "disabled");
+        if (g_hourly_chime_enabled) {
+            play_hourly_chime(12, false);
+        }
         break;
     case 1:
         begin_settings_sync(kSettingsSyncNtp, "正在同步时间...");
@@ -3259,6 +3243,13 @@ static void handle_settings_action()
         g_factory_reset_confirm_pending = false;
         clear_saved_config();
         start_wifi_radio(true);
+        break;
+    case 4:
+        g_settings_requested = false;
+        g_factory_reset_confirm_pending = false;
+        g_boot_info_requested = true;
+        g_info_page_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(kSettingsTimeoutMs);
+        ESP_LOGI(TAG, "system info requested from settings");
         break;
     default:
         break;
@@ -3304,6 +3295,12 @@ static void ui_task(void *)
             bool refresh_now = false;
             bool info_requested = g_boot_info_requested;
             bool settings_requested = g_settings_requested;
+            TickType_t info_until = g_info_page_until_tick;
+            if (info_requested && info_until != 0 && tick_now >= info_until) {
+                g_boot_info_requested = false;
+                g_info_page_until_tick = 0;
+                info_requested = false;
+            }
             if (info_requested && !settings_requested) {
                 if (!info_page_visible) {
                     build_boot_info_page();
@@ -3320,6 +3317,7 @@ static void ui_task(void *)
             if (info_page_visible) {
                 show_page(g_clock_root);
                 info_page_visible = false;
+                g_info_page_until_tick = 0;
                 setup_panel_visible = false;
                 low_mode_visible = g_low_battery_mode;
                 apply_clock_mode_visibility(false);

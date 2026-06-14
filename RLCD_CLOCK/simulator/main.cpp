@@ -18,7 +18,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v1.0.6";
+static const char *APP_VERSION = "v1.0.7";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -55,7 +55,7 @@ static lv_obj_t *g_day_progress_canvas;
 static lv_obj_t *g_second_progress_canvas;
 static lv_obj_t *g_lower_panel_objects[13];
 static lv_obj_t *g_setup_status_labels[6];
-static lv_obj_t *g_settings_labels[4];
+static lv_obj_t *g_settings_labels[5];
 static lv_obj_t *g_settings_feedback_label;
 static int g_last_day_progress_filled = -1;
 static int g_last_second_progress_filled = -1;
@@ -581,7 +581,7 @@ static void build_clock_ui()
     update_trend_icon(g_temp_trend_canvas, 1);
     g_humi_trend_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_humi_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_humi_trend_canvas, 241, 249);
+    lv_obj_set_pos(g_humi_trend_canvas, 241, 248);
     lv_obj_set_size(g_humi_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
     lv_obj_set_style_border_width(g_humi_trend_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_humi_trend_canvas, 0, LV_PART_MAIN);
@@ -721,16 +721,16 @@ static void build_settings_page()
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
-    const char *items[] = {"整点报时 ON", "同步时间", "同步天气", "确认恢复出厂设置"};
-    static const int y_positions[] = {72, 118, 164, 210};
-    for (int i = 0; i < 4; ++i) {
-        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 34, items[i]);
+    const char *items[] = {"整点报时 ON", "同步时间", "同步天气", "确认恢复出厂设置", "关于本机"};
+    static const int y_positions[] = {62, 100, 138, 176, 214};
+    for (int i = 0; i < 5; ++i) {
+        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 30, items[i]);
         lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         style_settings_item(g_settings_labels[i], i == 1);
     }
 
-    g_settings_feedback_label = make_label(screen, 24, 248, 352, 22, "正在同步时间...");
+    g_settings_feedback_label = make_label(screen, 24, 246, 352, 20, "正在同步时间...");
     lv_obj_set_style_text_align(g_settings_feedback_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     lv_obj_t *hint = make_label_with_font(screen, 24, 270, 352, 22, "KEY: Select    BOOT: OK", &lv_font_montserrat_14);
