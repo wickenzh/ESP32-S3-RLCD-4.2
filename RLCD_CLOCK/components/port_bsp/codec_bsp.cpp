@@ -155,7 +155,7 @@ bool CodecPort::CodecPort_PlayHourlyChime(void) {
         ESP_LOGW(TAG, "codec is not ready");
         return false;
     }
-    CodecPort_SetSpeakerVol(60);
+    CodecPort_SetSpeakerVol(90);
     CodecPort_SetInfo("es8311", 1, 44100, 2, 16);
     const size_t bytes_size = hourly_chime_pcm_end - hourly_chime_pcm_start;
     const uint8_t *data_ptr = hourly_chime_pcm_start;
