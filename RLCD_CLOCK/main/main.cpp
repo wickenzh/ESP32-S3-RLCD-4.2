@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.18";
+static const char *APP_VERSION = "v1.0.19";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -58,7 +58,6 @@ static constexpr int kManualWeatherSyncBit = BIT5;
 static constexpr gpio_num_t kBootButtonGpio = GPIO_NUM_0;
 static constexpr gpio_num_t kKeyButtonGpio = GPIO_NUM_18;
 static constexpr const char *kSetupApPassword = "12345678";
-static constexpr int kSettingsHoldMs = 2000;
 static constexpr int kSettingsTimeoutMs = 5000;
 static constexpr int kSettingsItemCount = 5;
 static constexpr int kSettingsManualSyncTimeoutMs = 60000;
@@ -1010,7 +1009,7 @@ static bool update_settings_page()
 {
     bool changed = false;
     char chime[40];
-    snprintf(chime, sizeof(chime), "整点报时 %s", g_hourly_chime_enabled ? "ON" : "OFF");
+    snprintf(chime, sizeof(chime), "整点提醒 %s", g_hourly_chime_enabled ? "ON" : "OFF");
     const char *items[] = {
         chime,
         "同步时间",
@@ -1889,7 +1888,7 @@ static void button_task(void *)
 
     TickType_t boot_pressed_since = 0;
     TickType_t key_pressed_since = 0;
-    bool key_long_handled = false;
+    bool key_press_opened_settings = false;
 
     for (;;) {
         TickType_t now = xTaskGetTickCount();
@@ -1914,17 +1913,17 @@ static void button_task(void *)
         if (key_pressed) {
             if (key_pressed_since == 0) {
                 key_pressed_since = now;
-                key_long_handled = false;
-            }
-            if (!key_long_handled && now - key_pressed_since >= pdMS_TO_TICKS(kSettingsHoldMs)) {
-                ESP_LOGI(TAG, "key button held for 2s, showing settings page");
-                g_boot_info_requested = false;
-                g_settings_requested = true;
-                g_settings_last_activity_tick = now;
-                key_long_handled = true;
+                key_press_opened_settings = false;
+                if (!g_settings_requested) {
+                    ESP_LOGI(TAG, "key button clicked, showing settings page");
+                    g_boot_info_requested = false;
+                    g_settings_requested = true;
+                    g_settings_last_activity_tick = now;
+                    key_press_opened_settings = true;
+                }
             }
         } else {
-            if (key_pressed_since != 0 && !key_long_handled && g_settings_requested) {
+            if (key_pressed_since != 0 && !key_press_opened_settings && g_settings_requested) {
                 TickType_t held = now - key_pressed_since;
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
                     g_settings_last_activity_tick = now;
@@ -1936,7 +1935,7 @@ static void button_task(void *)
                 }
             }
             key_pressed_since = 0;
-            key_long_handled = false;
+            key_press_opened_settings = false;
         }
         int delay_ms = kButtonIdlePollMs;
         if (boot_pressed || key_pressed) {
@@ -3338,7 +3337,7 @@ static void handle_settings_action()
     case 0:
         g_hourly_chime_enabled = !g_hourly_chime_enabled;
         save_hourly_chime_setting();
-        set_settings_feedback(g_hourly_chime_enabled ? "整点报时 ON" : "整点报时 OFF", 2500);
+        set_settings_feedback(g_hourly_chime_enabled ? "整点提醒 ON" : "整点提醒 OFF", 2500);
         ESP_LOGI(TAG, "hourly chime %s", g_hourly_chime_enabled ? "enabled" : "disabled");
         if (g_hourly_chime_enabled) {
             play_hourly_chime(12, false);
