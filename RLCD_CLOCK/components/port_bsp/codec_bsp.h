@@ -10,6 +10,8 @@ private:
     esp_codec_dev_handle_t playback = NULL;
     esp_codec_dev_handle_t record = NULL;
     bool initialized = false;
+    bool speaker_open = false;
+    bool mic_open = false;
     I2cMasterBus& i2cbus_;
     i2c_master_dev_handle_t I2c_DevEs8311;
     i2c_master_dev_handle_t I2c_DevEs7210;
@@ -41,7 +43,7 @@ public:
     void CodecPort_CreateMusicTask(void);
     void CodecPort_CreateEchoTask(void);
 
-    void CodecPort_SetInfo(const char *strName,int open_en,int sample_rate,int channel,int bits_per_sample);
+    bool CodecPort_SetInfo(const char *strName,int open_en,int sample_rate,int channel,int bits_per_sample);
 
     uint8_t *CodecPort_GetPcmData(uint32_t *len);
 

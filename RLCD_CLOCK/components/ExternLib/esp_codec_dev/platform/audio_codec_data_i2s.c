@@ -510,8 +510,12 @@ static int _i2s_data_enable(const audio_codec_data_if_t *h, esp_codec_dev_type_t
     int ret = ESP_CODEC_DEV_OK;
     _i2s_lock(i2s_data, __func__);
     if (dev_type == ESP_CODEC_DEV_TYPE_IN_OUT) {
-        ret = _i2s_drv_enable(i2s_data, true, enable);
-        ret = _i2s_drv_enable(i2s_data, false, enable);
+        if (enable || i2s_data->out_enable) {
+            ret = _i2s_drv_enable(i2s_data, true, enable);
+        }
+        if (ret == ESP_CODEC_DEV_OK && (enable || i2s_data->in_enable)) {
+            ret = _i2s_drv_enable(i2s_data, false, enable);
+        }
     } else {
         bool playback = dev_type & ESP_CODEC_DEV_TYPE_OUT ? true : false;
         i2s_data_t *paired = get_paired(i2s_data, playback);
@@ -528,7 +532,12 @@ static int _i2s_data_enable(const audio_codec_data_if_t *h, esp_codec_dev_type_t
         }
     #endif
         else {
-            ret = _i2s_drv_enable(i2s_data, playback, enable);
+            bool already_disabled = !enable &&
+                                    ((playback && !i2s_data->out_enable) ||
+                                     (!playback && !i2s_data->in_enable));
+            if (!already_disabled) {
+                ret = _i2s_drv_enable(i2s_data, playback, enable);
+            }
             // Disable TX when RX disable if TX disable is pending
             if (enable == false) {
                 if (playback == false && paired && paired->out_disable_pending)  {

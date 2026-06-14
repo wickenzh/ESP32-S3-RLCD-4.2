@@ -110,13 +110,21 @@ void CodecPort::CodecPort_SetMicGain(float db_value) {
 }
 
 void CodecPort::CodecPort_CloseSpeaker(void) {
-    if (!initialized || !playback) return;
-	esp_codec_dev_close(playback);
+    if (!initialized || !playback || !speaker_open) return;
+	int ret = esp_codec_dev_close(playback);
+    if (ret != ESP_CODEC_DEV_OK) {
+        ESP_LOGW(TAG, "speaker close failed: %d", ret);
+    }
+    speaker_open = false;
 }
 
 void CodecPort::CodecPort_CloseMic(void) {
-    if (!initialized || !record) return;
-	esp_codec_dev_close(record);
+    if (!initialized || !record || !mic_open) return;
+	int ret = esp_codec_dev_close(record);
+    if (ret != ESP_CODEC_DEV_OK) {
+        ESP_LOGW(TAG, "mic close failed: %d", ret);
+    }
+    mic_open = false;
 }
 
 int CodecPort::CodecPort_PlayWrite(void *ptr,int ptr_len) {
@@ -129,7 +137,7 @@ int CodecPort::CodecPort_EchoRead(void *ptr,int ptr_len) {
 	return esp_codec_dev_read(record, ptr, ptr_len);
 }
 
-void CodecPort::CodecPort_SetInfo(const char *strName,int open_en,int sample_rate,int channel,int bits_per_sample) {
+bool CodecPort::CodecPort_SetInfo(const char *strName,int open_en,int sample_rate,int channel,int bits_per_sample) {
     esp_codec_dev_sample_info_t fs = {};
     	fs.sample_rate = sample_rate;
     	fs.channel = channel;
@@ -139,16 +147,28 @@ void CodecPort::CodecPort_SetInfo(const char *strName,int open_en,int sample_rat
             fs.mclk_multiple = 384;
         }
 	if(open_en) {
-        if (!initialized) return;
+        if (!initialized) return false;
+        int ret = ESP_CODEC_DEV_OK;
 		if(!strcmp(strName,"es8311")) {
-			esp_codec_dev_open(playback, &fs);
+			ret = esp_codec_dev_open(playback, &fs);
+            speaker_open = ret == ESP_CODEC_DEV_OK;
 		} else if(!strcmp(strName,"es7210")) {
-			esp_codec_dev_open(record, &fs);
+			ret = esp_codec_dev_open(record, &fs);
+            mic_open = ret == ESP_CODEC_DEV_OK;
 		} else {
-			esp_codec_dev_open(playback, &fs);
-  			esp_codec_dev_open(record, &fs);  
+			ret = esp_codec_dev_open(playback, &fs);
+            speaker_open = ret == ESP_CODEC_DEV_OK;
+            if (ret == ESP_CODEC_DEV_OK) {
+                ret = esp_codec_dev_open(record, &fs);
+                mic_open = ret == ESP_CODEC_DEV_OK;
+            }
 		}
+        if (ret != ESP_CODEC_DEV_OK) {
+            ESP_LOGW(TAG, "codec open failed: %d", ret);
+            return false;
+        }
 	}
+    return true;
 }
 
 bool CodecPort::CodecPort_IsReady(void) const {
@@ -167,8 +187,10 @@ static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const 
         ESP_LOGW(TAG, "invalid pcm source slot: %d", source_slot);
         return false;
     }
+    if (!codec->CodecPort_SetInfo("es8311", 1, 24000, 4, 16)) {
+        return false;
+    }
     codec->CodecPort_SetSpeakerVol(90);
-    codec->CodecPort_SetInfo("es8311", 1, 24000, 4, 16);
     const size_t bytes_size = pcm_end - pcm_start;
     const uint8_t *data_ptr = pcm_start;
     size_t bytes_written = 0;

@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.20";
+static const char *APP_VERSION = "v1.1.0";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -3265,7 +3265,7 @@ static void wait_for_network_sync_event(uint32_t timeout_ms)
 
 static uint32_t network_idle_wait_ms(time_t now, time_t next_weather_at, time_t next_ntp_retry_at)
 {
-    uint32_t wait_ms = 60000;
+    uint32_t wait_ms = 5 * 60000;
     if (next_weather_at > now) {
         uint32_t weather_wait = (uint32_t)((next_weather_at - now) * 1000);
         if (weather_wait < wait_ms) {
@@ -3280,8 +3280,8 @@ static uint32_t network_idle_wait_ms(time_t now, time_t next_weather_at, time_t 
     }
     if (wait_ms < 1000) {
         wait_ms = 1000;
-    } else if (wait_ms > 60000) {
-        wait_ms = 60000;
+    } else if (wait_ms > 5 * 60000) {
+        wait_ms = 5 * 60000;
     }
     return wait_ms;
 }

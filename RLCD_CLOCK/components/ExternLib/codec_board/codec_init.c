@@ -186,6 +186,7 @@ static int _i2s_init(uint8_t port, esp_codec_dev_type_t dev_type, codec_init_cfg
             .din = i2s_cfg.din,
         },
     };
+    tdm_cfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_384;
     tdm_cfg.slot_cfg.total_slot = 4;
 #endif
     chan_cfg.id = I2S_NUM_AUTO; // Use auto ID
