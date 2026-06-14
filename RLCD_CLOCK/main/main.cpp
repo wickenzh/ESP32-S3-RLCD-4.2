@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.1.0";
+static const char *APP_VERSION = "v1.1.1";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -72,8 +72,8 @@ static constexpr int kHttpDefaultTimeoutMs = 10000;
 static constexpr int kHttpBootTimeoutMs = 2500;
 static constexpr int kMinValidYear = 2024;
 static constexpr int kMaxValidYear = 2035;
-static constexpr int kLowBatteryEnterPercent = 5;
-static constexpr int kLowBatteryExitPercent = 8;
+static constexpr int kLowBatteryEnterPercent = 10;
+static constexpr int kLowBatteryExitPercent = 13;
 static constexpr int kDisplayPartialMaxWidth = (kDisplayWidth * 7) / 10;
 static constexpr int kMaxFlushRanges = 8;
 static constexpr int kFlushRangeMergeGap = 8;
