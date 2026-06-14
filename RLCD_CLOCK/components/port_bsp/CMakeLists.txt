@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS 
+    "codec_bsp.cpp"
     "display_bsp.cpp"
     "i2c_bsp.cpp"
     "i2c_equipment.cpp"
@@ -8,5 +9,8 @@ idf_component_register(
     esp_lcd
     esp_timer
     SensorLib
+    codec_board
     INCLUDE_DIRS 
-    "./")
+    "./"
+    EMBED_FILES
+    "pcm/hourly_chime.pcm")

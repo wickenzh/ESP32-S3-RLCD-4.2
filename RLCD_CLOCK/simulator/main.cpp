@@ -18,7 +18,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v0.0.61";
+static const char *APP_VERSION = "v1.0.1";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -33,6 +33,8 @@ static std::vector<uint32_t> g_framebuffer(kDisplayWidth * kDisplayHeight, 0xFFF
 static lv_obj_t *g_date_label;
 static lv_obj_t *g_temp_label;
 static lv_obj_t *g_humi_label;
+static lv_obj_t *g_temp_trend_canvas;
+static lv_obj_t *g_humi_trend_canvas;
 static lv_obj_t *g_weather_city_label;
 static lv_obj_t *g_weather_info_label;
 static lv_obj_t *g_weather_icon_label;
@@ -51,7 +53,7 @@ static lv_obj_t *g_status_gif_canvas;
 static lv_obj_t *g_boot_anim_canvas;
 static lv_obj_t *g_day_progress_canvas;
 static lv_obj_t *g_second_progress_canvas;
-static lv_obj_t *g_lower_panel_objects[11];
+static lv_obj_t *g_lower_panel_objects[13];
 static lv_obj_t *g_setup_status_labels[6];
 static lv_obj_t *g_settings_labels[4];
 static lv_obj_t *g_settings_feedback_label;
@@ -64,6 +66,8 @@ static std::vector<lv_color_t> g_status_gif_canvas_pixels(STATUS_GIF_WIDTH * STA
 static std::vector<lv_color_t> g_boot_anim_canvas_pixels(BOOT_ANIM_WIDTH * BOOT_ANIM_HEIGHT);
 static std::vector<lv_color_t> g_alert_icon_canvas_pixels(WARNING_ICON_WIDTH * WARNING_ICON_HEIGHT);
 static std::vector<lv_color_t> g_low_battery_icon_canvas_pixels(LOW_BATTERY_ICON_WIDTH * LOW_BATTERY_ICON_HEIGHT);
+static std::vector<lv_color_t> g_temp_trend_canvas_pixels(TREND_ICON_WIDTH * TREND_ICON_HEIGHT);
+static std::vector<lv_color_t> g_humi_trend_canvas_pixels(TREND_ICON_WIDTH * TREND_ICON_HEIGHT);
 static constexpr int kProgressSegmentCount = 60;
 static constexpr int kProgressSegmentW = 5;
 static constexpr int kProgressSegmentH = 3;
@@ -172,6 +176,28 @@ static void draw_1bit_icon(lv_obj_t *canvas,
         }
     }
     lv_obj_invalidate(canvas);
+}
+
+static void update_trend_icon(lv_obj_t *canvas, int trend)
+{
+    const uint8_t *bits = nullptr;
+    if (trend > 0) {
+        bits = trend_up_icon_bits;
+    } else if (trend < 0) {
+        bits = trend_down_icon_bits;
+    }
+    if (bits) {
+        draw_1bit_icon(canvas,
+                       TREND_ICON_WIDTH,
+                       TREND_ICON_HEIGHT,
+                       TREND_ICON_BYTES_PER_ROW,
+                       bits,
+                       lv_color_black(),
+                       lv_color_white());
+    } else if (canvas) {
+        lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
+        lv_obj_invalidate(canvas);
+    }
 }
 
 static const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
@@ -515,21 +541,21 @@ static void build_clock_ui()
     lv_obj_set_style_text_align(g_alert_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_label_set_long_mode(g_alert_label, LV_LABEL_LONG_CLIP);
 
-    g_weather_city_label = make_label(screen, 24, 196, 76, 20, "--");
+    g_weather_city_label = make_label(screen, 14, 196, 76, 20, "--");
     remember_lower_panel_object(g_weather_city_label);
     lv_obj_set_style_text_align(g_weather_city_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_weather_icon_label = make_label(screen, 101, 194, 34, 38, "");
+    g_weather_icon_label = make_label(screen, 91, 194, 34, 38, "");
     remember_lower_panel_object(g_weather_icon_label);
     lv_obj_set_style_text_font(g_weather_icon_label, &qweather_icons_36, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_weather_icon_label, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_weather_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_weather_info_label = make_label(screen, 24, 218, 76, 20, "天气等待");
+    g_weather_info_label = make_label(screen, 14, 218, 76, 20, "等待数据");
     remember_lower_panel_object(g_weather_info_label);
     lv_label_set_long_mode(g_weather_info_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(g_weather_info_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    g_weather_temp_label = make_label(screen, 30, 242, 68, 20, "--℃");
-    g_weather_humi_label = make_label(screen, 30, 264, 68, 20, "--%");
+    g_weather_temp_label = make_label(screen, 20, 242, 68, 20, "--℃");
+    g_weather_humi_label = make_label(screen, 20, 264, 68, 20, "--%");
     remember_lower_panel_object(g_weather_temp_label);
     remember_lower_panel_object(g_weather_humi_label);
     lv_obj_set_style_text_align(g_weather_temp_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -541,6 +567,32 @@ static void build_clock_ui()
     remember_lower_panel_object(g_humi_label);
     lv_obj_set_style_text_align(g_temp_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_align(g_humi_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    g_temp_trend_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_temp_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_temp_trend_canvas, 250, 221);
+    lv_obj_set_size(g_temp_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
+    lv_obj_set_style_border_width(g_temp_trend_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_temp_trend_canvas, 0, LV_PART_MAIN);
+    lv_canvas_set_buffer(g_temp_trend_canvas,
+                         g_temp_trend_canvas_pixels.data(),
+                         TREND_ICON_WIDTH,
+                         TREND_ICON_HEIGHT,
+                         LV_IMG_CF_TRUE_COLOR);
+    update_trend_icon(g_temp_trend_canvas, 1);
+    g_humi_trend_canvas = lv_canvas_create(screen);
+    lv_obj_clear_flag(g_humi_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(g_humi_trend_canvas, 250, 253);
+    lv_obj_set_size(g_humi_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
+    lv_obj_set_style_border_width(g_humi_trend_canvas, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_humi_trend_canvas, 0, LV_PART_MAIN);
+    lv_canvas_set_buffer(g_humi_trend_canvas,
+                         g_humi_trend_canvas_pixels.data(),
+                         TREND_ICON_WIDTH,
+                         TREND_ICON_HEIGHT,
+                         LV_IMG_CF_TRUE_COLOR);
+    update_trend_icon(g_humi_trend_canvas, -1);
+    remember_lower_panel_object(g_temp_trend_canvas);
+    remember_lower_panel_object(g_humi_trend_canvas);
     g_time_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_time_canvas, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(g_time_canvas, 18, 76);
