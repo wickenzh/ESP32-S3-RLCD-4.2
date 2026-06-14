@@ -153,8 +153,16 @@ bool CodecPort::CodecPort_IsReady(void) const {
 }
 
 bool CodecPort::CodecPort_PlayHourlyChime(void) {
+    return CodecPort_PlayHourlyChimeSlot(-1);
+}
+
+bool CodecPort::CodecPort_PlayHourlyChimeSlot(int active_slot) {
     if (!CodecPort_IsReady()) {
         ESP_LOGW(TAG, "codec is not ready");
+        return false;
+    }
+    if (active_slot < -1 || active_slot > 3) {
+        ESP_LOGW(TAG, "invalid chime slot: %d", active_slot);
         return false;
     }
     CodecPort_SetSpeakerVol(90);
@@ -162,12 +170,27 @@ bool CodecPort::CodecPort_PlayHourlyChime(void) {
     const size_t bytes_size = hourly_chime_pcm_end - hourly_chime_pcm_start;
     const uint8_t *data_ptr = hourly_chime_pcm_start;
     size_t bytes_written = 0;
+    uint8_t slot_buffer[512];
     while (bytes_written < bytes_size) {
         size_t chunk = bytes_size - bytes_written;
         if (chunk > 512) {
             chunk = 512;
         }
-        if (CodecPort_PlayWrite((void *)data_ptr, (int)chunk) != ESP_CODEC_DEV_OK) {
+        const uint8_t *write_ptr = data_ptr;
+        if (active_slot >= 0) {
+            memcpy(slot_buffer, data_ptr, chunk);
+            int16_t *samples = reinterpret_cast<int16_t *>(slot_buffer);
+            size_t frames = chunk / (4 * sizeof(int16_t));
+            for (size_t frame = 0; frame < frames; ++frame) {
+                for (int slot = 0; slot < 4; ++slot) {
+                    if (slot != active_slot) {
+                        samples[frame * 4 + slot] = 0;
+                    }
+                }
+            }
+            write_ptr = slot_buffer;
+        }
+        if (CodecPort_PlayWrite((void *)write_ptr, (int)chunk) != ESP_CODEC_DEV_OK) {
             ESP_LOGW(TAG, "chime write failed");
             CodecPort_CloseSpeaker();
             return false;

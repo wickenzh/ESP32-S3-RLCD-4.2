@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.12";
+static const char *APP_VERSION = "v1.0.13";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -59,7 +60,7 @@ static constexpr gpio_num_t kKeyButtonGpio = GPIO_NUM_18;
 static constexpr const char *kSetupApPassword = "12345678";
 static constexpr int kSettingsHoldMs = 2000;
 static constexpr int kSettingsTimeoutMs = 5000;
-static constexpr int kSettingsItemCount = 5;
+static constexpr int kSettingsItemCount = 9;
 static constexpr int kSettingsManualSyncTimeoutMs = 60000;
 static constexpr int kButtonIdlePollMs = 250;
 static constexpr int kButtonActivePollMs = 100;
@@ -987,9 +988,10 @@ static void build_settings_page()
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
-    static const int y_positions[] = {62, 100, 138, 176, 214};
+    static const int y_start = 58;
+    static const int y_step = 21;
     for (int i = 0; i < kSettingsItemCount; ++i) {
-        g_settings_labels[i] = make_label(screen, 48, y_positions[i], 304, 30, "--");
+        g_settings_labels[i] = make_label(screen, 48, y_start + i * y_step, 304, 20, "--");
         lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     }
@@ -1012,6 +1014,10 @@ static bool update_settings_page()
         "同步天气",
         g_factory_reset_confirm_pending ? "确认恢复出厂设置" : "恢复出厂设置",
         "关于本机",
+        "音频测试 S0",
+        "音频测试 S1",
+        "音频测试 S2",
+        "音频测试 S3",
     };
     int selected = g_settings_selection;
     if (selected < 0 || selected >= kSettingsItemCount) {
@@ -3127,18 +3133,34 @@ static void network_sync_task(void *)
     }
 }
 
-static void hourly_chime_task(void *)
+static void hourly_chime_task(void *arg)
 {
+    int active_slot = (int)(intptr_t)arg;
     if (!g_codec) {
         g_codec = new CodecPort(g_i2c, "S3_RLCD_4_2");
     }
-    if (g_codec && g_codec->CodecPort_PlayHourlyChime()) {
-        ESP_LOGI(TAG, "hourly chime played");
+    if (g_codec && g_codec->CodecPort_PlayHourlyChimeSlot(active_slot)) {
+        ESP_LOGI(TAG, "hourly chime played slot=%d", active_slot);
     } else {
-        ESP_LOGW(TAG, "hourly chime skipped");
+        ESP_LOGW(TAG, "hourly chime skipped slot=%d", active_slot);
     }
     g_chime_playing = false;
     vTaskDelete(nullptr);
+}
+
+static bool start_chime_playback(int active_slot)
+{
+    if (g_chime_playing) {
+        return false;
+    }
+    g_chime_playing = true;
+    BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task, "hourly_chime", 6144, (void *)(intptr_t)active_slot, 2, nullptr, 1);
+    if (ok != pdPASS) {
+        g_chime_playing = false;
+        ESP_LOGW(TAG, "failed to create hourly chime task");
+        return false;
+    }
+    return true;
 }
 
 static void play_hourly_chime(int hour, bool enforce_quiet_hours = true)
@@ -3146,15 +3168,7 @@ static void play_hourly_chime(int hour, bool enforce_quiet_hours = true)
     if (enforce_quiet_hours && (hour < 7 || hour > 22)) {
         return;
     }
-    if (g_chime_playing) {
-        return;
-    }
-    g_chime_playing = true;
-    BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task, "hourly_chime", 6144, nullptr, 2, nullptr, 1);
-    if (ok != pdPASS) {
-        g_chime_playing = false;
-        ESP_LOGW(TAG, "failed to create hourly chime task");
-    }
+    (void)start_chime_playback(-1);
 }
 
 static bool update_time_ui(const struct tm &local)
@@ -3251,6 +3265,20 @@ static void handle_settings_action()
         g_info_page_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(kSettingsTimeoutMs);
         ESP_LOGI(TAG, "system info requested from settings");
         break;
+    case 5:
+    case 6:
+    case 7:
+    case 8: {
+        int slot = selected - 5;
+        char feedback[32];
+        snprintf(feedback, sizeof(feedback), "播放音频 S%d", slot);
+        set_settings_feedback(feedback, 3500);
+        if (!start_chime_playback(slot)) {
+            set_settings_feedback("音频播放中", 2000);
+        }
+        ESP_LOGI(TAG, "audio slot diagnostic requested: slot=%d", slot);
+        break;
+    }
     default:
         break;
     }

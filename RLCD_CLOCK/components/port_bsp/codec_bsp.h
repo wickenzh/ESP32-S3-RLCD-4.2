@@ -35,6 +35,7 @@ public:
     int CodecPort_EchoRead(void *ptr,int ptr_len);
     bool CodecPort_IsReady(void) const;
     bool CodecPort_PlayHourlyChime(void);
+    bool CodecPort_PlayHourlyChimeSlot(int active_slot);
 
     void CodecPort_CreateMusicTask(void);
     void CodecPort_CreateEchoTask(void);
