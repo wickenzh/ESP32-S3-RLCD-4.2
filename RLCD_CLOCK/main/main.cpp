@@ -44,7 +44,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.1";
+static const char *APP_VERSION = "v1.0.2";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1200,7 +1200,7 @@ static void build_clock_ui()
     }
     g_temp_trend_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_temp_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_temp_trend_canvas, 250, 221);
+    lv_obj_set_pos(g_temp_trend_canvas, 193, 202);
     lv_obj_set_size(g_temp_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
     lv_obj_set_style_border_width(g_temp_trend_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_temp_trend_canvas, 0, LV_PART_MAIN);
@@ -1214,7 +1214,7 @@ static void build_clock_ui()
     }
     g_humi_trend_canvas = lv_canvas_create(screen);
     lv_obj_clear_flag(g_humi_trend_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_humi_trend_canvas, 250, 253);
+    lv_obj_set_pos(g_humi_trend_canvas, 193, 275);
     lv_obj_set_size(g_humi_trend_canvas, TREND_ICON_WIDTH, TREND_ICON_HEIGHT);
     lv_obj_set_style_border_width(g_humi_trend_canvas, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_humi_trend_canvas, 0, LV_PART_MAIN);
@@ -2258,6 +2258,9 @@ static void housekeeping_task(void *)
     TickType_t start_tick = xTaskGetTickCount();
     TickType_t next_sensor = next_sensor_sample_tick(start_tick);
     TickType_t next_battery = 0;
+    if (!g_low_battery_mode) {
+        sample_sensor();
+    }
     for (;;) {
         TickType_t now = xTaskGetTickCount();
         if (now >= next_sensor) {
