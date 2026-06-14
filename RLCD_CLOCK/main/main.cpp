@@ -44,7 +44,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.7";
+static const char *APP_VERSION = "v1.0.8";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -3340,6 +3340,17 @@ static void ui_task(void *)
                     last_settings_action_seq = g_settings_action_seq;
                     handle_settings_action();
                     settings_requested = g_settings_requested;
+                    if (!settings_requested && g_boot_info_requested) {
+                        build_boot_info_page();
+                        show_page(g_info_root);
+                        info_page_visible = true;
+                        settings_page_visible = false;
+                        update_boot_info_page();
+                        lv_refr_now(nullptr);
+                        Lvgl_unlock();
+                        vTaskDelay(pdMS_TO_TICKS(250));
+                        continue;
+                    }
                 }
                 if (settings_requested && is_settings_sync_busy()) {
                     TickType_t deadline = g_settings_sync_deadline_tick;

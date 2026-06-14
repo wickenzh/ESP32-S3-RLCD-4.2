@@ -348,7 +348,9 @@ static int set_drv_fs(i2s_chan_handle_t channel, bool playback, uint8_t slot_bit
             if (i2s_data_list->i2s_data->clk_src) {
                 clk_cfg.clk_src = i2s_data_list->i2s_data->clk_src;
             }
-            if (slot_bits == 24) {
+            if (fs->mclk_multiple) {
+                clk_cfg.mclk_multiple = fs->mclk_multiple;
+            } else if (slot_bits == 24) {
                 clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_384;
             }
             i2s_tdm_slot_config_t slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG(
