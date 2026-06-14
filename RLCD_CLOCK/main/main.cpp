@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.17";
+static const char *APP_VERSION = "v1.0.18";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -92,6 +92,8 @@ static I2cMasterBus g_i2c(14, 13, 0);
 static Shtc3Port *g_shtc3 = nullptr;
 static CodecPort *g_codec = nullptr;
 static volatile bool g_chime_playing = false;
+static volatile bool g_startup_screen_active = true;
+static volatile bool g_setup_prompt_pending = false;
 static adc_oneshot_unit_handle_t g_battery_adc = nullptr;
 static adc_cali_handle_t g_battery_adc_cali = nullptr;
 static bool g_battery_adc_ready = false;
@@ -228,7 +230,8 @@ static bool wait_for_wifi_connected(uint32_t timeout_ms);
 static void trim_ascii(char *text);
 static void build_clock_ui();
 static void run_boot_connectivity_sync();
-static void play_setup_prompt_once();
+static void request_setup_prompt_once();
+static bool start_setup_prompt_playback();
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -1779,7 +1782,7 @@ static void start_wifi_radio(bool enable_setup_portal)
             apply_station_config(true);
         }
         if (entering_setup_portal) {
-            play_setup_prompt_once();
+            request_setup_prompt_once();
         }
         return;
     }
@@ -1798,7 +1801,7 @@ static void start_wifi_radio(bool enable_setup_portal)
     if (enable_setup_portal) {
         start_http_server();
         if (entering_setup_portal) {
-            play_setup_prompt_once();
+            request_setup_prompt_once();
         }
     }
 }
@@ -3204,6 +3207,10 @@ static void hourly_chime_task(void *arg)
         ESP_LOGW(TAG, "hourly chime skipped source=%d", source_slot);
     }
     g_chime_playing = false;
+    if (g_setup_prompt_pending && !g_startup_screen_active) {
+        vTaskDelay(pdMS_TO_TICKS(120));
+        (void)start_setup_prompt_playback();
+    }
     vTaskDelete(nullptr);
 }
 
@@ -3227,7 +3234,7 @@ static bool start_chime_playback(int source_slot)
         return false;
     }
     g_chime_playing = true;
-    BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task, "hourly_chime", 6144, (void *)(intptr_t)source_slot, 2, nullptr, 1);
+    BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task, "hourly_chime", 6144, (void *)(intptr_t)source_slot, 4, nullptr, 1);
     if (ok != pdPASS) {
         g_chime_playing = false;
         ESP_LOGW(TAG, "failed to create hourly chime task");
@@ -3236,17 +3243,32 @@ static bool start_chime_playback(int source_slot)
     return true;
 }
 
-static void play_setup_prompt_once()
+static bool start_setup_prompt_playback()
 {
     if (g_chime_playing) {
-        ESP_LOGI(TAG, "setup prompt skipped because audio is busy");
-        return;
+        return false;
     }
+    g_setup_prompt_pending = false;
     g_chime_playing = true;
-    BaseType_t ok = xTaskCreatePinnedToCore(setup_prompt_task, "setup_prompt", 6144, nullptr, 2, nullptr, 1);
+    BaseType_t ok = xTaskCreatePinnedToCore(setup_prompt_task, "setup_prompt", 6144, nullptr, 4, nullptr, 1);
     if (ok != pdPASS) {
         g_chime_playing = false;
+        g_setup_prompt_pending = true;
         ESP_LOGW(TAG, "failed to create setup prompt task");
+        return false;
+    }
+    return true;
+}
+
+static void request_setup_prompt_once()
+{
+    if (g_startup_screen_active || g_chime_playing) {
+        g_setup_prompt_pending = true;
+        ESP_LOGI(TAG, "setup prompt pending");
+        return;
+    }
+    if (!start_setup_prompt_playback()) {
+        g_setup_prompt_pending = true;
     }
 }
 
@@ -3721,9 +3743,15 @@ extern "C" void app_main(void)
     }
     finish_boot_anim_to_last_frame();
     finish_boot_screen();
+    g_startup_screen_active = false;
 
     xTaskCreatePinnedToCore(network_sync_task, "network_sync", 20480, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(housekeeping_task, "housekeeping", 5120, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(button_task, "button_task", 3072, nullptr, 2, nullptr, 1);
+
+    if (g_setup_prompt_pending) {
+        vTaskDelay(pdMS_TO_TICKS(350));
+        (void)start_setup_prompt_playback();
+    }
 }

@@ -157,6 +157,8 @@ bool CodecPort::CodecPort_IsReady(void) const {
 
 static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const uint8_t *pcm_end, int source_slot)
 {
+    static uint8_t slot_buffer[4096];
+
     if (!codec || !codec->CodecPort_IsReady()) {
         ESP_LOGW(TAG, "codec is not ready");
         return false;
@@ -170,7 +172,6 @@ static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const 
     const size_t bytes_size = pcm_end - pcm_start;
     const uint8_t *data_ptr = pcm_start;
     size_t bytes_written = 0;
-    uint8_t slot_buffer[512];
     while (bytes_written < bytes_size) {
         size_t chunk = bytes_size - bytes_written;
         if (chunk > sizeof(slot_buffer)) {
