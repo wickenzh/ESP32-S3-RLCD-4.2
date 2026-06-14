@@ -9,6 +9,8 @@ static const char *TAG = "CodecPort";
 
 extern const uint8_t hourly_chime_pcm_start[] asm("_binary_hourly_chime_pcm_start");
 extern const uint8_t hourly_chime_pcm_end[] asm("_binary_hourly_chime_pcm_end");
+extern const uint8_t wifi_prompt_pcm_start[] asm("_binary_wifi_prompt_pcm_start");
+extern const uint8_t wifi_prompt_pcm_end[] asm("_binary_wifi_prompt_pcm_end");
 
 void CodecPort::CodecPort_MusicTask(void *arg) {
 	CodecPort *codec = (CodecPort *)arg;
@@ -153,29 +155,26 @@ bool CodecPort::CodecPort_IsReady(void) const {
     return initialized && playback != NULL;
 }
 
-bool CodecPort::CodecPort_PlayHourlyChime(void) {
-    return CodecPort_PlayHourlyChimeSlot(3);
-}
-
-bool CodecPort::CodecPort_PlayHourlyChimeSlot(int source_slot) {
-    if (!CodecPort_IsReady()) {
+static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const uint8_t *pcm_end, int source_slot)
+{
+    if (!codec || !codec->CodecPort_IsReady()) {
         ESP_LOGW(TAG, "codec is not ready");
         return false;
     }
     if (source_slot < 0 || source_slot > 3) {
-        ESP_LOGW(TAG, "invalid chime source slot: %d", source_slot);
+        ESP_LOGW(TAG, "invalid pcm source slot: %d", source_slot);
         return false;
     }
-    CodecPort_SetSpeakerVol(90);
-    CodecPort_SetInfo("es8311", 1, 24000, 4, 16);
-    const size_t bytes_size = hourly_chime_pcm_end - hourly_chime_pcm_start;
-    const uint8_t *data_ptr = hourly_chime_pcm_start;
+    codec->CodecPort_SetSpeakerVol(90);
+    codec->CodecPort_SetInfo("es8311", 1, 24000, 4, 16);
+    const size_t bytes_size = pcm_end - pcm_start;
+    const uint8_t *data_ptr = pcm_start;
     size_t bytes_written = 0;
     uint8_t slot_buffer[512];
     while (bytes_written < bytes_size) {
         size_t chunk = bytes_size - bytes_written;
-        if (chunk > 512) {
-            chunk = 512;
+        if (chunk > sizeof(slot_buffer)) {
+            chunk = sizeof(slot_buffer);
         }
         memcpy(slot_buffer, data_ptr, chunk);
         int16_t *samples = reinterpret_cast<int16_t *>(slot_buffer);
@@ -183,23 +182,31 @@ bool CodecPort::CodecPort_PlayHourlyChimeSlot(int source_slot) {
         for (size_t frame = 0; frame < frames; ++frame) {
             int16_t selected_sample = samples[frame * 4 + source_slot];
             for (int slot = 0; slot < 4; ++slot) {
-                if (slot == 0) {
-                    samples[frame * 4 + slot] = selected_sample;
-                } else {
-                    samples[frame * 4 + slot] = 0;
-                }
+                samples[frame * 4 + slot] = slot == 0 ? selected_sample : 0;
             }
         }
-        if (CodecPort_PlayWrite((void *)slot_buffer, (int)chunk) != ESP_CODEC_DEV_OK) {
-            ESP_LOGW(TAG, "chime write failed");
-            CodecPort_CloseSpeaker();
+        if (codec->CodecPort_PlayWrite((void *)slot_buffer, (int)chunk) != ESP_CODEC_DEV_OK) {
+            ESP_LOGW(TAG, "pcm write failed");
+            codec->CodecPort_CloseSpeaker();
             return false;
         }
         data_ptr += chunk;
         bytes_written += chunk;
     }
-    CodecPort_CloseSpeaker();
+    codec->CodecPort_CloseSpeaker();
     return true;
+}
+
+bool CodecPort::CodecPort_PlayHourlyChime(void) {
+    return CodecPort_PlayHourlyChimeSlot(3);
+}
+
+bool CodecPort::CodecPort_PlayHourlyChimeSlot(int source_slot) {
+    return play_pcm_to_slot0(this, hourly_chime_pcm_start, hourly_chime_pcm_end, source_slot);
+}
+
+bool CodecPort::CodecPort_PlayWifiPrompt(void) {
+    return play_pcm_to_slot0(this, wifi_prompt_pcm_start, wifi_prompt_pcm_end, 0);
 }
 
 void CodecPort::CodecPort_CreateMusicTask(void) {

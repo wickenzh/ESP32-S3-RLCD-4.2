@@ -13,4 +13,5 @@ idf_component_register(
     INCLUDE_DIRS 
     "./"
     EMBED_FILES
-    "pcm/hourly_chime.pcm")
+    "pcm/hourly_chime.pcm"
+    "pcm/wifi_prompt.pcm")

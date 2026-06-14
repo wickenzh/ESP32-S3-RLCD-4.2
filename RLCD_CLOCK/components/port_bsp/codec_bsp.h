@@ -36,6 +36,7 @@ public:
     bool CodecPort_IsReady(void) const;
     bool CodecPort_PlayHourlyChime(void);
     bool CodecPort_PlayHourlyChimeSlot(int source_slot);
+    bool CodecPort_PlayWifiPrompt(void);
 
     void CodecPort_CreateMusicTask(void);
     void CodecPort_CreateEchoTask(void);

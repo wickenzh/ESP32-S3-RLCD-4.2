@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.16";
+static const char *APP_VERSION = "v1.0.17";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -228,6 +228,7 @@ static bool wait_for_wifi_connected(uint32_t timeout_ms);
 static void trim_ascii(char *text);
 static void build_clock_ui();
 static void run_boot_connectivity_sync();
+static void play_setup_prompt_once();
 
 static void set_obj_black(lv_obj_t *obj, bool active)
 {
@@ -1769,12 +1770,16 @@ static void start_http_server()
 
 static void start_wifi_radio(bool enable_setup_portal)
 {
+    bool entering_setup_portal = enable_setup_portal && !g_setup_portal_active;
     if (g_wifi_radio_on) {
         if (enable_setup_portal && !g_setup_portal_active) {
             start_http_server();
         }
         if (g_have_wifi_creds) {
             apply_station_config(true);
+        }
+        if (entering_setup_portal) {
+            play_setup_prompt_once();
         }
         return;
     }
@@ -1792,6 +1797,9 @@ static void start_wifi_radio(bool enable_setup_portal)
     g_wifi_radio_on = true;
     if (enable_setup_portal) {
         start_http_server();
+        if (entering_setup_portal) {
+            play_setup_prompt_once();
+        }
     }
 }
 
@@ -3199,6 +3207,20 @@ static void hourly_chime_task(void *arg)
     vTaskDelete(nullptr);
 }
 
+static void setup_prompt_task(void *)
+{
+    if (!g_codec) {
+        g_codec = new CodecPort(g_i2c, "S3_RLCD_4_2");
+    }
+    if (g_codec && g_codec->CodecPort_PlayWifiPrompt()) {
+        ESP_LOGI(TAG, "setup prompt played");
+    } else {
+        ESP_LOGW(TAG, "setup prompt skipped");
+    }
+    g_chime_playing = false;
+    vTaskDelete(nullptr);
+}
+
 static bool start_chime_playback(int source_slot)
 {
     if (g_chime_playing) {
@@ -3212,6 +3234,20 @@ static bool start_chime_playback(int source_slot)
         return false;
     }
     return true;
+}
+
+static void play_setup_prompt_once()
+{
+    if (g_chime_playing) {
+        ESP_LOGI(TAG, "setup prompt skipped because audio is busy");
+        return;
+    }
+    g_chime_playing = true;
+    BaseType_t ok = xTaskCreatePinnedToCore(setup_prompt_task, "setup_prompt", 6144, nullptr, 2, nullptr, 1);
+    if (ok != pdPASS) {
+        g_chime_playing = false;
+        ESP_LOGW(TAG, "failed to create setup prompt task");
+    }
 }
 
 static void play_hourly_chime(int hour, bool enforce_quiet_hours = true)
