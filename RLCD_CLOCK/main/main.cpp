@@ -43,7 +43,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v0.0.60";
+static const char *APP_VERSION = "v0.0.61";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -2457,6 +2457,20 @@ static const char *warning_color_name(const char *code)
     return "";
 }
 
+static int warning_color_rank(const char *code)
+{
+    if (!code) {
+        return 0;
+    }
+    if (strcmp(code, "red") == 0) return 5;
+    if (strcmp(code, "orange") == 0) return 4;
+    if (strcmp(code, "yellow") == 0) return 3;
+    if (strcmp(code, "blue") == 0) return 2;
+    if (strcmp(code, "white") == 0) return 1;
+    if (strcmp(code, "black") == 0) return 1;
+    return 0;
+}
+
 static bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *alert)
 {
     if (!lat || !lon || lat[0] == '\0' || lon[0] == '\0') {
@@ -2490,31 +2504,51 @@ static bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertD
     WeatherAlertData next = {};
     bool ok = true;
     cJSON *alerts = cJSON_GetObjectItem(root, "alerts");
-    cJSON *first = cJSON_IsArray(alerts) ? cJSON_GetArrayItem(alerts, 0) : nullptr;
-    if (first) {
+    int best_rank = -1;
+    int alert_count = cJSON_IsArray(alerts) ? cJSON_GetArraySize(alerts) : 0;
+    for (int i = 0; i < alert_count; ++i) {
+        cJSON *item = cJSON_GetArrayItem(alerts, i);
+        if (!item) {
+            continue;
+        }
         char event_name[24] = {};
         char color_code[16] = {};
         char headline[64] = {};
-        cJSON *event = cJSON_GetObjectItem(first, "eventType");
-        cJSON *color = cJSON_GetObjectItem(first, "color");
+        char icon[8] = {};
+        cJSON *event = cJSON_GetObjectItem(item, "eventType");
+        cJSON *color = cJSON_GetObjectItem(item, "color");
         if (event) {
             json_copy_string(event, "name", event_name, sizeof(event_name));
         }
         if (color) {
             json_copy_string(color, "code", color_code, sizeof(color_code));
         }
-        json_copy_string(first, "headline", headline, sizeof(headline));
-        json_copy_string(first, "icon", next.icon, sizeof(next.icon));
+        json_copy_string(item, "headline", headline, sizeof(headline));
+        json_copy_string(item, "icon", icon, sizeof(icon));
 
+        int rank = warning_color_rank(color_code);
+        if (rank < best_rank) {
+            continue;
+        }
+        if (rank == best_rank && next.active) {
+            continue;
+        }
+
+        WeatherAlertData candidate = {};
         const char *color_name = warning_color_name(color_code);
         if (event_name[0] != '\0' && color_name[0] != '\0') {
-            snprintf(next.title, sizeof(next.title), "%s%s预警", event_name, color_name);
+            snprintf(candidate.title, sizeof(candidate.title), "%s%s预警", event_name, color_name);
         } else if (headline[0] != '\0') {
-            strlcpy(next.title, headline, sizeof(next.title));
+            strlcpy(candidate.title, headline, sizeof(candidate.title));
         } else if (event_name[0] != '\0') {
-            snprintf(next.title, sizeof(next.title), "%s预警", event_name);
+            snprintf(candidate.title, sizeof(candidate.title), "%s预警", event_name);
         }
-        next.active = next.title[0] != '\0';
+        if (candidate.title[0] != '\0') {
+            candidate.active = true;
+            strlcpy(candidate.icon, icon, sizeof(candidate.icon));
+            next = candidate;
+            best_rank = rank;
+        }
     }
     time(&next.updated_at);
     *alert = next;
