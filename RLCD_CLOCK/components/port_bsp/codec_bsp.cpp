@@ -134,6 +134,7 @@ void CodecPort::CodecPort_SetInfo(const char *strName,int open_en,int sample_rat
     	fs.bits_per_sample = bits_per_sample;
         if (channel == 4) {
             fs.channel_mask = 0x0F;
+            fs.mclk_multiple = 384;
         }
 	if(open_en) {
         if (!initialized) return;
@@ -153,16 +154,16 @@ bool CodecPort::CodecPort_IsReady(void) const {
 }
 
 bool CodecPort::CodecPort_PlayHourlyChime(void) {
-    return CodecPort_PlayHourlyChimeSlot(-1);
+    return CodecPort_PlayHourlyChimeSlot(2);
 }
 
-bool CodecPort::CodecPort_PlayHourlyChimeSlot(int active_slot) {
+bool CodecPort::CodecPort_PlayHourlyChimeSlot(int source_slot) {
     if (!CodecPort_IsReady()) {
         ESP_LOGW(TAG, "codec is not ready");
         return false;
     }
-    if (active_slot < -1 || active_slot > 3) {
-        ESP_LOGW(TAG, "invalid chime slot: %d", active_slot);
+    if (source_slot < 0 || source_slot > 3) {
+        ESP_LOGW(TAG, "invalid chime source slot: %d", source_slot);
         return false;
     }
     CodecPort_SetSpeakerVol(90);
@@ -176,21 +177,20 @@ bool CodecPort::CodecPort_PlayHourlyChimeSlot(int active_slot) {
         if (chunk > 512) {
             chunk = 512;
         }
-        const uint8_t *write_ptr = data_ptr;
-        if (active_slot >= 0) {
-            memcpy(slot_buffer, data_ptr, chunk);
-            int16_t *samples = reinterpret_cast<int16_t *>(slot_buffer);
-            size_t frames = chunk / (4 * sizeof(int16_t));
-            for (size_t frame = 0; frame < frames; ++frame) {
-                for (int slot = 0; slot < 4; ++slot) {
-                    if (slot != active_slot) {
-                        samples[frame * 4 + slot] = 0;
-                    }
+        memcpy(slot_buffer, data_ptr, chunk);
+        int16_t *samples = reinterpret_cast<int16_t *>(slot_buffer);
+        size_t frames = chunk / (4 * sizeof(int16_t));
+        for (size_t frame = 0; frame < frames; ++frame) {
+            int16_t selected_sample = samples[frame * 4 + source_slot];
+            for (int slot = 0; slot < 4; ++slot) {
+                if (slot == 0) {
+                    samples[frame * 4 + slot] = selected_sample;
+                } else {
+                    samples[frame * 4 + slot] = 0;
                 }
             }
-            write_ptr = slot_buffer;
         }
-        if (CodecPort_PlayWrite((void *)write_ptr, (int)chunk) != ESP_CODEC_DEV_OK) {
+        if (CodecPort_PlayWrite((void *)slot_buffer, (int)chunk) != ESP_CODEC_DEV_OK) {
             ESP_LOGW(TAG, "chime write failed");
             CodecPort_CloseSpeaker();
             return false;

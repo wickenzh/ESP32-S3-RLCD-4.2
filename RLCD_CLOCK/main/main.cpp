@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.0.13";
+static const char *APP_VERSION = "v1.0.14";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -1014,10 +1014,10 @@ static bool update_settings_page()
         "同步天气",
         g_factory_reset_confirm_pending ? "确认恢复出厂设置" : "恢复出厂设置",
         "关于本机",
-        "音频测试 S0",
-        "音频测试 S1",
-        "音频测试 S2",
-        "音频测试 S3",
+        "音频测试 L",
+        "音频测试 R",
+        "音频测试 M",
+        "音频测试 MR",
     };
     int selected = g_settings_selection;
     if (selected < 0 || selected >= kSettingsItemCount) {
@@ -3135,26 +3135,26 @@ static void network_sync_task(void *)
 
 static void hourly_chime_task(void *arg)
 {
-    int active_slot = (int)(intptr_t)arg;
+    int source_slot = (int)(intptr_t)arg;
     if (!g_codec) {
         g_codec = new CodecPort(g_i2c, "S3_RLCD_4_2");
     }
-    if (g_codec && g_codec->CodecPort_PlayHourlyChimeSlot(active_slot)) {
-        ESP_LOGI(TAG, "hourly chime played slot=%d", active_slot);
+    if (g_codec && g_codec->CodecPort_PlayHourlyChimeSlot(source_slot)) {
+        ESP_LOGI(TAG, "hourly chime played source=%d", source_slot);
     } else {
-        ESP_LOGW(TAG, "hourly chime skipped slot=%d", active_slot);
+        ESP_LOGW(TAG, "hourly chime skipped source=%d", source_slot);
     }
     g_chime_playing = false;
     vTaskDelete(nullptr);
 }
 
-static bool start_chime_playback(int active_slot)
+static bool start_chime_playback(int source_slot)
 {
     if (g_chime_playing) {
         return false;
     }
     g_chime_playing = true;
-    BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task, "hourly_chime", 6144, (void *)(intptr_t)active_slot, 2, nullptr, 1);
+    BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task, "hourly_chime", 6144, (void *)(intptr_t)source_slot, 2, nullptr, 1);
     if (ok != pdPASS) {
         g_chime_playing = false;
         ESP_LOGW(TAG, "failed to create hourly chime task");
@@ -3168,7 +3168,7 @@ static void play_hourly_chime(int hour, bool enforce_quiet_hours = true)
     if (enforce_quiet_hours && (hour < 7 || hour > 22)) {
         return;
     }
-    (void)start_chime_playback(-1);
+    (void)start_chime_playback(2);
 }
 
 static bool update_time_ui(const struct tm &local)
@@ -3269,14 +3269,15 @@ static void handle_settings_action()
     case 6:
     case 7:
     case 8: {
-        int slot = selected - 5;
+        int source = selected - 5;
         char feedback[32];
-        snprintf(feedback, sizeof(feedback), "播放音频 S%d", slot);
+        static const char *names[] = {"L", "R", "M", "MR"};
+        snprintf(feedback, sizeof(feedback), "播放音频 %s", names[source]);
         set_settings_feedback(feedback, 3500);
-        if (!start_chime_playback(slot)) {
+        if (!start_chime_playback(source)) {
             set_settings_feedback("音频播放中", 2000);
         }
-        ESP_LOGI(TAG, "audio slot diagnostic requested: slot=%d", slot);
+        ESP_LOGI(TAG, "audio source diagnostic requested: source=%d", source);
         break;
     }
     default:

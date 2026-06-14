@@ -18,7 +18,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v1.0.13";
+static const char *APP_VERSION = "v1.0.14";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -727,10 +727,10 @@ static void build_settings_page()
         "同步天气",
         "确认恢复出厂设置",
         "关于本机",
-        "音频测试 S0",
-        "音频测试 S1",
-        "音频测试 S2",
-        "音频测试 S3",
+        "音频测试 L",
+        "音频测试 R",
+        "音频测试 M",
+        "音频测试 MR",
     };
     static const int y_start = 58;
     static const int y_step = 21;
