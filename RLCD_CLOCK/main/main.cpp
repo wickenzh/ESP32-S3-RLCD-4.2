@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.1.3";
+static const char *APP_VERSION = "v1.1.4";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -78,6 +78,8 @@ static constexpr int kDisplayPartialMaxWidth = (kDisplayWidth * 7) / 10;
 static constexpr int kMaxFlushRanges = 8;
 static constexpr int kFlushRangeMergeGap = 8;
 static constexpr int kSensorHistoryMinutes = 120;
+static constexpr int kMaxWeatherAlerts = 6;
+static constexpr int kWeatherAlertTitleLen = 64;
 static constexpr float kTrendEpsilon = 0.01f;
 
 enum SettingsSyncOp {
@@ -156,8 +158,9 @@ struct WeatherData {
 
 struct WeatherAlertData {
     bool active = false;
-    char title[64] = {};
-    char icon[8] = {};
+    int count = 0;
+    char titles[kMaxWeatherAlerts][kWeatherAlertTitleLen] = {};
+    int ranks[kMaxWeatherAlerts] = {};
     time_t updated_at = 0;
 };
 
@@ -773,12 +776,19 @@ static void apply_clock_mode_visibility(bool setup_active)
     }
 }
 
-static void update_alert_pill(bool show)
+static void update_alert_pill(bool show, int alert_index = 0)
 {
-    bool visible = show && !g_low_battery_mode && g_weather_alert.active && g_weather_alert.title[0] != '\0';
+    bool visible = show &&
+                   !g_low_battery_mode &&
+                   g_weather_alert.active &&
+                   g_weather_alert.count > 0;
     set_obj_visible(g_alert_pill, visible);
     if (visible) {
-        set_label_text_if_changed(g_alert_label, g_weather_alert.title);
+        if (alert_index < 0) {
+            alert_index = 0;
+        }
+        alert_index %= g_weather_alert.count;
+        set_label_text_if_changed(g_alert_label, g_weather_alert.titles[alert_index]);
     }
 }
 
@@ -2916,6 +2926,35 @@ static int warning_color_rank(const char *code)
     return 0;
 }
 
+static void add_weather_alert_title(WeatherAlertData *alert, const char *title, int rank)
+{
+    if (!alert || !title || title[0] == '\0') {
+        return;
+    }
+
+    int insert_at = alert->count;
+    for (int i = 0; i < alert->count; ++i) {
+        if (rank > alert->ranks[i]) {
+            insert_at = i;
+            break;
+        }
+    }
+
+    if (alert->count < kMaxWeatherAlerts) {
+        ++alert->count;
+    } else if (insert_at >= kMaxWeatherAlerts) {
+        return;
+    }
+
+    for (int i = alert->count - 1; i > insert_at; --i) {
+        strlcpy(alert->titles[i], alert->titles[i - 1], sizeof(alert->titles[i]));
+        alert->ranks[i] = alert->ranks[i - 1];
+    }
+    strlcpy(alert->titles[insert_at], title, sizeof(alert->titles[insert_at]));
+    alert->ranks[insert_at] = rank;
+    alert->active = alert->count > 0;
+}
+
 static bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *alert)
 {
     if (!lat || !lon || lat[0] == '\0' || lon[0] == '\0') {
@@ -2949,7 +2988,6 @@ static bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertD
     WeatherAlertData next = {};
     bool ok = true;
     cJSON *alerts = cJSON_GetObjectItem(root, "alerts");
-    int best_rank = -1;
     int alert_count = cJSON_IsArray(alerts) ? cJSON_GetArraySize(alerts) : 0;
     for (int i = 0; i < alert_count; ++i) {
         cJSON *item = cJSON_GetArrayItem(alerts, i);
@@ -2959,7 +2997,6 @@ static bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertD
         char event_name[24] = {};
         char color_code[16] = {};
         char headline[64] = {};
-        char icon[8] = {};
         cJSON *event = cJSON_GetObjectItem(item, "eventType");
         cJSON *color = cJSON_GetObjectItem(item, "color");
         if (event) {
@@ -2969,32 +3006,21 @@ static bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertD
             json_copy_string(color, "code", color_code, sizeof(color_code));
         }
         json_copy_string(item, "headline", headline, sizeof(headline));
-        json_copy_string(item, "icon", icon, sizeof(icon));
 
         int rank = warning_color_rank(color_code);
-        if (rank < best_rank) {
-            continue;
-        }
-        if (rank == best_rank && next.active) {
-            continue;
-        }
 
-        WeatherAlertData candidate = {};
+        char title[kWeatherAlertTitleLen] = {};
         const char *color_name = warning_color_name(color_code);
         if (event_name[0] != '\0' && color_name[0] != '\0') {
-            snprintf(candidate.title, sizeof(candidate.title), "%s%s预警", event_name, color_name);
+            snprintf(title, sizeof(title), "%s%s预警", event_name, color_name);
         } else if (headline[0] != '\0') {
-            strlcpy(candidate.title, headline, sizeof(candidate.title));
+            strlcpy(title, headline, sizeof(title));
         } else if (event_name[0] != '\0') {
-            snprintf(candidate.title, sizeof(candidate.title), "%s预警", event_name);
+            snprintf(title, sizeof(title), "%s预警", event_name);
         }
-        if (candidate.title[0] != '\0') {
-            candidate.active = true;
-            strlcpy(candidate.icon, icon, sizeof(candidate.icon));
-            next = candidate;
-            best_rank = rank;
-        }
+        add_weather_alert_title(&next, title, rank);
     }
+    next.active = next.count > 0;
     time(&next.updated_at);
     *alert = next;
 
@@ -3673,6 +3699,7 @@ static void ui_task(void *)
     bool setup_panel_visible = false;
     bool low_mode_visible = false;
     bool alert_visible = false;
+    int alert_index = -1;
     uint32_t last_settings_action_seq = g_settings_action_seq;
 
     auto delay_to_next_second = []() {
@@ -3826,9 +3853,13 @@ static void ui_task(void *)
                     refresh_now = true;
                 }
                 bool next_alert_visible = !g_low_battery_mode && g_weather_alert.active && (local.tm_sec % 2 == 0);
-                if (next_alert_visible != alert_visible || (next_alert_visible && status_due)) {
-                    update_alert_pill(next_alert_visible);
+                int next_alert_index = g_weather_alert.count > 0 ? ((local.tm_sec / 2) % g_weather_alert.count) : 0;
+                if (next_alert_visible != alert_visible ||
+                    (next_alert_visible && next_alert_index != alert_index) ||
+                    (next_alert_visible && status_due)) {
+                    update_alert_pill(next_alert_visible, next_alert_index);
                     alert_visible = next_alert_visible;
+                    alert_index = next_alert_visible ? next_alert_index : -1;
                     refresh_now = true;
                 }
             } else {
@@ -3836,6 +3867,7 @@ static void ui_task(void *)
                 update_alert_pill(false);
                 if (alert_visible) {
                     alert_visible = false;
+                    alert_index = -1;
                     refresh_now = true;
                 }
             }
@@ -3855,6 +3887,7 @@ static void ui_task(void *)
                     g_last_second_progress_filled = -1;
                     update_alert_pill(false);
                     alert_visible = false;
+                    alert_index = -1;
                     refresh_now = true;
                 }
                 if (setup_active) {
