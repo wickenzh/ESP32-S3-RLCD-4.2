@@ -45,7 +45,7 @@ LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
 
 static const char *TAG = "WeatherClock";
-static const char *APP_VERSION = "v1.1.2";
+static const char *APP_VERSION = "v1.1.3";
 
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
@@ -98,6 +98,7 @@ static volatile bool g_setup_prompt_pending = false;
 static esp_pm_lock_handle_t g_network_pm_lock = nullptr;
 static esp_pm_lock_handle_t g_audio_pm_lock = nullptr;
 static int g_network_pm_lock_depth = 0;
+static bool g_audio_pm_lock_acquired = false;
 #endif
 static adc_oneshot_unit_handle_t g_battery_adc = nullptr;
 static adc_cali_handle_t g_battery_adc_cali = nullptr;
@@ -222,6 +223,7 @@ static volatile bool g_boot_anim_running = false;
 static volatile int g_boot_anim_current_frame = 0;
 static TaskHandle_t g_boot_anim_task_handle = nullptr;
 static TaskHandle_t g_boot_sync_task_handle = nullptr;
+static TaskHandle_t g_ui_task_handle = nullptr;
 static int g_last_ui_second = -1;
 static int g_last_ui_minute = -1;
 static int g_last_day_progress_filled = -1;
@@ -237,6 +239,13 @@ static void build_clock_ui();
 static void run_boot_connectivity_sync();
 static void request_setup_prompt_once();
 static bool start_setup_prompt_playback();
+
+static void notify_ui_task()
+{
+    if (g_ui_task_handle) {
+        xTaskNotifyGive(g_ui_task_handle);
+    }
+}
 
 static bool try_mark_audio_playing()
 {
@@ -979,9 +988,6 @@ static void build_boot_info_page()
 
     lv_obj_t *bottom_line = make_bar(screen, 24, 238, 352, 3);
     set_obj_black(bottom_line, true);
-
-    lv_obj_t *hint = make_label_with_font(screen, 24, 255, 352, 22, "Hold 20s for setup  |  Release to return", &lv_font_montserrat_14);
-    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 }
 
 static void update_boot_info_page()
@@ -1059,6 +1065,7 @@ static void build_settings_page()
 static bool update_settings_page()
 {
     bool changed = false;
+    static int last_selected = -1;
     char chime[40];
     snprintf(chime, sizeof(chime), "整点提醒 %s", g_hourly_chime_enabled ? "ON" : "OFF");
     const char *items[] = {
@@ -1072,10 +1079,17 @@ static bool update_settings_page()
     if (selected < 0 || selected >= kSettingsItemCount) {
         selected = 0;
     }
+    bool selection_changed = selected != last_selected;
+    if (selection_changed) {
+        changed = true;
+        last_selected = selected;
+    }
     for (int i = 0; i < kSettingsItemCount; ++i) {
         if (g_settings_labels[i]) {
             changed |= set_label_text_if_changed(g_settings_labels[i], items[i]);
-            style_settings_item(g_settings_labels[i], i == selected);
+            if (selection_changed) {
+                style_settings_item(g_settings_labels[i], i == selected);
+            }
         }
     }
     if (g_settings_feedback_label) {
@@ -1094,6 +1108,7 @@ static void set_settings_feedback(const char *text, uint32_t duration_ms)
 {
     strlcpy(g_settings_feedback, text, sizeof(g_settings_feedback));
     g_settings_feedback_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
+    notify_ui_task();
 }
 
 static bool is_settings_sync_busy()
@@ -2049,6 +2064,7 @@ static void button_task(void *)
                 if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
                     g_settings_action_seq = g_settings_action_seq + 1;
                     g_settings_last_activity_tick = now;
+                    notify_ui_task();
                 }
             }
             boot_pressed_since = 0;
@@ -2064,6 +2080,7 @@ static void button_task(void *)
                     g_settings_requested = true;
                     g_settings_last_activity_tick = now;
                     key_press_opened_settings = true;
+                    notify_ui_task();
                 }
             }
         } else {
@@ -2075,6 +2092,7 @@ static void button_task(void *)
                         g_settings_selection = (g_settings_selection + 1) % kSettingsItemCount;
                         g_factory_reset_confirm_pending = false;
                         g_settings_feedback[0] = '\0';
+                        notify_ui_task();
                     }
                 }
             }
@@ -2156,9 +2174,11 @@ static void release_network_awake_lock()
 static void acquire_audio_awake_lock()
 {
 #if CONFIG_PM_ENABLE
-    if (g_audio_pm_lock) {
+    if (g_audio_pm_lock && !g_audio_pm_lock_acquired) {
         esp_err_t err = esp_pm_lock_acquire(g_audio_pm_lock);
-        if (err != ESP_OK) {
+        if (err == ESP_OK) {
+            g_audio_pm_lock_acquired = true;
+        } else {
             ESP_LOGW(TAG, "audio pm lock acquire failed: %s", esp_err_to_name(err));
         }
     }
@@ -2168,9 +2188,11 @@ static void acquire_audio_awake_lock()
 static void release_audio_awake_lock()
 {
 #if CONFIG_PM_ENABLE
-    if (g_audio_pm_lock) {
+    if (g_audio_pm_lock && g_audio_pm_lock_acquired) {
         esp_err_t err = esp_pm_lock_release(g_audio_pm_lock);
-        if (err != ESP_OK) {
+        if (err == ESP_OK) {
+            g_audio_pm_lock_acquired = false;
+        } else {
             ESP_LOGW(TAG, "audio pm lock release failed: %s", esp_err_to_name(err));
         }
     }
@@ -2331,6 +2353,7 @@ static void sample_battery()
     }
     update_low_battery_state();
     ++g_battery_version;
+    notify_ui_task();
 }
 
 static int boot_sync_remaining_ms()
@@ -2527,11 +2550,19 @@ static void housekeeping_task(void *)
             next_sensor = next_sensor_sample_tick(xTaskGetTickCount());
         }
         if (now >= next_battery) {
+            bool was_low_battery = g_low_battery_mode;
             sample_battery();
-            next_battery = next_battery_sample_tick(xTaskGetTickCount());
+            TickType_t after_battery = xTaskGetTickCount();
+            if (was_low_battery && !g_low_battery_mode) {
+                next_sensor = next_sensor_sample_tick(after_battery);
+            }
+            next_battery = next_battery_sample_tick(after_battery);
         }
-        TickType_t next_wake = next_sensor < next_battery ? next_sensor : next_battery;
-        TickType_t delay_ticks = next_wake > now ? next_wake - now : pdMS_TO_TICKS(1000);
+        TickType_t next_wake = g_low_battery_mode
+                                   ? next_battery
+                                   : (next_sensor < next_battery ? next_sensor : next_battery);
+        TickType_t delay_now = xTaskGetTickCount();
+        TickType_t delay_ticks = next_wake > delay_now ? next_wake - delay_now : pdMS_TO_TICKS(1000);
         vTaskDelay(delay_ticks);
     }
 }
@@ -3655,6 +3686,13 @@ static void ui_task(void *)
         }
         return pdMS_TO_TICKS(delay_ms);
     };
+    auto delay_to_next_minute = [](const struct tm &local) {
+        int seconds_to_next = 60 - local.tm_sec;
+        if (seconds_to_next <= 0 || seconds_to_next > 60) {
+            seconds_to_next = 60;
+        }
+        return pdMS_TO_TICKS(seconds_to_next * 1000 + 5);
+    };
 
     for (;;) {
         time_t now;
@@ -3706,16 +3744,19 @@ static void ui_task(void *)
             }
 
             if (settings_requested) {
+                bool settings_changed = false;
                 if (!settings_page_visible) {
                     build_settings_page();
                     show_page(g_settings_root);
                     settings_page_visible = true;
                     info_page_visible = false;
                     setup_panel_visible = false;
+                    settings_changed = true;
                 }
                 if (g_settings_action_seq != last_settings_action_seq) {
                     last_settings_action_seq = g_settings_action_seq;
                     handle_settings_action();
+                    settings_changed = true;
                     settings_requested = g_settings_requested;
                     if (!settings_requested && g_boot_info_requested) {
                         build_boot_info_page();
@@ -3737,12 +3778,15 @@ static void ui_task(void *)
                         if (op == kSettingsSyncNtp) {
                             xEventGroupClearBits(g_app_events, kManualNtpSyncBit);
                             finish_settings_sync(kSettingsSyncNtp, "时间同步超时");
+                            settings_changed = true;
                         } else if (op == kSettingsSyncWeather) {
                             xEventGroupClearBits(g_app_events, kManualWeatherSyncBit);
                             finish_settings_sync(kSettingsSyncWeather, "天气同步超时");
+                            settings_changed = true;
                         } else {
                             g_settings_sync_op = kSettingsSyncNone;
                             g_settings_sync_deadline_tick = 0;
+                            settings_changed = true;
                         }
                     }
                 }
@@ -3755,8 +3799,9 @@ static void ui_task(void *)
                     }
                 }
                 if (settings_requested) {
-                    update_settings_page();
-                    lv_refr_now(nullptr);
+                    if (update_settings_page() || settings_changed) {
+                        lv_refr_now(nullptr);
+                    }
                     Lvgl_unlock();
                     vTaskDelay(pdMS_TO_TICKS(100));
                     continue;
@@ -3871,7 +3916,13 @@ static void ui_task(void *)
             }
             Lvgl_unlock();
         }
-        vTaskDelay(delay_to_next_second());
+        bool low_idle = g_low_battery_mode &&
+                        !g_settings_requested &&
+                        !g_boot_info_requested &&
+                        !g_setup_portal_active &&
+                        is_tm_plausible(local);
+        TickType_t delay_ticks = low_idle ? delay_to_next_minute(local) : delay_to_next_second();
+        ulTaskNotifyTake(pdTRUE, delay_ticks);
     }
 }
 
@@ -4008,7 +4059,7 @@ extern "C" void app_main(void)
 
     xTaskCreatePinnedToCore(network_sync_task, "network_sync", 20480, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(housekeeping_task, "housekeeping", 5120, nullptr, 3, nullptr, 1);
-    xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, nullptr, 1);
+    xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, nullptr, 3, &g_ui_task_handle, 1);
     xTaskCreatePinnedToCore(button_task, "button_task", 3072, nullptr, 2, nullptr, 1);
 
     if (g_setup_prompt_pending) {

@@ -546,10 +546,16 @@ static int _i2s_data_enable(const audio_codec_data_if_t *h, esp_codec_dev_type_t
             if (enable == false) {
                 if (playback == false && paired && paired->out_disable_pending)  {
                     ret = _i2s_drv_enable(paired, true, enable);
+                    if (ret == ESP_CODEC_DEV_OK) {
+                        paired->out_enable = false;
+                    }
                     paired->out_disable_pending = false;
                 }
                 if (playback == true && paired && paired->in_disable_pending)  {
                     ret = _i2s_drv_enable(paired, false, enable);
+                    if (ret == ESP_CODEC_DEV_OK) {
+                        paired->in_enable = false;
+                    }
                     paired->in_disable_pending = false;
                 }
             } else {
