@@ -1,0 +1,22 @@
+# 配置显示、I2C、音频等板级外设 BSP 组件。
+idf_component_register(
+    SRCS 
+    "codec_bsp.cpp"
+    "display_bsp.cpp"
+    "i2c_bsp.cpp"
+    "i2c_equipment.cpp"
+    REQUIRES
+    driver
+    esp_lcd
+    esp_timer
+    SensorLib
+    codec_board
+    INCLUDE_DIRS 
+    "./"
+    EMBED_FILES
+    "pcm/hourly_chime.pcm"
+    "pcm/chime_1.pcm"
+    "pcm/chime_2.pcm"
+    "pcm/chime_3.pcm"
+    "pcm/chime_4.pcm"
+    "pcm/wifi_prompt.pcm")

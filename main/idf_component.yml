@@ -1,0 +1,5 @@
+# 声明主组件通过 ESP-IDF 组件管理器拉取的依赖。
+dependencies:
+  idf:
+    version: '>=4.4.0'
+  lvgl/lvgl: ^8.4.0
