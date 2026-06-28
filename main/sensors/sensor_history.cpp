@@ -47,16 +47,18 @@ int seconds_until_next_interval(const struct tm &local, int interval_seconds)
 }
 } // namespace
 
-static void hourly_slot_key(int index, char *out, size_t out_len)
+static bool hourly_slot_key(int index, char *out, size_t out_len)
 {
     if (!out || out_len == 0) {
-        return;
+        return false;
     }
     int written = snprintf(out, out_len, kHourlySlotKeyFormat, index);
     if (written < 0 || (size_t)written >= out_len) {
         out[0] = '\0';
         ESP_LOGW(TAG, "hourly sensor slot key truncated index=%d", index);
+        return false;
     }
+    return true;
 }
 
 int boot_sync_remaining_ms()
@@ -142,7 +144,9 @@ void load_hourly_sensor_history()
             HourlySensorSample sample = {};
             size_t sample_len = sizeof(sample);
             char key[kHourlySlotKeyBufferSize];
-            hourly_slot_key(i, key, sizeof(key));
+            if (!hourly_slot_key(i, key, sizeof(key))) {
+                continue;
+            }
             if (nvs_get_blob(nvs, key, &sample, &sample_len) == ESP_OK &&
                 sample_len == sizeof(sample)) {
                 g_hourly_history.samples[i] = sample;
@@ -200,8 +204,11 @@ static bool save_hourly_sensor_slot(int index)
     err = nvs_set_blob(nvs, kHourlyHistoryMetaKey, &meta, sizeof(meta));
     if (err == ESP_OK) {
         char key[kHourlySlotKeyBufferSize];
-        hourly_slot_key(index, key, sizeof(key));
-        err = nvs_set_blob(nvs, key, &g_hourly_history.samples[index], sizeof(g_hourly_history.samples[index]));
+        if (hourly_slot_key(index, key, sizeof(key))) {
+            err = nvs_set_blob(nvs, key, &g_hourly_history.samples[index], sizeof(g_hourly_history.samples[index]));
+        } else {
+            err = ESP_ERR_INVALID_ARG;
+        }
     }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);

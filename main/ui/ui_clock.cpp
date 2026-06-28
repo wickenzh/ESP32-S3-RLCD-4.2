@@ -354,7 +354,9 @@ bool update_time_ui(const struct tm &local, bool clock_page_active, int active_w
     }
 
     int date_key = (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
-    int date_page = (active_work_page == 0 || g_low_battery_mode || g_setup_portal_active) ? 0 : active_work_page;
+    int date_page = (active_work_page == kWorkPageWeatherClock || g_low_battery_mode || g_setup_portal_active)
+                        ? kWorkPageWeatherClock
+                        : active_work_page;
     if (date_key != g_last_ui_date_key || date_page != g_last_ui_date_page) {
         static const char *week_days[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
         char date[48];
@@ -363,17 +365,17 @@ bool update_time_ui(const struct tm &local, bool clock_page_active, int active_w
                  local.tm_mon + 1,
                  local.tm_mday,
                  week_days[local.tm_wday]);
-        if (date_page == 0) {
+        if (date_page == kWorkPageWeatherClock) {
             changed |= set_label_text_if_changed(g_date_label, date);
-        } else if (date_page == 1) {
+        } else if (date_page == kWorkPageHistory) {
             changed |= set_label_text_if_changed(g_history_date_label, date);
-        } else if (date_page == 2) {
+        } else if (date_page == kWorkPageGallery) {
             changed |= set_label_text_if_changed(g_gallery_date_label, date);
-        } else if (date_page == 3) {
+        } else if (date_page == kWorkPageCalendar) {
             changed |= set_label_text_if_changed(g_calendar_date_label, date);
-        } else if (date_page == 4) {
+        } else if (date_page == kWorkPageWeatherBoard) {
             changed |= set_label_text_if_changed(g_weather_board_date_label, date);
-        } else if (date_page == 5) {
+        } else if (date_page == kWorkPageFlipClock) {
             changed |= set_label_text_if_changed(g_flip_clock_date_label, date);
         }
         g_last_ui_date_key = date_key;
@@ -434,10 +436,10 @@ void handle_settings_action()
         set_settings_feedback("请等待同步完成", 2000);
         return;
     }
-    if (!(primary == kSettingsPrimarySystem && selected == 2)) {
+    if (!(primary == kSettingsPrimarySystem && selected == kSystemSettingsFactoryResetItem)) {
         g_factory_reset_confirm_pending = false;
     }
-    if (!(primary == kSettingsPrimarySystem && selected == 0)) {
+    if (!(primary == kSettingsPrimarySystem && selected == kSystemSettingsOfflineItem)) {
         g_offline_disable_confirm_pending = false;
     }
     if (!(primary == kSettingsPrimaryNetwork && selected == 3)) {
@@ -550,46 +552,37 @@ void handle_settings_action()
         return;
     }
     if (primary == kSettingsPrimaryDisplay) {
-        static const int page_for_item[] = {0, 2, 1, 3, 4, 5};
-        if (selected == 6) {
+        if (selected == kDisplaySettingsOrderItem) {
             g_settings_page_order_mode = true;
             g_settings_page_order_selection = 0;
             normalize_work_page_order();
             set_settings_feedback("BOOT交换并保存", 3500);
             return;
         }
-        int page = page_for_item[selected];
-        if (page == 0) {
-            g_work_page_enabled_mask |= 0x01;
+        int page = display_settings_item_work_page(selected);
+        if (page == kWorkPageWeatherClock) {
+            g_work_page_enabled_mask |= (1U << kWorkPageWeatherClock);
             set_settings_feedback("天气时钟不可关闭", 2500);
             return;
         }
         uint8_t previous = g_work_page_enabled_mask;
         g_work_page_enabled_mask ^= (1U << page);
-        g_work_page_enabled_mask |= 0x01;
+        g_work_page_enabled_mask |= (1U << kWorkPageWeatherClock);
         if (!save_work_page_settings()) {
             g_work_page_enabled_mask = previous;
             set_settings_feedback("保存失败", 2500);
             return;
         }
         ensure_active_work_page_enabled();
-        const char *name = "日历";
-        if (selected == 1) {
-            name = "图片时钟";
-        } else if (selected == 2) {
-            name = "温度历史";
-        } else if (selected == 4) {
-            name = "天气看板";
-        } else if (selected == 5) {
-            name = "翻页时钟";
-        }
         char feedback[32];
-        snprintf(feedback, sizeof(feedback), "%s%s", name, is_work_page_enabled(page) ? "已开启" : "已关闭");
+        snprintf(feedback, sizeof(feedback), "%s%s",
+                 work_page_name(page),
+                 is_work_page_enabled(page) ? "已开启" : "已关闭");
         set_settings_feedback(feedback, 2500);
         return;
     }
     if (primary == kSettingsPrimarySystem) {
-        if (selected == 0) {
+        if (selected == kSystemSettingsOfflineItem) {
             if (!g_offline_mode_ui_enabled) {
                 if (!set_offline_mode_enabled(true)) {
                     set_settings_feedback("保存失败", 2500);
@@ -619,7 +612,7 @@ void handle_settings_action()
             }
             g_offline_disable_confirm_pending = false;
             set_settings_feedback("请完成配网后关闭", 3500);
-        } else if (selected == 1) {
+        } else if (selected == kSystemSettingsNetworkDiagItem) {
             if (g_offline_mode_ui_enabled) {
                 set_settings_feedback("离线模式已开启", 2500);
                 return;
@@ -634,7 +627,7 @@ void handle_settings_action()
             g_settings_selection = 0;
             g_info_page_until_tick = 0;
             xEventGroupSetBits(g_app_events, kNetworkDiagBit);
-        } else if (selected == 2) {
+        } else if (selected == kSystemSettingsFactoryResetItem) {
             if (!g_factory_reset_confirm_pending) {
                 g_factory_reset_confirm_pending = true;
                 set_settings_feedback("再次按 BOOT 确认", kSettingsTimeoutMs);
@@ -654,14 +647,14 @@ void handle_settings_action()
             g_settings_page_order_mode = false;
             g_factory_reset_confirm_pending = false;
             g_offline_disable_confirm_pending = false;
-        } else if (selected == 3) {
+        } else if (selected == kSystemSettingsInfoItem) {
             g_settings_requested = false;
             g_settings_page_order_mode = false;
             g_factory_reset_confirm_pending = false;
             g_boot_info_requested = true;
             g_info_page_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(kSettingsTimeoutMs);
             ESP_LOGI(TAG, "system info requested from settings");
-        } else if (selected == 4) {
+        } else if (selected == kSystemSettingsOtaItem) {
             if (g_offline_mode_ui_enabled) {
                 set_settings_feedback("离线模式已开启", 2500);
                 return;

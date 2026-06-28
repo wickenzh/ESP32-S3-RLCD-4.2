@@ -1,7 +1,6 @@
 // 调度 NTP、天气、预警、每日文字和 OTA 等联网同步流程。
 #include "network_services.h"
 
-#include "audio_services.h"
 #include "display_bsp.h"
 #include "sensor_services.h"
 #include "ui_views.h"
@@ -94,8 +93,9 @@ void run_boot_connectivity_sync()
         return;
     }
 
-    bool boot_weather_page_visible = g_active_work_page == 0 || g_active_work_page == 4;
-    bool boot_gallery_page_visible = g_active_work_page == 2;
+    bool boot_weather_page_visible = g_active_work_page == kWorkPageWeatherClock ||
+                                     g_active_work_page == kWorkPageWeatherBoard;
+    bool boot_gallery_page_visible = g_active_work_page == kWorkPageGallery;
     update_boot_screen(42, "Wi-Fi connected", boot_weather_page_visible ? "Loading weather" : "Checking time");
     remaining_ms = boot_sync_remaining_ms();
     if (boot_weather_page_visible && g_have_weather_key && !g_low_battery_mode && remaining_ms > 250) {
@@ -193,6 +193,15 @@ uint32_t network_idle_wait_ms(time_t now, time_t next_weather_at, time_t next_nt
         wait_ms = kNetworkIdleDefaultWaitMs;
     }
     return wait_ms;
+}
+
+void schedule_ntp_retry(time_t *next_ntp_retry_at)
+{
+    if (!next_ntp_retry_at) {
+        return;
+    }
+    time(next_ntp_retry_at);
+    *next_ntp_retry_at += kNetworkNtpRetryDelaySec;
 }
 
 static bool weather_cache_current_hour(time_t now)
@@ -462,8 +471,7 @@ void network_sync_task(void *)
                 xEventGroupClearBits(g_app_events, kManualSayingSyncBit);
             }
             if (ntp_due) {
-                time(&next_ntp_retry_at);
-                next_ntp_retry_at += kNetworkNtpRetryDelaySec;
+                schedule_ntp_retry(&next_ntp_retry_at);
             }
             stop_wifi_radio(provisioning_sync_due);
             release_network_awake_lock();
@@ -484,8 +492,7 @@ void network_sync_task(void *)
                         last_midnight_ntp_yday = local.tm_yday;
                     }
                 } else {
-                    time(&next_ntp_retry_at);
-                    next_ntp_retry_at += kNetworkNtpRetryDelaySec;
+                    schedule_ntp_retry(&next_ntp_retry_at);
                 }
             }
             if (weather_due) {
@@ -541,8 +548,7 @@ void network_sync_task(void *)
                 xEventGroupClearBits(g_app_events, kManualSayingSyncBit);
             }
             if (ntp_due) {
-                time(&next_ntp_retry_at);
-                next_ntp_retry_at += kNetworkNtpRetryDelaySec;
+                schedule_ntp_retry(&next_ntp_retry_at);
             }
         }
         stop_wifi_radio(provisioning_sync_due);

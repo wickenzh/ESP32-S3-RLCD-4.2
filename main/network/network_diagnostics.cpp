@@ -14,6 +14,67 @@ constexpr const char *kNetworkDiagPublicIpUrl = "https://uapis.cn/api/v1/network
 constexpr const char *kNetworkDiagQweatherDnsHost = "dev.qweather.com";
 constexpr const char *kNetworkDiagGithubDnsHost = "raw.githubusercontent.com";
 
+class NetworkDiagResponseBuffer {
+public:
+    explicit NetworkDiagResponseBuffer(size_t buffer_len)
+        : data_((char *)calloc(buffer_len, 1))
+    {
+        if (!data_) {
+            ESP_LOGW(TAG, "network diag response alloc failed len=%u", (unsigned)buffer_len);
+        }
+    }
+
+    ~NetworkDiagResponseBuffer()
+    {
+        free(data_);
+    }
+
+    NetworkDiagResponseBuffer(const NetworkDiagResponseBuffer &) = delete;
+    NetworkDiagResponseBuffer &operator=(const NetworkDiagResponseBuffer &) = delete;
+
+    char *get() const
+    {
+        return data_;
+    }
+
+    explicit operator bool() const
+    {
+        return data_ != nullptr;
+    }
+
+private:
+    char *data_;
+};
+
+class NetworkDiagJsonRoot {
+public:
+    explicit NetworkDiagJsonRoot(char *response)
+        : root_(cJSON_Parse(response))
+    {
+    }
+
+    ~NetworkDiagJsonRoot()
+    {
+        cJSON_Delete(root_);
+    }
+
+    NetworkDiagJsonRoot(const NetworkDiagJsonRoot &) = delete;
+    NetworkDiagJsonRoot &operator=(const NetworkDiagJsonRoot &) = delete;
+
+    cJSON *get() const
+    {
+        return root_;
+    }
+
+    explicit operator bool() const
+    {
+        return root_ != nullptr;
+    }
+
+private:
+    cJSON *root_;
+};
+
 void diag_count(bool ok)
 {
     g_network_diag_total = g_network_diag_total + 1;
@@ -48,14 +109,11 @@ bool http_probe_ok(const char *url, size_t buffer_len = kNetworkDiagDefaultProbe
         ESP_LOGW(TAG, "network diag http probe invalid arg");
         return false;
     }
-    char *response = (char *)calloc(buffer_len, 1);
+    NetworkDiagResponseBuffer response(buffer_len);
     if (!response) {
-        ESP_LOGW(TAG, "network diag http probe alloc failed len=%u", (unsigned)buffer_len);
         return false;
     }
-    bool ok = http_get_text(url, response, buffer_len, nullptr) == ESP_OK;
-    free(response);
-    return ok;
+    return http_get_text(url, response.get(), buffer_len, nullptr) == ESP_OK;
 }
 
 bool find_json_string_recursive(cJSON *node, const char *name, char *out, size_t out_len, int depth = 0)
@@ -96,23 +154,21 @@ bool lookup_public_ip(char *out, size_t out_len)
         return false;
     }
     out[0] = '\0';
-    char *response = (char *)calloc(kNetworkDiagPublicIpResponseBufferSize, 1);
+    NetworkDiagResponseBuffer response(kNetworkDiagPublicIpResponseBufferSize);
     if (!response) {
-        ESP_LOGW(TAG, "network diag public ip response alloc failed");
         return false;
     }
     bool ok = false;
     if (http_get_text(kNetworkDiagPublicIpUrl,
-                      response,
+                      response.get(),
                       kNetworkDiagPublicIpResponseBufferSize,
                       nullptr) == ESP_OK) {
-        cJSON *root = cJSON_Parse(response);
+        NetworkDiagJsonRoot root(response.get());
         if (root) {
-            ok = find_json_string_recursive(root, "ip", out, out_len);
-            cJSON_Delete(root);
+            ok = find_json_string_recursive(root.get(), "ip", out, out_len);
         }
         if (!ok) {
-            char *start = response;
+            char *start = response.get();
             while (*start == ' ' || *start == '\r' || *start == '\n' || *start == '\t') {
                 ++start;
             }
@@ -122,7 +178,6 @@ bool lookup_public_ip(char *out, size_t out_len)
             }
         }
     }
-    free(response);
     return ok;
 }
 } // namespace

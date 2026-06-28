@@ -116,6 +116,81 @@ private:
     bool added_ = false;
 };
 
+class OtaManifestResponseBuffer {
+public:
+    explicit OtaManifestResponseBuffer(size_t size)
+        : data_((char *)malloc(size))
+    {
+        if (data_) {
+            data_[0] = '\0';
+        }
+    }
+
+    ~OtaManifestResponseBuffer()
+    {
+        free(data_);
+    }
+
+    OtaManifestResponseBuffer(const OtaManifestResponseBuffer &) = delete;
+    OtaManifestResponseBuffer &operator=(const OtaManifestResponseBuffer &) = delete;
+
+    char *data() const
+    {
+        return data_;
+    }
+
+private:
+    char *data_ = nullptr;
+};
+
+class OtaJsonRoot {
+public:
+    explicit OtaJsonRoot(const char *json)
+        : root_(cJSON_Parse(json))
+    {
+    }
+
+    ~OtaJsonRoot()
+    {
+        cJSON_Delete(root_);
+    }
+
+    OtaJsonRoot(const OtaJsonRoot &) = delete;
+    OtaJsonRoot &operator=(const OtaJsonRoot &) = delete;
+
+    cJSON *get() const
+    {
+        return root_;
+    }
+
+private:
+    cJSON *root_ = nullptr;
+};
+
+class OtaDownloadBuffer {
+public:
+    explicit OtaDownloadBuffer(size_t size)
+        : data_((uint8_t *)malloc(size))
+    {
+    }
+
+    ~OtaDownloadBuffer()
+    {
+        free(data_);
+    }
+
+    OtaDownloadBuffer(const OtaDownloadBuffer &) = delete;
+    OtaDownloadBuffer &operator=(const OtaDownloadBuffer &) = delete;
+
+    uint8_t *data() const
+    {
+        return data_;
+    }
+
+private:
+    uint8_t *data_ = nullptr;
+};
+
 static void ota_note_phase(int phase, int total, int progress)
 {
     s_ota_breadcrumb.magic = kOtaBreadcrumbMagic;
@@ -356,19 +431,18 @@ static bool parse_ota_manifest(const char *json, OtaManifest *manifest)
         ESP_LOGW(TAG, "OTA manifest parse invalid arg");
         return false;
     }
-    cJSON *root = cJSON_Parse(json);
-    if (!root) {
+    OtaJsonRoot root(json);
+    if (!root.get()) {
         return false;
     }
-    bool ok = json_copy_string(root, "version", manifest->version, sizeof(manifest->version)) &&
-              json_copy_string(root, "url", manifest->url, sizeof(manifest->url)) &&
-              json_copy_string(root, "sha256", manifest->sha256, sizeof(manifest->sha256));
-    cJSON *size = cJSON_GetObjectItem(root, "size");
+    bool ok = json_copy_string(root.get(), "version", manifest->version, sizeof(manifest->version)) &&
+              json_copy_string(root.get(), "url", manifest->url, sizeof(manifest->url)) &&
+              json_copy_string(root.get(), "sha256", manifest->sha256, sizeof(manifest->sha256));
+    cJSON *size = cJSON_GetObjectItem(root.get(), "size");
     if (cJSON_IsNumber(size)) {
         manifest->size = size->valueint;
     }
-    (void)json_copy_string(root, "notes", manifest->notes, sizeof(manifest->notes));
-    cJSON_Delete(root);
+    (void)json_copy_string(root.get(), "notes", manifest->notes, sizeof(manifest->notes));
     return ok && manifest->version[0] && manifest->url[0] && valid_sha256_string(manifest->sha256);
 }
 
@@ -389,20 +463,17 @@ static bool fetch_ota_manifest_from_source(const OtaManifestSource &source, OtaM
         ESP_LOGW(TAG, "OTA manifest source skipped: %s", source.name ? source.name : "unknown");
         return false;
     }
-    char *response = (char *)malloc(kOtaManifestResponseBufferSize);
-    if (!response) {
+    OtaManifestResponseBuffer response(kOtaManifestResponseBufferSize);
+    if (!response.data()) {
         ESP_LOGW(TAG, "OTA manifest response alloc failed");
         ota_set_status(kOtaFailed, "Check failed", -1, kOtaFailureHoldMs);
         return false;
     }
-    response[0] = '\0';
-    esp_err_t err = http_get_text(source.url, response, kOtaManifestResponseBufferSize);
-    if (err != ESP_OK || !parse_ota_manifest(response, manifest)) {
+    esp_err_t err = http_get_text(source.url, response.data(), kOtaManifestResponseBufferSize);
+    if (err != ESP_OK || !parse_ota_manifest(response.data(), manifest)) {
         ESP_LOGW(TAG, "OTA manifest failed source=%s err=%s", source.name, esp_err_to_name(err));
-        free(response);
         return false;
     }
-    free(response);
     ESP_LOGI(TAG, "OTA manifest loaded source=%s version=%s", source.name, manifest->version);
     return true;
 }
@@ -546,8 +617,8 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
         return false;
     }
 
-    uint8_t *buffer = (uint8_t *)malloc(kOtaDownloadBufferSize);
-    if (!buffer) {
+    OtaDownloadBuffer buffer(kOtaDownloadBufferSize);
+    if (!buffer.data()) {
         esp_ota_abort(ota_handle);
         close_ota_http_client(&client);
         ota_set_status(kOtaFailed, "No memory", -1, kOtaFailureHoldMs);
@@ -576,7 +647,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
             ok = false;
             break;
         }
-        int read = esp_http_client_read(client, (char *)buffer, kOtaDownloadBufferSize);
+        int read = esp_http_client_read(client, (char *)buffer.data(), kOtaDownloadBufferSize);
         wdt.reset();
         if (read < 0) {
             if (esp_timer_get_time() - last_progress_us > (int64_t)kOtaNoProgressTimeoutMs * 1000) {
@@ -600,8 +671,8 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
             continue;
         }
         last_progress_us = esp_timer_get_time();
-        mbedtls_sha256_update(&sha_ctx, buffer, read);
-        err = esp_ota_write(ota_handle, buffer, read);
+        mbedtls_sha256_update(&sha_ctx, buffer.data(), read);
+        err = esp_ota_write(ota_handle, buffer.data(), read);
         wdt.reset();
         if (err != ESP_OK) {
             ok = false;
@@ -651,7 +722,6 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
     wdt.reset();
     mbedtls_sha256_finish(&sha_ctx, hash);
     mbedtls_sha256_free(&sha_ctx);
-    free(buffer);
     bool complete = esp_http_client_is_complete_data_received(client);
     close_ota_http_client(&client);
 

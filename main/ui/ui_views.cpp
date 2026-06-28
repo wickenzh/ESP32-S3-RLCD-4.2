@@ -137,7 +137,9 @@ void ui_task(void *)
         bool status_due = tick_now - last_status_update >= pdMS_TO_TICKS(kUiStatusRefreshMs);
         bool battery_due = g_battery_version != last_battery_version;
         bool battery_blink_visible = g_battery_charging &&
-                                     (g_active_work_page == 0 || g_active_work_page == 2 || g_active_work_page == 5) &&
+                                     (g_active_work_page == kWorkPageWeatherClock ||
+                                      g_active_work_page == kWorkPageGallery ||
+                                      g_active_work_page == kWorkPageFlipClock) &&
                                      !g_setup_portal_active &&
                                      !g_settings_requested &&
                                      !g_boot_info_requested &&
@@ -162,7 +164,10 @@ void ui_task(void *)
                 info_requested = false;
             }
             if (g_low_battery_mode && !ota_flow_active() &&
-                (info_requested || network_diag_requested || settings_requested || g_active_work_page != 0)) {
+                (info_requested ||
+                 network_diag_requested ||
+                 settings_requested ||
+                 g_active_work_page != kWorkPageWeatherClock)) {
                 g_boot_info_requested = false;
                 g_network_diag_page_requested = false;
                 g_settings_requested = false;
@@ -210,7 +215,7 @@ void ui_task(void *)
                 info_page_visible = false;
                 g_info_page_until_tick = 0;
                 visible_work_page = g_active_work_page;
-                history_page_shown_since = g_active_work_page == 1 ? tick_now : 0;
+                history_page_shown_since = g_active_work_page == kWorkPageHistory ? tick_now : 0;
                 setup_panel_visible = false;
                 low_mode_visible = g_low_battery_mode;
                 apply_clock_mode_visibility(false);
@@ -250,7 +255,7 @@ void ui_task(void *)
                 show_active_work_page();
                 network_diag_page_visible = false;
                 visible_work_page = g_active_work_page;
-                history_page_shown_since = g_active_work_page == 1 ? tick_now : 0;
+                history_page_shown_since = g_active_work_page == kWorkPageHistory ? tick_now : 0;
                 setup_panel_visible = false;
                 low_mode_visible = g_low_battery_mode;
                 apply_clock_mode_visibility(false);
@@ -366,7 +371,7 @@ void ui_task(void *)
                 show_active_work_page();
                 settings_page_visible = false;
                 visible_work_page = g_active_work_page;
-                history_page_shown_since = g_active_work_page == 1 ? tick_now : 0;
+                history_page_shown_since = g_active_work_page == kWorkPageHistory ? tick_now : 0;
                 setup_panel_visible = false;
                 low_mode_visible = g_low_battery_mode;
                 apply_clock_mode_visibility(false);
@@ -380,14 +385,14 @@ void ui_task(void *)
                 refresh_now = true;
             }
 
-            if ((g_low_battery_mode || g_setup_portal_active) && g_active_work_page != 0) {
-                g_active_work_page = 0;
+            if ((g_low_battery_mode || g_setup_portal_active) && g_active_work_page != kWorkPageWeatherClock) {
+                g_active_work_page = kWorkPageWeatherClock;
             }
             ensure_active_work_page_enabled();
             if (visible_work_page != g_active_work_page) {
                 show_active_work_page();
                 visible_work_page = g_active_work_page;
-                history_page_shown_since = g_active_work_page == 1 ? tick_now : 0;
+                history_page_shown_since = g_active_work_page == kWorkPageHistory ? tick_now : 0;
                 status_due = true;
                 battery_due = true;
                 battery_blink_due = true;
@@ -403,7 +408,7 @@ void ui_task(void *)
                 g_last_ui_date_page = -1;
                 refresh_now = true;
             }
-            if (g_active_work_page == 1 && !g_low_battery_mode && !g_setup_portal_active) {
+            if (g_active_work_page == kWorkPageHistory && !g_low_battery_mode && !g_setup_portal_active) {
                 if (history_page_shown_since == 0) {
                     history_page_shown_since = tick_now;
                 } else if (tick_now - history_page_shown_since >= pdMS_TO_TICKS(kHistoryPageTimeoutMs)) {
@@ -423,12 +428,12 @@ void ui_task(void *)
             } else {
                 history_page_shown_since = 0;
             }
-            bool history_page_active = g_active_work_page == 1 && !g_low_battery_mode && !g_setup_portal_active;
-            bool gallery_page_active = g_active_work_page == 2 && !g_low_battery_mode && !g_setup_portal_active;
-            bool calendar_page_active = g_active_work_page == 3 && !g_low_battery_mode && !g_setup_portal_active;
-            bool weather_board_page_active = g_active_work_page == 4 && !g_low_battery_mode && !g_setup_portal_active;
-            bool flip_clock_page_active = g_active_work_page == 5 && !g_low_battery_mode && !g_setup_portal_active;
-            bool clock_page_active = g_active_work_page == 0;
+            bool history_page_active = g_active_work_page == kWorkPageHistory && !g_low_battery_mode && !g_setup_portal_active;
+            bool gallery_page_active = g_active_work_page == kWorkPageGallery && !g_low_battery_mode && !g_setup_portal_active;
+            bool calendar_page_active = g_active_work_page == kWorkPageCalendar && !g_low_battery_mode && !g_setup_portal_active;
+            bool weather_board_page_active = g_active_work_page == kWorkPageWeatherBoard && !g_low_battery_mode && !g_setup_portal_active;
+            bool flip_clock_page_active = g_active_work_page == kWorkPageFlipClock && !g_low_battery_mode && !g_setup_portal_active;
+            bool clock_page_active = g_active_work_page == kWorkPageWeatherClock;
             bool weather_data_page_active = clock_page_active || weather_board_page_active;
             if (!weather_data_page_active) {
                 clock_weather_sync_requested = false;
@@ -699,7 +704,7 @@ void ui_task(void *)
                         !g_boot_info_requested &&
                         !g_network_diag_page_requested &&
                         is_tm_plausible(local);
-        bool gallery_idle = g_active_work_page == 2 &&
+        bool gallery_idle = g_active_work_page == kWorkPageGallery &&
                             !g_low_battery_mode &&
                             !g_battery_charging &&
                             !g_setup_portal_active &&
@@ -707,7 +712,7 @@ void ui_task(void *)
                             !g_boot_info_requested &&
                             !g_network_diag_page_requested &&
                             is_tm_plausible(local);
-        bool history_idle = g_active_work_page == 1 &&
+        bool history_idle = g_active_work_page == kWorkPageHistory &&
                             !g_low_battery_mode &&
                             !g_battery_charging &&
                             !g_setup_portal_active &&
@@ -715,7 +720,7 @@ void ui_task(void *)
                             !g_boot_info_requested &&
                             !g_network_diag_page_requested &&
                             is_tm_plausible(local);
-        bool calendar_idle = g_active_work_page == 3 &&
+        bool calendar_idle = g_active_work_page == kWorkPageCalendar &&
                              !g_low_battery_mode &&
                              !g_battery_charging &&
                              !g_setup_portal_active &&
@@ -723,7 +728,7 @@ void ui_task(void *)
                              !g_boot_info_requested &&
                              !g_network_diag_page_requested &&
                              is_tm_plausible(local);
-        bool weather_board_idle = g_active_work_page == 4 &&
+        bool weather_board_idle = g_active_work_page == kWorkPageWeatherBoard &&
                                   !g_low_battery_mode &&
                                   !g_battery_charging &&
                                   !g_setup_portal_active &&

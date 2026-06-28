@@ -20,6 +20,30 @@ static constexpr size_t kCustomAssetCrcChunkSize = 256;
 static constexpr uint16_t kCustomAssetMaxGalleryImages = 24;
 static constexpr int kCustomAssetDiagGifFrames[] = {0, 1, 30, 59};
 
+class CustomAssetTempBuffer {
+public:
+    explicit CustomAssetTempBuffer(size_t size)
+        : data_((uint8_t *)malloc(size))
+    {
+    }
+
+    ~CustomAssetTempBuffer()
+    {
+        free(data_);
+    }
+
+    CustomAssetTempBuffer(const CustomAssetTempBuffer &) = delete;
+    CustomAssetTempBuffer &operator=(const CustomAssetTempBuffer &) = delete;
+
+    uint8_t *data() const
+    {
+        return data_;
+    }
+
+private:
+    uint8_t *data_ = nullptr;
+};
+
 static uint32_t crc32_update_raw(uint32_t crc, const uint8_t *data, size_t len)
 {
     if (!data && len > 0) {
@@ -165,17 +189,16 @@ static bool validate_entry_crc(const CustomAssetEntry &entry)
 static bool validate_header_crc()
 {
     size_t header_bytes = sizeof(CustomAssetsHeader) + (size_t)s_entry_count * sizeof(CustomAssetEntry);
-    uint8_t *buffer = (uint8_t *)malloc(header_bytes);
-    if (!buffer) {
+    CustomAssetTempBuffer buffer(header_bytes);
+    if (!buffer.data()) {
         ESP_LOGW(TAG, "custom assets header crc alloc failed");
         return false;
     }
-    memcpy(buffer, &s_assets_header, sizeof(CustomAssetsHeader));
-    memcpy(buffer + sizeof(CustomAssetsHeader), s_entries, (size_t)s_entry_count * sizeof(CustomAssetEntry));
-    CustomAssetsHeader *header = (CustomAssetsHeader *)buffer;
+    memcpy(buffer.data(), &s_assets_header, sizeof(CustomAssetsHeader));
+    memcpy(buffer.data() + sizeof(CustomAssetsHeader), s_entries, (size_t)s_entry_count * sizeof(CustomAssetEntry));
+    CustomAssetsHeader *header = (CustomAssetsHeader *)buffer.data();
     header->header_crc = 0;
-    uint32_t crc = crc32_bytes(buffer, header_bytes);
-    free(buffer);
+    uint32_t crc = crc32_bytes(buffer.data(), header_bytes);
     if (crc != s_assets_header.header_crc) {
         ESP_LOGW(TAG, "custom assets header crc mismatch");
         return false;

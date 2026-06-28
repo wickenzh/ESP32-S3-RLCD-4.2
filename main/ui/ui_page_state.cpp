@@ -45,30 +45,30 @@ void show_page(lv_obj_t *page)
 lv_obj_t *active_work_page_root()
 {
     if (g_low_battery_mode || g_setup_portal_active) {
-        g_active_work_page = 0;
+        g_active_work_page = kWorkPageWeatherClock;
     }
     ensure_active_work_page_enabled();
-    if (g_active_work_page == 0) {
+    if (g_active_work_page == kWorkPageWeatherClock) {
         build_clock_ui();
         return g_clock_root;
     }
-    if (g_active_work_page == 1) {
+    if (g_active_work_page == kWorkPageHistory) {
         build_history_page();
         return g_history_root ? g_history_root : g_clock_root;
     }
-    if (g_active_work_page == 2) {
+    if (g_active_work_page == kWorkPageGallery) {
         build_gallery_page();
         return g_gallery_root ? g_gallery_root : g_clock_root;
     }
-    if (g_active_work_page == 3) {
+    if (g_active_work_page == kWorkPageCalendar) {
         build_calendar_page();
         return g_calendar_root ? g_calendar_root : g_clock_root;
     }
-    if (g_active_work_page == 4) {
+    if (g_active_work_page == kWorkPageWeatherBoard) {
         build_weather_board_page();
         return g_weather_board_root ? g_weather_board_root : g_clock_root;
     }
-    if (g_active_work_page == 5) {
+    if (g_active_work_page == kWorkPageFlipClock) {
         build_flip_clock_page();
         return g_flip_clock_root ? g_flip_clock_root : g_clock_root;
     }
@@ -91,6 +91,38 @@ bool is_work_page_enabled(int page)
     return (g_work_page_enabled_mask & (1U << page)) != 0;
 }
 
+const char *work_page_name(int page)
+{
+    static const char *kPageNames[kWorkPageCount] = {
+        "天气时钟",
+        "温度历史",
+        "图片时钟",
+        "日历",
+        "天气看板",
+        "翻页时钟",
+    };
+    if (page < 0 || page >= kWorkPageCount) {
+        return "未知页面";
+    }
+    return kPageNames[page];
+}
+
+int display_settings_item_work_page(int item)
+{
+    static const int kDisplaySettingPages[kDisplaySettingsPageItemCount] = {
+        kWorkPageWeatherClock,
+        kWorkPageGallery,
+        kWorkPageHistory,
+        kWorkPageCalendar,
+        kWorkPageWeatherBoard,
+        kWorkPageFlipClock,
+    };
+    if (item < 0 || item >= (int)(sizeof(kDisplaySettingPages) / sizeof(kDisplaySettingPages[0]))) {
+        return -1;
+    }
+    return kDisplaySettingPages[item];
+}
+
 int first_enabled_work_page()
 {
     normalize_work_page_order();
@@ -105,7 +137,14 @@ int first_enabled_work_page()
 
 void reset_work_page_order()
 {
-    static const uint8_t kDefaultOrder[kWorkPageCount] = {0, 5, 2, 1, 3, 4};
+    static const uint8_t kDefaultOrder[kWorkPageCount] = {
+        kWorkPageWeatherClock,
+        kWorkPageFlipClock,
+        kWorkPageGallery,
+        kWorkPageHistory,
+        kWorkPageCalendar,
+        kWorkPageWeatherBoard,
+    };
     memcpy(g_work_page_order, kDefaultOrder, sizeof(g_work_page_order));
 }
 

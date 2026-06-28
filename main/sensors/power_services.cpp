@@ -181,7 +181,10 @@ void restore_system_time_from_rtc()
     }
     struct timeval now = {};
     now.tv_sec = epoch;
-    settimeofday(&now, nullptr);
+    if (settimeofday(&now, nullptr) != 0) {
+        ESP_LOGW(TAG, "set system time from RTC failed");
+        return;
+    }
     ESP_LOGI(TAG, "system time restored from RTC: %04u-%02u-%02u %02u:%02u:%02u",
              rtc_time.year, rtc_time.month, rtc_time.day,
              rtc_time.hour, rtc_time.minute, rtc_time.second);

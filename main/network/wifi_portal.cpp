@@ -2,7 +2,6 @@
 #include "network_services.h"
 
 #include "audio_services.h"
-#include "sensor_services.h"
 #include "ui_views.h"
 
 #include "lwip/inet.h"
@@ -24,6 +23,54 @@ constexpr TickType_t kCaptiveDnsStopWaitDelay = pdMS_TO_TICKS(100);
 constexpr uint32_t kCaptiveDnsTaskStack = 3072;
 constexpr UBaseType_t kCaptiveDnsTaskPriority = 3;
 constexpr BaseType_t kCaptiveDnsTaskCore = 0;
+
+class WifiScanRecords {
+public:
+    explicit WifiScanRecords(uint16_t count)
+        : records_((wifi_ap_record_t *)calloc(count, sizeof(wifi_ap_record_t)))
+    {
+    }
+
+    ~WifiScanRecords()
+    {
+        free(records_);
+    }
+
+    WifiScanRecords(const WifiScanRecords &) = delete;
+    WifiScanRecords &operator=(const WifiScanRecords &) = delete;
+
+    wifi_ap_record_t *data() const
+    {
+        return records_;
+    }
+
+private:
+    wifi_ap_record_t *records_ = nullptr;
+};
+
+class PortalHtmlBuffer {
+public:
+    explicit PortalHtmlBuffer(size_t len)
+        : html_((char *)calloc(1, len))
+    {
+    }
+
+    ~PortalHtmlBuffer()
+    {
+        free(html_);
+    }
+
+    PortalHtmlBuffer(const PortalHtmlBuffer &) = delete;
+    PortalHtmlBuffer &operator=(const PortalHtmlBuffer &) = delete;
+
+    char *data() const
+    {
+        return html_;
+    }
+
+private:
+    char *html_ = nullptr;
+};
 
 esp_err_t configure_softap()
 {
@@ -285,15 +332,14 @@ void append_wifi_scan_list(char *html, size_t html_len)
         if (max_records > kMaxListedApCount) {
             max_records = kMaxListedApCount;
         }
-        wifi_ap_record_t *records = (wifi_ap_record_t *)calloc(max_records, sizeof(wifi_ap_record_t));
-        if (records == nullptr) {
+        WifiScanRecords records(max_records);
+        if (records.data() == nullptr) {
             html_append(html, html_len, "<p class='muted'>Not enough memory to list Wi-Fi.</p>");
             html_append(html, html_len, "</div></section>");
             return;
         }
-        err = esp_wifi_scan_get_ap_records(&max_records, records);
+        err = esp_wifi_scan_get_ap_records(&max_records, records.data());
         if (err != ESP_OK) {
-            free(records);
             html_append(html, html_len, "<p class='muted'>Scan failed, refresh this page.</p>");
             html_append(html, html_len, "</div></section>");
             return;
@@ -302,16 +348,15 @@ void append_wifi_scan_list(char *html, size_t html_len)
             html_append(html, html_len, "<p class='muted'>No Wi-Fi found.</p>");
         }
         for (uint16_t i = 0; i < max_records; ++i) {
-            if (records[i].ssid[0] == '\0') {
+            if (records.data()[i].ssid[0] == '\0') {
                 continue;
             }
             char ssid[80] = {};
-            html_escape((const char *)records[i].ssid, ssid, sizeof(ssid));
+            html_escape((const char *)records.data()[i].ssid, ssid, sizeof(ssid));
             html_append(html, html_len,
                         "<button type='button' class='wifi' data-ssid=\"%s\" onclick=\"pick(this.dataset.ssid)\"><span>%s</span><b>%d dBm</b></button>",
-                        ssid, ssid, records[i].rssi);
+                        ssid, ssid, records.data()[i].rssi);
         }
-        free(records);
     }
     html_append(html, html_len, "</div></section>");
 }
@@ -356,12 +401,12 @@ esp_err_t root_get_handler(httpd_req_t *req)
     html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
     html_escape(g_manual_weather_city, safe_weather_city, sizeof(safe_weather_city));
     const size_t html_len = 12288;
-    char *html = (char *)calloc(1, html_len);
-    if (html == nullptr) {
+    PortalHtmlBuffer html(html_len);
+    if (html.data() == nullptr) {
         httpd_resp_set_status(req, "500 Internal Server Error");
         return httpd_resp_sendstr(req, "Not enough memory.");
     }
-    html_append(html, html_len,
+    html_append(html.data(), html_len,
                 "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>WeatherClock Setup</title><style>"
                 ":root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
@@ -385,12 +430,10 @@ esp_err_t root_get_handler(httpd_req_t *req)
                 "<label>Offline Date & Time</label><input name='manual_time' type='datetime-local' placeholder='Set time without Wi-Fi'>"
                 "<button class='submit' type='submit'>Save and connect</button></form></div>",
                 g_ap_ssid, safe_ssid, safe_weather_city);
-    append_wifi_scan_list(html, html_len);
-    html_append(html, html_len, "</main></body></html>");
+    append_wifi_scan_list(html.data(), html_len);
+    html_append(html.data(), html_len, "</main></body></html>");
     httpd_resp_set_type(req, "text/html; charset=utf-8");
-    esp_err_t err = httpd_resp_send(req, html, strlen(html));
-    free(html);
-    return err;
+    return httpd_resp_send(req, html.data(), strlen(html.data()));
 }
 
 enum ManualWeatherCityValidationResult {

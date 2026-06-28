@@ -40,6 +40,8 @@ void show_page(lv_obj_t *page);
 lv_obj_t *active_work_page_root();
 void show_active_work_page();
 bool is_work_page_enabled(int page);
+const char *work_page_name(int page);
+int display_settings_item_work_page(int item);
 int first_enabled_work_page();
 int next_enabled_work_page(int current_page);
 void ensure_active_work_page_enabled();

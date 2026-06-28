@@ -1,7 +1,6 @@
 // 负责 Wi-Fi、API Key、页面设置和声音设置的 NVS 配置读写。
 #include "network_services.h"
 
-#include "audio_services.h"
 #include "sensor_services.h"
 #include "ui_views.h"
 
@@ -24,6 +23,14 @@ constexpr const char *kPageOrderV1Key = "page_order_v1";
 constexpr const char *kPageOrderV2Key = "page_order_v2";
 constexpr const char *kPageOrderV3Key = "page_order_v3";
 constexpr size_t kFormEncodedBufferSize = 160;
+constexpr uint8_t kWeatherClockPageMask = (uint8_t)(1U << kWorkPageWeatherClock);
+constexpr uint8_t kLegacyPageMaskV1KnownBits = (uint8_t)((1U << 4) - 1);
+constexpr uint8_t kPageMaskV2KnownBits = (uint8_t)((1U << 5) - 1);
+constexpr uint8_t kPageMaskV3KnownBits = (uint8_t)((1U << kWorkPageCount) - 1);
+constexpr uint8_t kWeatherBoardPageMask = (uint8_t)(1U << kWorkPageWeatherBoard);
+constexpr uint8_t kFlipClockPageMask = (uint8_t)(1U << kWorkPageFlipClock);
+constexpr size_t kLegacyPageOrderV1Count = 4;
+constexpr size_t kPageOrderV2Count = 5;
 
 void clear_app_event_bits(EventBits_t bits, const char *reason)
 {
@@ -68,6 +75,20 @@ bool find_form_value_range(const char *body, const char *key, const char **value
     }
     return false;
 }
+
+int hex_digit_value(char ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
 } // namespace
 
 bool load_saved_config()
@@ -88,7 +109,7 @@ bool load_saved_config()
     uint8_t all_day = 0;
     uint8_t volume = 80;
     uint8_t sound = 0;
-    uint8_t page_mask = 0x3F;
+    uint8_t page_mask = kPageMaskV3KnownBits;
     uint8_t offline = 0;
     uint8_t page_order[kWorkPageCount] = {};
     size_t page_order_len = sizeof(page_order);
@@ -97,52 +118,53 @@ bool load_saved_config()
     (void)nvs_get_u8(nvs, kChimeVolumeKey, &volume);
     (void)nvs_get_u8(nvs, kChimeSoundKey, &sound);
     if (nvs_get_u8(nvs, kPageMaskV3Key, &page_mask) != ESP_OK) {
-        uint8_t v2_page_mask = 0x1F;
+        uint8_t v2_page_mask = kPageMaskV2KnownBits;
         if (nvs_get_u8(nvs, kPageMaskV2Key, &v2_page_mask) == ESP_OK) {
-            page_mask = (v2_page_mask & 0x1F) | 0x20;
+            page_mask = (v2_page_mask & kPageMaskV2KnownBits) | kFlipClockPageMask;
         } else {
-            uint8_t legacy_page_mask = 0x0F;
+            uint8_t legacy_page_mask = kLegacyPageMaskV1KnownBits;
             if (nvs_get_u8(nvs, kPageMaskV1Key, &legacy_page_mask) == ESP_OK) {
-                page_mask = (legacy_page_mask & 0x0F) | 0x10 | 0x20;
+                page_mask = (legacy_page_mask & kLegacyPageMaskV1KnownBits) |
+                            kWeatherBoardPageMask | kFlipClockPageMask;
             }
         }
     }
     (void)nvs_get_u8(nvs, kOfflineModeKey, &offline);
     esp_err_t order_err = nvs_get_blob(nvs, kPageOrderV3Key, page_order, &page_order_len);
     if (order_err != ESP_OK || page_order_len != sizeof(page_order)) {
-        uint8_t v2_order[5] = {};
+        uint8_t v2_order[kPageOrderV2Count] = {};
         size_t v2_len = sizeof(v2_order);
         if (nvs_get_blob(nvs, kPageOrderV2Key, v2_order, &v2_len) == ESP_OK &&
             v2_len == sizeof(v2_order)) {
             int out = 0;
-            for (int i = 0; i < 5 && out < kWorkPageCount; ++i) {
+            for (size_t i = 0; i < kPageOrderV2Count && out < kWorkPageCount; ++i) {
                 page_order[out++] = v2_order[i];
-                if (v2_order[i] == 0 && out < kWorkPageCount) {
-                    page_order[out++] = 5;
+                if (v2_order[i] == kWorkPageWeatherClock && out < kWorkPageCount) {
+                    page_order[out++] = kWorkPageFlipClock;
                 }
             }
             while (out < kWorkPageCount) {
-                page_order[out++] = 5;
+                page_order[out++] = kWorkPageFlipClock;
             }
             page_order_len = sizeof(page_order);
             order_err = ESP_OK;
         } else {
-            uint8_t legacy_order[4] = {};
+            uint8_t legacy_order[kLegacyPageOrderV1Count] = {};
             size_t legacy_len = sizeof(legacy_order);
             if (nvs_get_blob(nvs, kPageOrderV1Key, legacy_order, &legacy_len) == ESP_OK &&
                 legacy_len == sizeof(legacy_order)) {
                 int out = 0;
-                for (int i = 0; i < 4 && out < kWorkPageCount; ++i) {
+                for (size_t i = 0; i < kLegacyPageOrderV1Count && out < kWorkPageCount; ++i) {
                     page_order[out++] = legacy_order[i];
-                    if (legacy_order[i] == 0 && out < kWorkPageCount) {
-                        page_order[out++] = 5;
+                    if (legacy_order[i] == kWorkPageWeatherClock && out < kWorkPageCount) {
+                        page_order[out++] = kWorkPageFlipClock;
                     }
                 }
                 if (out < kWorkPageCount) {
-                    page_order[out++] = 4;
+                    page_order[out++] = kWorkPageWeatherBoard;
                 }
                 if (out < kWorkPageCount) {
-                    page_order[out++] = 5;
+                    page_order[out++] = kWorkPageFlipClock;
                 }
                 page_order_len = sizeof(page_order);
                 order_err = ESP_OK;
@@ -165,7 +187,7 @@ bool load_saved_config()
     }
     g_chime_volume_percent = volume;
     g_chime_sound_index = sound < kChimeSoundCount ? sound : 0;
-    g_work_page_enabled_mask = (page_mask | 0x01) & ((1U << kWorkPageCount) - 1);
+    g_work_page_enabled_mask = (page_mask | kWeatherClockPageMask) & kPageMaskV3KnownBits;
     if (order_err == ESP_OK && page_order_len == sizeof(page_order)) {
         memcpy(g_work_page_order, page_order, sizeof(g_work_page_order));
     }
@@ -419,7 +441,7 @@ bool save_work_page_settings()
         ESP_LOGW(TAG, "nvs open failed while saving page settings: %s", esp_err_to_name(err));
         return false;
     }
-    uint8_t mask = (g_work_page_enabled_mask | 0x01) & ((1U << kWorkPageCount) - 1);
+    uint8_t mask = (g_work_page_enabled_mask | kWeatherClockPageMask) & kPageMaskV3KnownBits;
     uint8_t old_mask = 0;
     if (nvs_get_u8(nvs, kPageMaskV3Key, &old_mask) == ESP_OK && old_mask == mask) {
         nvs_close(nvs);
@@ -471,7 +493,8 @@ bool save_work_page_order()
 bool clear_saved_config()
 {
     nvs_handle_t nvs;
-    if (nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs) == ESP_OK) {
+    esp_err_t open_err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    if (open_err == ESP_OK) {
         (void)nvs_erase_key(nvs, kWifiSsidKey);
         (void)nvs_erase_key(nvs, kWifiPassKey);
         (void)nvs_erase_key(nvs, kWeatherApiKeyKey);
@@ -485,7 +508,7 @@ bool clear_saved_config()
             return false;
         }
     } else {
-        ESP_LOGW(TAG, "nvs open failed while clearing config");
+        ESP_LOGW(TAG, "nvs open failed while clearing config: %s", esp_err_to_name(open_err));
         return false;
     }
     g_wifi_ssid[0] = '\0';
@@ -513,13 +536,14 @@ void url_decode(char *dst, size_t dst_len, const char *src)
     }
     size_t di = 0;
     for (size_t si = 0; src[si] != '\0' && di + 1 < dst_len; ++si) {
-        if (src[si] == '%' &&
-            src[si + 1] != '\0' &&
-            src[si + 2] != '\0' &&
-            isxdigit((unsigned char)src[si + 1]) &&
-            isxdigit((unsigned char)src[si + 2])) {
-            char hex[3] = {src[si + 1], src[si + 2], 0};
-            dst[di++] = (char)strtol(hex, nullptr, 16);
+        int hi = -1;
+        int lo = -1;
+        if (src[si] == '%' && src[si + 1] != '\0' && src[si + 2] != '\0') {
+            hi = hex_digit_value(src[si + 1]);
+            lo = hex_digit_value(src[si + 2]);
+        }
+        if (hi >= 0 && lo >= 0) {
+            dst[di++] = (char)((hi << 4) | lo);
             si += 2;
         } else if (src[si] == '+') {
             dst[di++] = ' ';

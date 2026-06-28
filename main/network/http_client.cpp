@@ -47,6 +47,38 @@ void copy_log_preview(char *out, size_t out_len, const char *text)
         }
     }
 }
+
+class HttpByteBuffer {
+public:
+    explicit HttpByteBuffer(size_t len)
+        : data_((uint8_t *)malloc(len))
+    {
+        if (!data_) {
+            ESP_LOGW(TAG, "http temp buffer alloc failed len=%u", (unsigned)len);
+        }
+    }
+
+    ~HttpByteBuffer()
+    {
+        free(data_);
+    }
+
+    HttpByteBuffer(const HttpByteBuffer &) = delete;
+    HttpByteBuffer &operator=(const HttpByteBuffer &) = delete;
+
+    uint8_t *get() const
+    {
+        return data_;
+    }
+
+    explicit operator bool() const
+    {
+        return data_ != nullptr;
+    }
+
+private:
+    uint8_t *data_;
+};
 } // namespace
 
 esp_err_t http_event_handler(esp_http_client_event_t *evt)
@@ -133,19 +165,17 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
         return ESP_FAIL;
     }
 
-    uint8_t *compressed = (uint8_t *)malloc(*body_len);
+    HttpByteBuffer compressed(*body_len);
     if (!compressed) {
-        ESP_LOGW(TAG, "gzip response alloc failed len=%u", (unsigned)*body_len);
         return ESP_ERR_NO_MEM;
     }
-    memcpy(compressed, out, *body_len);
+    memcpy(compressed.get(), out, *body_len);
 
     size_t written = tinfl_decompress_mem_to_mem(out,
                                                  out_len - 1,
-                                                 compressed + payload_offset,
+                                                 compressed.get() + payload_offset,
                                                  payload_len,
                                                  TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
-    free(compressed);
     if (written == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED) {
         out[0] = '\0';
         *body_len = 0;

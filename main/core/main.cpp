@@ -44,7 +44,7 @@ static void create_app_task(TaskFunction_t task,
     }
 }
 
-extern "C" void app_main(void)
+static bool init_nvs_storage()
 {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -52,32 +52,68 @@ extern "C" void app_main(void)
         ret = nvs_flash_erase();
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "nvs erase failed: %s", esp_err_to_name(ret));
-            return;
+            return false;
         }
         ret = nvs_flash_init();
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "nvs re-init failed: %s", esp_err_to_name(ret));
-            return;
+            return false;
         }
     } else if (ret != ESP_OK) {
         ESP_LOGE(TAG, "nvs init failed: %s", esp_err_to_name(ret));
-        return;
+        return false;
     }
+    return true;
+}
 
-    ota_mark_running_app_valid();
+static bool init_system_event_services()
+{
     g_app_events = xEventGroupCreate();
     if (!g_app_events) {
         ESP_LOGE(TAG, "app event group create failed");
-        return;
+        return false;
     }
-    ret = esp_netif_init();
+    esp_err_t ret = esp_netif_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "netif init failed: %s", esp_err_to_name(ret));
-        return;
+        return false;
     }
     ret = esp_event_loop_create_default();
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "event loop init failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+    return true;
+}
+
+static void create_boot_task_or_signal(TaskFunction_t task,
+                                       const char *name,
+                                       uint32_t stack_depth,
+                                       TaskHandle_t *handle,
+                                       BaseType_t core_id,
+                                       EventBits_t done_bit,
+                                       const char *failure_log)
+{
+    if (xTaskCreatePinnedToCore(task,
+                                name,
+                                stack_depth,
+                                nullptr,
+                                kHighServiceTaskPriority,
+                                handle,
+                                core_id) != pdPASS) {
+        ESP_LOGW(TAG, "%s", failure_log);
+        xEventGroupSetBits(g_app_events, done_bit);
+    }
+}
+
+extern "C" void app_main(void)
+{
+    if (!init_nvs_storage()) {
+        return;
+    }
+
+    ota_mark_running_app_valid();
+    if (!init_system_event_services()) {
         return;
     }
     init_power_management();
@@ -108,26 +144,20 @@ extern "C" void app_main(void)
     g_boot_anim_current_frame = 0;
     g_boot_anim_running = true;
     xEventGroupClearBits(g_app_events, kBootSyncDoneBit | kBootAnimDoneBit);
-    if (xTaskCreatePinnedToCore(boot_anim_task,
-                                "boot_anim_task",
-                                kBootAnimTaskStack,
-                                nullptr,
-                                kHighServiceTaskPriority,
-                                &g_boot_anim_task_handle,
-                                kUiTaskCore) != pdPASS) {
-        ESP_LOGW(TAG, "boot animation task create failed");
-        xEventGroupSetBits(g_app_events, kBootAnimDoneBit);
-    }
-    if (xTaskCreatePinnedToCore(boot_connectivity_task,
-                                "boot_sync",
-                                kBootSyncTaskStack,
-                                nullptr,
-                                kHighServiceTaskPriority,
-                                &g_boot_sync_task_handle,
-                                kNetworkTaskCore) != pdPASS) {
-        ESP_LOGW(TAG, "boot connectivity task create failed");
-        xEventGroupSetBits(g_app_events, kBootSyncDoneBit);
-    }
+    create_boot_task_or_signal(boot_anim_task,
+                               "boot_anim_task",
+                               kBootAnimTaskStack,
+                               &g_boot_anim_task_handle,
+                               kUiTaskCore,
+                               kBootAnimDoneBit,
+                               "boot animation task create failed");
+    create_boot_task_or_signal(boot_connectivity_task,
+                               "boot_sync",
+                               kBootSyncTaskStack,
+                               &g_boot_sync_task_handle,
+                               kNetworkTaskCore,
+                               kBootSyncDoneBit,
+                               "boot connectivity task create failed");
     xEventGroupWaitBits(g_app_events,
                         kBootSyncDoneBit,
                         pdFALSE,

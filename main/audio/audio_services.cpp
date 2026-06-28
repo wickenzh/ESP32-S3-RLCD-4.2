@@ -77,6 +77,25 @@ static bool outside_hourly_chime_window(int hour)
     return hour < kHourlyChimeQuietStartHour || hour > kHourlyChimeQuietEndHour;
 }
 
+static bool create_audio_playback_task(TaskFunction_t task_fn,
+                                       const char *task_name,
+                                       void *task_arg,
+                                       const char *log_name)
+{
+    BaseType_t ok = xTaskCreatePinnedToCore(task_fn,
+                                            task_name,
+                                            kAudioPlaybackTaskStack,
+                                            task_arg,
+                                            kAudioPlaybackTaskPriority,
+                                            nullptr,
+                                            kAudioTaskCore);
+    if (ok != pdPASS) {
+        ESP_LOGW(TAG, "failed to create %s task", log_name ? log_name : "audio playback");
+        return false;
+    }
+    return true;
+}
+
 void hourly_chime_task(void *arg)
 {
     int sound_index = (int)(intptr_t)arg;
@@ -126,16 +145,11 @@ bool start_chime_playback(int source_slot)
     if (!try_mark_audio_playing()) {
         return false;
     }
-    BaseType_t ok = xTaskCreatePinnedToCore(hourly_chime_task,
-                                            "hourly_chime",
-                                            kAudioPlaybackTaskStack,
-                                            (void *)(intptr_t)source_slot,
-                                            kAudioPlaybackTaskPriority,
-                                            nullptr,
-                                            kAudioTaskCore);
-    if (ok != pdPASS) {
+    if (!create_audio_playback_task(hourly_chime_task,
+                                    "hourly_chime",
+                                    (void *)(intptr_t)source_slot,
+                                    "hourly chime")) {
         clear_audio_playing();
-        ESP_LOGW(TAG, "failed to create hourly chime task");
         return false;
     }
     return true;
@@ -147,17 +161,12 @@ bool start_setup_prompt_playback()
         return false;
     }
     g_setup_prompt_pending = false;
-    BaseType_t ok = xTaskCreatePinnedToCore(setup_prompt_task,
-                                            "setup_prompt",
-                                            kAudioPlaybackTaskStack,
-                                            nullptr,
-                                            kAudioPlaybackTaskPriority,
-                                            nullptr,
-                                            kAudioTaskCore);
-    if (ok != pdPASS) {
+    if (!create_audio_playback_task(setup_prompt_task,
+                                    "setup_prompt",
+                                    nullptr,
+                                    "setup prompt")) {
         clear_audio_playing();
         g_setup_prompt_pending = true;
-        ESP_LOGW(TAG, "failed to create setup prompt task");
         return false;
     }
     return true;

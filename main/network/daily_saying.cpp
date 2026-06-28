@@ -9,6 +9,74 @@ constexpr int kMaxSayingChars = 22;
 constexpr int kMaxSayingAttempts = 8;
 constexpr int kMaxSayingJsonDepth = 8;
 
+class DailySayingResponseBuffer {
+public:
+    DailySayingResponseBuffer()
+        : data_((char *)calloc(kDailySayingResponseBufferSize, 1))
+    {
+        if (!data_) {
+            ESP_LOGW(TAG, "daily saying response alloc failed");
+        }
+    }
+
+    ~DailySayingResponseBuffer()
+    {
+        free(data_);
+    }
+
+    DailySayingResponseBuffer(const DailySayingResponseBuffer &) = delete;
+    DailySayingResponseBuffer &operator=(const DailySayingResponseBuffer &) = delete;
+
+    char *get() const
+    {
+        return data_;
+    }
+
+    void clear() const
+    {
+        if (data_) {
+            memset(data_, 0, kDailySayingResponseBufferSize);
+        }
+    }
+
+    explicit operator bool() const
+    {
+        return data_ != nullptr;
+    }
+
+private:
+    char *data_;
+};
+
+class DailySayingJsonRoot {
+public:
+    explicit DailySayingJsonRoot(const char *response)
+        : root_(cJSON_Parse(response))
+    {
+    }
+
+    ~DailySayingJsonRoot()
+    {
+        cJSON_Delete(root_);
+    }
+
+    DailySayingJsonRoot(const DailySayingJsonRoot &) = delete;
+    DailySayingJsonRoot &operator=(const DailySayingJsonRoot &) = delete;
+
+    cJSON *get() const
+    {
+        return root_;
+    }
+
+    explicit operator bool() const
+    {
+        return root_ != nullptr;
+    }
+
+private:
+    cJSON *root_;
+};
+
 static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int depth)
 {
     static const char *const kFields[] = {
@@ -57,10 +125,9 @@ static bool extract_daily_saying(const char *response, char *out, size_t out_len
         return false;
     }
     out[0] = '\0';
-    cJSON *root = cJSON_Parse(response);
+    DailySayingJsonRoot root(response);
     if (root) {
-        bool ok = copy_json_saying_field(root, out, out_len, 0);
-        cJSON_Delete(root);
+        bool ok = copy_json_saying_field(root.get(), out, out_len, 0);
         if (ok) {
             return true;
         }
@@ -99,23 +166,22 @@ bool perform_daily_saying_update()
         return false;
     }
     char next[kDailySayingLen] = {};
-    char *response = (char *)calloc(kDailySayingResponseBufferSize, 1);
+    DailySayingResponseBuffer response;
     if (!response) {
-        ESP_LOGW(TAG, "daily saying response alloc failed");
         return false;
     }
     int http_failures = 0;
     int parse_failures = 0;
     int long_responses = 0;
     for (int attempt = 1; attempt <= kMaxSayingAttempts; ++attempt) {
-        memset(response, 0, kDailySayingResponseBufferSize);
-        esp_err_t err = http_get_text(kDailySayingUrl, response, kDailySayingResponseBufferSize, nullptr);
+        response.clear();
+        esp_err_t err = http_get_text(kDailySayingUrl, response.get(), kDailySayingResponseBufferSize, nullptr);
         if (err != ESP_OK) {
             ++http_failures;
             ESP_LOGW(TAG, "daily saying http failed err=%s", esp_err_to_name(err));
             continue;
         }
-        bool ok = extract_daily_saying(response, next, sizeof(next));
+        bool ok = extract_daily_saying(response.get(), next, sizeof(next));
         if (!ok) {
             ++parse_failures;
             ESP_LOGW(TAG, "daily saying parse failed");
@@ -129,7 +195,6 @@ bool perform_daily_saying_update()
         ESP_LOGW(TAG, "daily saying too long chars=%d attempt=%d", chars, attempt);
         next[0] = '\0';
     }
-    free(response);
     if (next[0] == '\0') {
         ESP_LOGW(TAG,
                  "daily saying update failed attempts=%d http=%d parse=%d long=%d",

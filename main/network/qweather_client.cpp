@@ -1,10 +1,6 @@
 // 对接 IP 定位、QWeather 城市查询、实时天气和天气预警接口。
 #include "network_services.h"
 
-#include "audio_services.h"
-#include "sensor_services.h"
-#include "ui_views.h"
-
 #include <stdarg.h>
 
 const char *qweather_api_host()
@@ -52,6 +48,64 @@ char *alloc_qweather_response(const char *stage, size_t buffer_size)
     response[0] = '\0';
     return response;
 }
+
+class QweatherResponseBuffer {
+public:
+    QweatherResponseBuffer(const char *stage, size_t buffer_size)
+        : data_(alloc_qweather_response(stage, buffer_size))
+    {
+    }
+
+    ~QweatherResponseBuffer()
+    {
+        free(data_);
+    }
+
+    QweatherResponseBuffer(const QweatherResponseBuffer &) = delete;
+    QweatherResponseBuffer &operator=(const QweatherResponseBuffer &) = delete;
+
+    char *get() const
+    {
+        return data_;
+    }
+
+    explicit operator bool() const
+    {
+        return data_ != nullptr;
+    }
+
+private:
+    char *data_;
+};
+
+class QweatherJsonRoot {
+public:
+    explicit QweatherJsonRoot(char *response)
+        : root_(cJSON_Parse(response))
+    {
+    }
+
+    ~QweatherJsonRoot()
+    {
+        cJSON_Delete(root_);
+    }
+
+    QweatherJsonRoot(const QweatherJsonRoot &) = delete;
+    QweatherJsonRoot &operator=(const QweatherJsonRoot &) = delete;
+
+    cJSON *get() const
+    {
+        return root_;
+    }
+
+    explicit operator bool() const
+    {
+        return root_ != nullptr;
+    }
+
+private:
+    cJSON *root_;
+};
 } // namespace
 
 bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size_t city_len)
@@ -60,23 +114,21 @@ bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size
         ESP_LOGW(TAG, "ip location invalid arg");
         return false;
     }
-    char *response = alloc_qweather_response("ip location", kIpGeoResponseBufferSize);
+    QweatherResponseBuffer response("ip location", kIpGeoResponseBufferSize);
     if (!response) {
         return false;
     }
-    if (http_get_text("https://uapis.cn/api/v1/network/myip", response, kIpGeoResponseBufferSize) != ESP_OK) {
-        free(response);
+    if (http_get_text("https://uapis.cn/api/v1/network/myip", response.get(), kIpGeoResponseBufferSize) != ESP_OK) {
         return false;
     }
-    cJSON *root = cJSON_Parse(response);
+    QweatherJsonRoot root(response.get());
     if (!root) {
-        free(response);
         return false;
     }
     bool ok = false;
-    cJSON *lat = cJSON_GetObjectItem(root, "latitude");
-    cJSON *lon = cJSON_GetObjectItem(root, "longitude");
-    cJSON *region = cJSON_GetObjectItem(root, "region");
+    cJSON *lat = cJSON_GetObjectItem(root.get(), "latitude");
+    cJSON *lon = cJSON_GetObjectItem(root.get(), "longitude");
+    cJSON *region = cJSON_GetObjectItem(root.get(), "region");
     if (cJSON_IsNumber(lat) && cJSON_IsNumber(lon)) {
         snprintf(location, location_len, "%.4f,%.4f", lon->valuedouble, lat->valuedouble);
         if (cJSON_IsString(region) && region->valuestring) {
@@ -104,8 +156,6 @@ bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size
         ESP_LOGI(TAG, "ip location resolved: %s city=%s", location, city);
         ok = true;
     }
-    cJSON_Delete(root);
-    free(response);
     return ok;
 }
 
@@ -138,25 +188,23 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
         return kQweatherCityLookupError;
     }
     ESP_LOGI(TAG, "qweather city lookup: %s via geoapi.qweather.com", location);
-    char *response = alloc_qweather_response("city", kQweatherCityResponseBufferSize);
+    QweatherResponseBuffer response("city", kQweatherCityResponseBufferSize);
     if (!response) {
         return kQweatherCityLookupError;
     }
-    if (http_get_text(url, response, kQweatherCityResponseBufferSize, g_weather_api_key) != ESP_OK) {
+    if (http_get_text(url, response.get(), kQweatherCityResponseBufferSize, g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather city lookup http failed");
-        free(response);
         return kQweatherCityLookupError;
     }
-    cJSON *root = cJSON_Parse(response);
+    QweatherJsonRoot root(response.get());
     if (!root) {
-        log_response_preview("qweather city", response);
-        free(response);
+        log_response_preview("qweather city", response.get());
         return kQweatherCityLookupError;
     }
     bool ok = false;
     QweatherCityLookupStatus status = kQweatherCityLookupNotFound;
-    cJSON *code = cJSON_GetObjectItem(root, "code");
-    cJSON *locations = cJSON_GetObjectItem(root, "location");
+    cJSON *code = cJSON_GetObjectItem(root.get(), "code");
+    cJSON *locations = cJSON_GetObjectItem(root.get(), "location");
     cJSON *first = cJSON_IsArray(locations) ? cJSON_GetArrayItem(locations, 0) : nullptr;
     if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && first) {
         ok = json_copy_string(first, "id", city_id, city_id_len) &&
@@ -175,8 +223,6 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
         ESP_LOGW(TAG, "qweather city lookup failed code=%s",
                  cJSON_IsString(code) ? code->valuestring : "missing");
     }
-    cJSON_Delete(root);
-    free(response);
     return status;
 }
 
@@ -388,25 +434,23 @@ bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *al
         return false;
     }
     ESP_LOGI(TAG, "qweather alert lookup: %s,%s via %s", lat, lon, qweather_api_host());
-    char *response = alloc_qweather_response("alert", kQweatherAlertResponseBufferSize);
+    QweatherResponseBuffer response("alert", kQweatherAlertResponseBufferSize);
     if (!response) {
         return false;
     }
-    if (http_get_text(url, response, kQweatherAlertResponseBufferSize, g_weather_api_key) != ESP_OK) {
+    if (http_get_text(url, response.get(), kQweatherAlertResponseBufferSize, g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather alert http failed");
-        free(response);
         return false;
     }
-    cJSON *root = cJSON_Parse(response);
+    QweatherJsonRoot root(response.get());
     if (!root) {
-        log_response_preview("qweather alert", response);
-        free(response);
+        log_response_preview("qweather alert", response.get());
         return false;
     }
 
     WeatherAlertData next = {};
     bool ok = true;
-    cJSON *alerts = cJSON_GetObjectItem(root, "alerts");
+    cJSON *alerts = cJSON_GetObjectItem(root.get(), "alerts");
     int alert_count = cJSON_IsArray(alerts) ? cJSON_GetArraySize(alerts) : 0;
     for (int i = 0; i < alert_count; ++i) {
         cJSON *item = cJSON_GetArrayItem(alerts, i);
@@ -443,8 +487,6 @@ bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *al
     time(&next.updated_at);
     *alert = next;
 
-    cJSON_Delete(root);
-    free(response);
     return ok;
 }
 
@@ -470,24 +512,22 @@ bool qweather_fetch_now(const char *city_id, WeatherData *weather)
         return false;
     }
     ESP_LOGI(TAG, "qweather now lookup: %s via %s", city_id, qweather_api_host());
-    char *response = alloc_qweather_response("now", kQweatherNowResponseBufferSize);
+    QweatherResponseBuffer response("now", kQweatherNowResponseBufferSize);
     if (!response) {
         return false;
     }
-    if (http_get_text(url, response, kQweatherNowResponseBufferSize, g_weather_api_key) != ESP_OK) {
+    if (http_get_text(url, response.get(), kQweatherNowResponseBufferSize, g_weather_api_key) != ESP_OK) {
         ESP_LOGW(TAG, "qweather now http failed");
-        free(response);
         return false;
     }
-    cJSON *root = cJSON_Parse(response);
+    QweatherJsonRoot root(response.get());
     if (!root) {
-        log_response_preview("qweather now", response);
-        free(response);
+        log_response_preview("qweather now", response.get());
         return false;
     }
     bool ok = false;
-    cJSON *code = cJSON_GetObjectItem(root, "code");
-    cJSON *now = cJSON_GetObjectItem(root, "now");
+    cJSON *code = cJSON_GetObjectItem(root.get(), "code");
+    cJSON *now = cJSON_GetObjectItem(root.get(), "now");
     if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && now) {
         ok = json_copy_string(now, "text", weather->text, sizeof(weather->text)) &&
              json_copy_string(now, "icon", weather->icon, sizeof(weather->icon)) &&
@@ -497,8 +537,6 @@ bool qweather_fetch_now(const char *city_id, WeatherData *weather)
         ESP_LOGW(TAG, "qweather now failed code=%s",
                  cJSON_IsString(code) ? code->valuestring : "missing");
     }
-    cJSON_Delete(root);
-    free(response);
     return ok;
 }
 
@@ -552,27 +590,25 @@ static bool qweather_fetch_daily_days(const char *city_id, int days, WeatherFore
         return false;
     }
     ESP_LOGI(TAG, "qweather daily lookup: %s %dd via %s", city_id, days, qweather_api_host());
-    char *response = alloc_qweather_response("daily", kQweatherDailyResponseBufferSize);
+    QweatherResponseBuffer response("daily", kQweatherDailyResponseBufferSize);
     if (!response) {
         return false;
     }
-    esp_err_t http_err = http_get_text(url, response, kQweatherDailyResponseBufferSize, g_weather_api_key);
+    esp_err_t http_err = http_get_text(url, response.get(), kQweatherDailyResponseBufferSize, g_weather_api_key);
     if (http_err != ESP_OK) {
         ESP_LOGW(TAG, "qweather daily http failed err=%s", esp_err_to_name(http_err));
-        free(response);
         return false;
     }
-    cJSON *root = cJSON_Parse(response);
+    QweatherJsonRoot root(response.get());
     if (!root) {
-        log_response_preview("qweather daily", response);
-        free(response);
+        log_response_preview("qweather daily", response.get());
         return false;
     }
 
     WeatherForecastData next = {};
     bool ok = false;
-    cJSON *code = cJSON_GetObjectItem(root, "code");
-    cJSON *daily = cJSON_GetObjectItem(root, "daily");
+    cJSON *code = cJSON_GetObjectItem(root.get(), "code");
+    cJSON *daily = cJSON_GetObjectItem(root.get(), "daily");
     if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && cJSON_IsArray(daily)) {
         int count = cJSON_GetArraySize(daily);
         if (count > kWeatherForecastDays) {
@@ -611,8 +647,6 @@ static bool qweather_fetch_daily_days(const char *city_id, int days, WeatherFore
         ESP_LOGW(TAG, "qweather daily failed code=%s",
                  cJSON_IsString(code) ? code->valuestring : "missing");
     }
-    cJSON_Delete(root);
-    free(response);
     return ok;
 }
 
@@ -646,27 +680,25 @@ bool qweather_fetch_air(const char *city_id, WeatherAirData *air)
         return false;
     }
     ESP_LOGI(TAG, "qweather air lookup: %s via %s", city_id, qweather_api_host());
-    char *response = alloc_qweather_response("air", kQweatherAirResponseBufferSize);
+    QweatherResponseBuffer response("air", kQweatherAirResponseBufferSize);
     if (!response) {
         return false;
     }
-    esp_err_t http_err = http_get_text(url, response, kQweatherAirResponseBufferSize, g_weather_api_key);
+    esp_err_t http_err = http_get_text(url, response.get(), kQweatherAirResponseBufferSize, g_weather_api_key);
     if (http_err != ESP_OK) {
         ESP_LOGW(TAG, "qweather air http failed err=%s", esp_err_to_name(http_err));
-        free(response);
         return false;
     }
 
-    cJSON *root = cJSON_Parse(response);
+    QweatherJsonRoot root(response.get());
     if (!root) {
-        log_response_preview("qweather air", response);
-        free(response);
+        log_response_preview("qweather air", response.get());
         return false;
     }
     WeatherAirData next = {};
     bool ok = false;
-    cJSON *code = cJSON_GetObjectItem(root, "code");
-    cJSON *now = cJSON_GetObjectItem(root, "now");
+    cJSON *code = cJSON_GetObjectItem(root.get(), "code");
+    cJSON *now = cJSON_GetObjectItem(root.get(), "now");
     if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && now) {
         ok = json_copy_string(now, "aqi", next.aqi, sizeof(next.aqi)) &&
              json_copy_string(now, "category", next.category, sizeof(next.category));
@@ -681,8 +713,6 @@ bool qweather_fetch_air(const char *city_id, WeatherAirData *air)
         ESP_LOGW(TAG, "qweather air failed code=%s",
                  cJSON_IsString(code) ? code->valuestring : "missing");
     }
-    cJSON_Delete(root);
-    free(response);
     return ok;
 }
 

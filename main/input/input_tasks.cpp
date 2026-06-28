@@ -21,10 +21,10 @@ bool low_refresh_button_idle_context()
     if (g_low_battery_mode) {
         return true;
     }
-    return g_active_work_page == 1 ||
-           g_active_work_page == 2 ||
-           g_active_work_page == 3 ||
-           g_active_work_page == 4;
+    return g_active_work_page == kWorkPageHistory ||
+           g_active_work_page == kWorkPageGallery ||
+           g_active_work_page == kWorkPageCalendar ||
+           g_active_work_page == kWorkPageWeatherBoard;
 }
 } // namespace
 

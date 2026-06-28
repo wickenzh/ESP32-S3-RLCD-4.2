@@ -380,9 +380,9 @@ int settings_secondary_count(int primary)
     case kSettingsPrimarySound:
         return 4;
     case kSettingsPrimaryDisplay:
-        return 7;
+        return kDisplaySettingsSecondaryCount;
     case kSettingsPrimarySystem:
-        return 5;
+        return kSystemSettingsSecondaryCount;
     default:
         return 0;
     }
@@ -586,13 +586,26 @@ bool update_settings_page()
         strlcpy(secondary_items[3], "日历", sizeof(secondary_items[3]));
         strlcpy(secondary_items[4], "天气看板", sizeof(secondary_items[4]));
         strlcpy(secondary_items[5], "翻页时钟", sizeof(secondary_items[5]));
-        strlcpy(secondary_items[6], "页面顺序", sizeof(secondary_items[6]));
+        strlcpy(secondary_items[kDisplaySettingsOrderItem],
+                "页面顺序",
+                sizeof(secondary_items[kDisplaySettingsOrderItem]));
     } else {
-        snprintf(secondary_items[0], sizeof(secondary_items[0]), "离线模式 %s", g_offline_mode_ui_enabled ? "开" : "关");
-        strlcpy(secondary_items[1], "网络检测", sizeof(secondary_items[1]));
-        strlcpy(secondary_items[2], g_factory_reset_confirm_pending ? "确认恢复" : "恢复出厂设置", sizeof(secondary_items[2]));
-        strlcpy(secondary_items[3], "关于本机", sizeof(secondary_items[3]));
-        strlcpy(secondary_items[4], "检查更新", sizeof(secondary_items[4]));
+        snprintf(secondary_items[kSystemSettingsOfflineItem],
+                 sizeof(secondary_items[kSystemSettingsOfflineItem]),
+                 "离线模式 %s",
+                 g_offline_mode_ui_enabled ? "开" : "关");
+        strlcpy(secondary_items[kSystemSettingsNetworkDiagItem],
+                "网络检测",
+                sizeof(secondary_items[kSystemSettingsNetworkDiagItem]));
+        strlcpy(secondary_items[kSystemSettingsFactoryResetItem],
+                g_factory_reset_confirm_pending ? "确认恢复" : "恢复出厂设置",
+                sizeof(secondary_items[kSystemSettingsFactoryResetItem]));
+        strlcpy(secondary_items[kSystemSettingsInfoItem],
+                "关于本机",
+                sizeof(secondary_items[kSystemSettingsInfoItem]));
+        strlcpy(secondary_items[kSystemSettingsOtaItem],
+                "检查更新",
+                sizeof(secondary_items[kSystemSettingsOtaItem]));
     }
     static bool last_page_order_mode = false;
     static int last_page_order_selection = -1;
@@ -630,7 +643,6 @@ bool update_settings_page()
             continue;
         }
         if (g_settings_page_order_mode) {
-            static const char *page_names[kWorkPageCount] = {"天气时钟", "温度历史", "图片时钟", "日历", "天气看板", "翻页时钟"};
             static const int kOrderGridRowY[3] = {66, 105, 144};
             static constexpr int kOrderGridLeftX = 150;
             static constexpr int kOrderGridRightX = 267;
@@ -640,7 +652,8 @@ bool update_settings_page()
             lv_obj_set_pos(g_settings_labels[slot], col == 0 ? kOrderGridLeftX : kOrderGridRightX, kOrderGridRowY[row]);
             lv_obj_set_size(g_settings_labels[slot], kOrderGridColW, 30);
             if (i < kWorkPageCount) {
-                snprintf(secondary_items[i], sizeof(secondary_items[i]), "%d %s", i + 1, page_names[g_work_page_order[i]]);
+                snprintf(secondary_items[i], sizeof(secondary_items[i]), "%d %s", i + 1,
+                         work_page_name(g_work_page_order[i]));
             }
             if (g_settings_switch_dots[i]) {
                 set_obj_visible(g_settings_switch_dots[i], false);
@@ -651,7 +664,9 @@ bool update_settings_page()
         } else if (primary == kSettingsPrimaryDisplay || primary == kSettingsPrimarySystem) {
             int col = i & 1;
             int row = i >> 1;
-            bool grid_item = primary == kSettingsPrimaryDisplay ? i < 6 : i < 4;
+            bool grid_item = primary == kSettingsPrimaryDisplay
+                                 ? i < kDisplaySettingsPageItemCount
+                                 : i < kSystemSettingsGridItemCount;
             if (grid_item) {
                 static const int kGridRowY[3] = {66, 105, 144};
                 static constexpr int kGridLeftX = 150;
@@ -702,7 +717,7 @@ bool update_settings_page()
                 bool selected_item = g_settings_page_order_mode ? i == g_settings_page_order_selection :
                                      (g_settings_focus_secondary && i == selected);
                 style_settings_item(g_settings_labels[slot], selected_item);
-                if (primary == kSettingsPrimarySystem && i < 4) {
+                if (primary == kSettingsPrimarySystem && i < kSystemSettingsGridItemCount) {
                     lv_obj_set_style_pad_left(g_settings_labels[slot], 4, LV_PART_MAIN);
                     lv_obj_set_style_pad_right(g_settings_labels[slot], 4, LV_PART_MAIN);
                 }
@@ -717,20 +732,16 @@ bool update_settings_page()
                 dot_visible = true;
                 dot_on = i == 2 ? g_hourly_chime_enabled : g_hourly_chime_all_day;
             }
-        } else if (visible && primary == kSettingsPrimaryDisplay && !g_settings_page_order_mode && i < 6) {
+        } else if (visible &&
+                   primary == kSettingsPrimaryDisplay &&
+                   !g_settings_page_order_mode &&
+                   i < kDisplaySettingsPageItemCount) {
             dot_visible = true;
-            if (i == 0) {
+            int page = display_settings_item_work_page(i);
+            if (page == kWorkPageWeatherClock) {
                 dot_on = true;
-            } else if (i == 1) {
-                dot_on = is_work_page_enabled(2);
-            } else if (i == 2) {
-                dot_on = is_work_page_enabled(1);
-            } else if (i == 3) {
-                dot_on = is_work_page_enabled(3);
-            } else if (i == 4) {
-                dot_on = is_work_page_enabled(4);
-            } else if (i == 5) {
-                dot_on = is_work_page_enabled(5);
+            } else {
+                dot_on = is_work_page_enabled(page);
             }
         }
         if (g_settings_switch_dots[i]) {
@@ -750,7 +761,7 @@ bool update_settings_page()
             }
         }
     }
-    bool ota_panel_visible = primary == kSettingsPrimarySystem && selected == 4;
+    bool ota_panel_visible = primary == kSettingsPrimarySystem && selected == kSystemSettingsOtaItem;
     if (g_settings_ota_status_label) {
         char ota_line[96] = "";
         char ota_hint[48] = "";

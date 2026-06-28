@@ -1,9 +1,7 @@
 // 执行 NTP 时间同步并维护系统可信时间状态。
 #include "network_services.h"
 
-#include "audio_services.h"
 #include "sensor_services.h"
-#include "ui_views.h"
 
 namespace {
 constexpr const char *const kNtpServers[] = {

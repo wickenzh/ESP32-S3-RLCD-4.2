@@ -2,7 +2,7 @@
 #include "app_state.h"
 
 const char *const TAG = "WeatherClock";
-const char *const APP_VERSION = "v1.4.35";
+const char *const APP_VERSION = "v1.4.36";
 #ifndef WEATHER_CLOCK_BUILD_DATE
 #define WEATHER_CLOCK_BUILD_DATE "unknown"
 #endif
@@ -110,8 +110,15 @@ HourlySensorHistoryBlob g_hourly_history;
 int64_t g_last_hourly_saved_at = 0;
 uint32_t g_hourly_history_version = 0;
 volatile int g_active_work_page = 0;
-uint8_t g_work_page_enabled_mask = 0x3F;
-uint8_t g_work_page_order[kWorkPageCount] = {0, 5, 2, 1, 3, 4};
+uint8_t g_work_page_enabled_mask = (uint8_t)((1U << kWorkPageCount) - 1);
+uint8_t g_work_page_order[kWorkPageCount] = {
+    kWorkPageWeatherClock,
+    kWorkPageFlipClock,
+    kWorkPageGallery,
+    kWorkPageHistory,
+    kWorkPageCalendar,
+    kWorkPageWeatherBoard,
+};
 lv_obj_t *g_clock_root;
 lv_obj_t *g_history_root;
 lv_obj_t *g_gallery_root;
