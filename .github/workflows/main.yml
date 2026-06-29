@@ -1,0 +1,52 @@
+name: Build and Release ESP-IDF Firmware
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.3
+          target: esp32s3
+          path: .
+
+      - name: Package firmware
+        run: |
+          mkdir -p release
+          cp build/*.bin release/ 2>/dev/null || true
+          cp build/bootloader/*.bin release/ 2>/dev/null || true
+          cp build/partition_table/*.bin release/ 2>/dev/null || true
+          cp build/*.elf release/ 2>/dev/null || true
+          cp build/*.map release/ 2>/dev/null || true
+          cd release
+          zip -r esp32-firmware-latest.zip .
+
+      - name: Create or update latest release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          name: Latest Firmware
+          body: |
+            自动编译生成的最新 ESP32 固件。
+
+            Commit: ${{ github.sha }}
+          files: release/esp32-firmware-latest.zip
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
