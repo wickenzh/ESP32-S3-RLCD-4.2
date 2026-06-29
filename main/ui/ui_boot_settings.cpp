@@ -376,9 +376,9 @@ int settings_secondary_count(int primary)
 {
     switch (primary) {
     case kSettingsPrimaryNetwork:
-        return 4;
+        return kNetworkSettingsSecondaryCount;
     case kSettingsPrimarySound:
-        return 4;
+        return kSoundSettingsSecondaryCount;
     case kSettingsPrimaryDisplay:
         return kDisplaySettingsSecondaryCount;
     case kSettingsPrimarySystem:
@@ -566,19 +566,40 @@ bool update_settings_page()
     }
 
     if (primary == kSettingsPrimaryNetwork) {
-        strlcpy(secondary_items[0], "同步时间", sizeof(secondary_items[0]));
-        strlcpy(secondary_items[1], "同步天气", sizeof(secondary_items[1]));
-        strlcpy(secondary_items[2], "更新一言", sizeof(secondary_items[2]));
+        strlcpy(secondary_items[kNetworkSettingsNtpItem],
+                "同步时间",
+                sizeof(secondary_items[kNetworkSettingsNtpItem]));
+        strlcpy(secondary_items[kNetworkSettingsWeatherItem],
+                "同步天气",
+                sizeof(secondary_items[kNetworkSettingsWeatherItem]));
+        strlcpy(secondary_items[kNetworkSettingsSayingItem],
+                "更新一言",
+                sizeof(secondary_items[kNetworkSettingsSayingItem]));
         if (g_has_manual_weather_city) {
-            snprintf(secondary_items[3], sizeof(secondary_items[3]), "天气城市 %s", g_manual_weather_city);
+            snprintf(secondary_items[kNetworkSettingsWeatherCityItem],
+                     sizeof(secondary_items[kNetworkSettingsWeatherCityItem]),
+                     "天气城市 %s",
+                     g_manual_weather_city);
         } else {
-            strlcpy(secondary_items[3], "天气城市 自动", sizeof(secondary_items[3]));
+            strlcpy(secondary_items[kNetworkSettingsWeatherCityItem],
+                    "天气城市 自动",
+                    sizeof(secondary_items[kNetworkSettingsWeatherCityItem]));
         }
     } else if (primary == kSettingsPrimarySound) {
-        snprintf(secondary_items[0], sizeof(secondary_items[0]), "音量 %d%%", g_chime_volume_percent);
-        snprintf(secondary_items[1], sizeof(secondary_items[1]), "声音选择 %d", g_chime_sound_index + 1);
-        strlcpy(secondary_items[2], "整点提醒 7:00 - 22:00", sizeof(secondary_items[2]));
-        strlcpy(secondary_items[3], "全天提醒 0:00 - 24:00", sizeof(secondary_items[3]));
+        snprintf(secondary_items[kSoundSettingsVolumeItem],
+                 sizeof(secondary_items[kSoundSettingsVolumeItem]),
+                 "音量 %d%%",
+                 g_chime_volume_percent);
+        snprintf(secondary_items[kSoundSettingsSoundItem],
+                 sizeof(secondary_items[kSoundSettingsSoundItem]),
+                 "声音选择 %d",
+                 g_chime_sound_index + 1);
+        strlcpy(secondary_items[kSoundSettingsHourlyItem],
+                "整点提醒 7:00 - 22:00",
+                sizeof(secondary_items[kSoundSettingsHourlyItem]));
+        strlcpy(secondary_items[kSoundSettingsAllDayItem],
+                "全天提醒 0:00 - 24:00",
+                sizeof(secondary_items[kSoundSettingsAllDayItem]));
     } else if (primary == kSettingsPrimaryDisplay) {
         strlcpy(secondary_items[0], "天气时钟", sizeof(secondary_items[0]));
         strlcpy(secondary_items[1], "图片时钟", sizeof(secondary_items[1]));
@@ -728,9 +749,9 @@ bool update_settings_page()
         bool switch_text_visible = false;
         const char *switch_text = "";
         if (visible && primary == kSettingsPrimarySound) {
-            if (i >= 2) {
+            if (i >= kSoundSettingsHourlyItem) {
                 dot_visible = true;
-                dot_on = i == 2 ? g_hourly_chime_enabled : g_hourly_chime_all_day;
+                dot_on = i == kSoundSettingsHourlyItem ? g_hourly_chime_enabled : g_hourly_chime_all_day;
             }
         } else if (visible &&
                    primary == kSettingsPrimaryDisplay &&

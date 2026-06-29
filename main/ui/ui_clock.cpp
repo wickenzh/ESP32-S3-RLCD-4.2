@@ -442,11 +442,11 @@ void handle_settings_action()
     if (!(primary == kSettingsPrimarySystem && selected == kSystemSettingsOfflineItem)) {
         g_offline_disable_confirm_pending = false;
     }
-    if (!(primary == kSettingsPrimaryNetwork && selected == 3)) {
+    if (!(primary == kSettingsPrimaryNetwork && selected == kNetworkSettingsWeatherCityItem)) {
         g_weather_city_clear_confirm_pending = false;
     }
     if (primary == kSettingsPrimaryNetwork) {
-        if (selected == 3) {
+        if (selected == kNetworkSettingsWeatherCityItem) {
             if (!g_has_manual_weather_city) {
                 set_settings_feedback("请进入配网页修改", 2500);
                 return;
@@ -474,15 +474,15 @@ void handle_settings_action()
             set_settings_feedback("离线模式已开启", 2500);
             return;
         }
-        if (selected == 0) {
+        if (selected == kNetworkSettingsNtpItem) {
             begin_settings_sync(kSettingsSyncNtp, "正在同步时间...");
             ESP_LOGI(TAG, "manual ntp sync requested");
             xEventGroupSetBits(g_app_events, kManualNtpSyncBit);
-        } else if (selected == 1) {
+        } else if (selected == kNetworkSettingsWeatherItem) {
             begin_settings_sync(kSettingsSyncWeather, "正在同步天气...");
             ESP_LOGI(TAG, "manual weather sync requested");
             xEventGroupSetBits(g_app_events, kManualWeatherSyncBit);
-        } else if (selected == 2) {
+        } else if (selected == kNetworkSettingsSayingItem) {
             begin_settings_sync(kSettingsSyncSaying, "正在更新一言...");
             ESP_LOGI(TAG, "manual daily saying sync requested");
             xEventGroupSetBits(g_app_events, kManualSayingSyncBit);
@@ -490,7 +490,7 @@ void handle_settings_action()
         return;
     }
     if (primary == kSettingsPrimarySound) {
-        if (selected == 0) {
+        if (selected == kSoundSettingsVolumeItem) {
             int previous = g_chime_volume_percent;
             static const int kVolumes[] = {20, 40, 60, 80, 100};
             int next = 20;
@@ -510,7 +510,7 @@ void handle_settings_action()
             snprintf(feedback, sizeof(feedback), "音量 %d%%", g_chime_volume_percent);
             set_settings_feedback(feedback, 2500);
             request_settings_confirmation_chime();
-        } else if (selected == 1) {
+        } else if (selected == kSoundSettingsSoundItem) {
             int previous = g_chime_sound_index;
             g_chime_sound_index = (g_chime_sound_index + 1) % kChimeSoundCount;
             if (!save_hourly_chime_setting()) {
@@ -522,7 +522,7 @@ void handle_settings_action()
             snprintf(feedback, sizeof(feedback), "声音 %d", g_chime_sound_index + 1);
             set_settings_feedback(feedback, 2500);
             request_settings_confirmation_chime();
-        } else if (selected == 2) {
+        } else if (selected == kSoundSettingsHourlyItem) {
             bool previous = g_hourly_chime_enabled;
             g_hourly_chime_enabled = !g_hourly_chime_enabled;
             if (!save_hourly_chime_setting()) {
@@ -535,7 +535,7 @@ void handle_settings_action()
             if (g_hourly_chime_enabled) {
                 request_settings_confirmation_chime();
             }
-        } else if (selected == 3) {
+        } else if (selected == kSoundSettingsAllDayItem) {
             bool previous = g_hourly_chime_all_day;
             g_hourly_chime_all_day = !g_hourly_chime_all_day;
             if (!save_hourly_chime_setting()) {
