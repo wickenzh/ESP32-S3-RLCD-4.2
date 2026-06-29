@@ -133,6 +133,9 @@ void build_gallery_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_gallery_root = screen;
 
     build_battery_icon(screen, g_gallery_battery_segments);

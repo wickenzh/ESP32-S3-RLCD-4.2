@@ -1,8 +1,18 @@
 // 提供 LVGL canvas 安全打点、线段、虚线和圆点等基础绘图工具。
 #include "ui_views.h"
 
+namespace {
+constexpr int kDashedLineRunPixels = 5;
+constexpr int kDashedLinePeriodPixels = kDashedLineRunPixels * 2;
+} // namespace
+
 int clamp_int(int value, int min_value, int max_value)
 {
+    if (min_value > max_value) {
+        int tmp = min_value;
+        min_value = max_value;
+        max_value = tmp;
+    }
     if (value < min_value) {
         return min_value;
     }
@@ -57,8 +67,13 @@ void canvas_draw_dashed_hline(lv_obj_t *canvas, int w, int h, int x1, int x2, in
         x1 = x2;
         x2 = tmp;
     }
-    for (int x = x1; x <= x2; ++x) {
-        if (((x - x1) / 5) % 2 == 0) {
+    if (x2 < 0 || x1 >= w) {
+        return;
+    }
+    int draw_x1 = clamp_int(x1, 0, w - 1);
+    int draw_x2 = clamp_int(x2, 0, w - 1);
+    for (int x = draw_x1; x <= draw_x2; ++x) {
+        if (((x - x1) % kDashedLinePeriodPixels) < kDashedLineRunPixels) {
             canvas_set_px_safe(canvas, x, y, w, h, color);
         }
     }
@@ -67,6 +82,9 @@ void canvas_draw_dashed_hline(lv_obj_t *canvas, int w, int h, int x1, int x2, in
 void canvas_draw_filled_circle(lv_obj_t *canvas, int w, int h, int cx, int cy, int radius, lv_color_t color)
 {
     if (!canvas || w <= 0 || h <= 0 || radius < 0) {
+        return;
+    }
+    if (cx + radius < 0 || cx - radius >= w || cy + radius < 0 || cy - radius >= h) {
         return;
     }
     for (int y = -radius; y <= radius; ++y) {

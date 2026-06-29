@@ -32,15 +32,16 @@ static void create_app_task(TaskFunction_t task,
                             TaskHandle_t *handle,
                             BaseType_t core_id)
 {
+    const char *task_name = name ? name : "app_task";
     if (handle) {
         *handle = nullptr;
     }
-    if (!task || !name || stack_depth == 0) {
-        ESP_LOGE(TAG, "invalid task create request");
+    if (!task || stack_depth == 0) {
+        ESP_LOGE(TAG, "%s: invalid task create request", task_name);
         return;
     }
-    if (xTaskCreatePinnedToCore(task, name, stack_depth, nullptr, priority, handle, core_id) != pdPASS) {
-        ESP_LOGE(TAG, "%s task create failed", name);
+    if (xTaskCreatePinnedToCore(task, task_name, stack_depth, nullptr, priority, handle, core_id) != pdPASS) {
+        ESP_LOGE(TAG, "%s task create failed", task_name);
     }
 }
 
@@ -94,8 +95,17 @@ static void create_boot_task_or_signal(TaskFunction_t task,
                                        EventBits_t done_bit,
                                        const char *failure_log)
 {
+    const char *task_name = name ? name : "boot_task";
+    if (handle) {
+        *handle = nullptr;
+    }
+    if (!task || stack_depth == 0) {
+        ESP_LOGW(TAG, "%s: invalid boot task request", failure_log ? failure_log : task_name);
+        xEventGroupSetBits(g_app_events, done_bit);
+        return;
+    }
     if (xTaskCreatePinnedToCore(task,
-                                name,
+                                task_name,
                                 stack_depth,
                                 nullptr,
                                 kHighServiceTaskPriority,

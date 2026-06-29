@@ -14,6 +14,16 @@ constexpr int kHistoryBadgeW = 40;
 constexpr int kHistoryBadgeH = 16;
 constexpr int kHistoryChartCanvasX = 18;
 constexpr int kHistoryChartCanvasY = 82;
+constexpr int kHistoryTimeLabelW = 48;
+constexpr int kHistoryTimeLabelH = 18;
+constexpr int kHistoryTimeLabelY = 274;
+constexpr int kHistoryTimeLabelCenterX[kHistoryAxisTickCount] = {42, 110, 178, 246, 314};
+constexpr int kHistoryAxisLabelX = 332;
+constexpr int kHistoryAxisLabelW = 56;
+constexpr int kHistoryAxisLabelH = 18;
+constexpr int kHistoryTempAxisLabelY = 84;
+constexpr int kHistoryHumiAxisLabelY = 186;
+constexpr int kHistoryAxisLabelRowGap = 30;
 } // namespace
 
 void style_history_value_badge(lv_obj_t *label)
@@ -359,6 +369,9 @@ void build_history_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_history_root = screen;
 
     build_battery_icon(screen, g_history_battery_segments);
@@ -391,14 +404,29 @@ void build_history_page()
     lv_obj_move_foreground(temp_title);
     lv_obj_move_foreground(humi_title);
 
-    const int time_x[5] = {42, 110, 178, 246, 314};
-    for (int i = 0; i < 5; ++i) {
-        g_history_time_labels[i] = make_label_with_font(screen, time_x[i] - 20, 274, 48, 18, "--:--", &lv_font_montserrat_14);
+    for (int i = 0; i < kHistoryAxisTickCount; ++i) {
+        g_history_time_labels[i] = make_label_with_font(screen,
+                                                        kHistoryTimeLabelCenterX[i] - kHistoryTimeLabelW / 2,
+                                                        kHistoryTimeLabelY,
+                                                        kHistoryTimeLabelW,
+                                                        kHistoryTimeLabelH,
+                                                        "--:--",
+                                                        &lv_font_montserrat_14);
         lv_obj_set_style_text_align(g_history_time_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     }
-    for (int i = 0; i < 3; ++i) {
-        g_history_temp_axis_labels[i] = make_label(screen, 332, 84 + i * 30, 56, 18, "--");
-        g_history_humi_axis_labels[i] = make_label(screen, 332, 186 + i * 30, 56, 18, "--");
+    for (int i = 0; i < kHistoryAxisValueCount; ++i) {
+        g_history_temp_axis_labels[i] = make_label(screen,
+                                                   kHistoryAxisLabelX,
+                                                   kHistoryTempAxisLabelY + i * kHistoryAxisLabelRowGap,
+                                                   kHistoryAxisLabelW,
+                                                   kHistoryAxisLabelH,
+                                                   "--");
+        g_history_humi_axis_labels[i] = make_label(screen,
+                                                   kHistoryAxisLabelX,
+                                                   kHistoryHumiAxisLabelY + i * kHistoryAxisLabelRowGap,
+                                                   kHistoryAxisLabelW,
+                                                   kHistoryAxisLabelH,
+                                                   "--");
         lv_obj_set_style_text_align(g_history_temp_axis_labels[i], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
         lv_obj_set_style_text_align(g_history_humi_axis_labels[i], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     }

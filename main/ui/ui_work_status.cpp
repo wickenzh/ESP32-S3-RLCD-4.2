@@ -71,7 +71,11 @@ void build_work_page_status_bar(lv_obj_t *screen,
     }
     if (date_label) {
         *date_label = make_label(screen, kStatusDateX, kStatusDateY, kStatusDateW, kStatusDateH, "----/--/-- / 星期-");
-        lv_obj_set_style_text_align(*date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+        if (*date_label) {
+            lv_obj_set_style_text_align(*date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+        } else {
+            ESP_LOGW(TAG, "work status date label create failed page=%d", page);
+        }
     }
     if (summary_label) {
         *summary_label = make_label_with_font(screen,
@@ -81,7 +85,11 @@ void build_work_page_status_bar(lv_obj_t *screen,
                                               kStatusSummaryH,
                                               "--C --%",
                                               &lv_font_montserrat_16);
-        style_work_page_sensor_summary(*summary_label);
+        if (*summary_label) {
+            style_work_page_sensor_summary(*summary_label);
+        } else {
+            ESP_LOGW(TAG, "work status summary label create failed page=%d", page);
+        }
     }
     if (time_label) {
         *time_label = nullptr;
@@ -94,8 +102,12 @@ void build_work_page_status_bar(lv_obj_t *screen,
                                            kStatusTimeH,
                                            "--:--",
                                            &lv_font_montserrat_16);
-        lv_obj_set_style_text_align(*time_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(*time_label, 0, LV_PART_MAIN);
+        if (*time_label) {
+            lv_obj_set_style_text_align(*time_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(*time_label, 0, LV_PART_MAIN);
+        } else {
+            ESP_LOGW(TAG, "work status time label create failed page=%d", page);
+        }
     }
     if (page > 0 && page < kWorkPageCount) {
         build_status_icon(screen,

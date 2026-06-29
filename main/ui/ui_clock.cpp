@@ -6,12 +6,21 @@
 #include "ota_services.h"
 #include "sensor_services.h"
 
+namespace {
+constexpr int kChimeVolumeLevels[] = {20, 40, 60, 80, 100};
+constexpr int kChimeVolumeLevelCount = sizeof(kChimeVolumeLevels) / sizeof(kChimeVolumeLevels[0]);
+constexpr int kDefaultChimeVolumePercent = kChimeVolumeLevels[0];
+} // namespace
+
 void build_clock_ui()
 {
     if (g_clock_root) {
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_clock_root = screen;
 
     g_date_label = make_label(screen, 198, 15, 182, 26, "----/--/-- / 星期-");
@@ -316,7 +325,12 @@ void build_clock_ui()
         "STA SSID: --",
         "STA IP: --",
     };
-    for (int i = 0; i < 6; ++i) {
+    constexpr size_t kSetupStatusLabelCount = sizeof(setup_y) / sizeof(setup_y[0]);
+    static_assert(kSetupStatusLabelCount == sizeof(setup_text) / sizeof(setup_text[0]),
+                  "setup status coordinates and text must stay in sync");
+    static_assert(kSetupStatusLabelCount == sizeof(g_setup_status_labels) / sizeof(g_setup_status_labels[0]),
+                  "setup status label storage must match the rendered row count");
+    for (size_t i = 0; i < kSetupStatusLabelCount; ++i) {
         g_setup_status_labels[i] = make_label_with_font(screen,
                                                         26,
                                                         setup_y[i],
@@ -492,11 +506,10 @@ void handle_settings_action()
     if (primary == kSettingsPrimarySound) {
         if (selected == kSoundSettingsVolumeItem) {
             int previous = g_chime_volume_percent;
-            static const int kVolumes[] = {20, 40, 60, 80, 100};
-            int next = 20;
-            for (int i = 0; i < 5; ++i) {
-                if (g_chime_volume_percent == kVolumes[i]) {
-                    next = kVolumes[(i + 1) % 5];
+            int next = kDefaultChimeVolumePercent;
+            for (int i = 0; i < kChimeVolumeLevelCount; ++i) {
+                if (g_chime_volume_percent == kChimeVolumeLevels[i]) {
+                    next = kChimeVolumeLevels[(i + 1) % kChimeVolumeLevelCount];
                     break;
                 }
             }

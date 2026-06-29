@@ -15,6 +15,7 @@ constexpr size_t kQweatherNowResponseBufferSize = 8192;
 constexpr size_t kQweatherAlertResponseBufferSize = 16384;
 constexpr size_t kQweatherDailyResponseBufferSize = 24576;
 constexpr size_t kQweatherAirResponseBufferSize = 8192;
+constexpr size_t kIpRegionMaxParts = 5;
 
 bool format_qweather_url(char *out, size_t out_len, const char *stage, const char *fmt, ...)
 {
@@ -106,6 +107,11 @@ public:
 private:
     cJSON *root_;
 };
+
+bool qweather_code_ok(const cJSON *code)
+{
+    return cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0;
+}
 } // namespace
 
 bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size_t city_len)
@@ -134,10 +140,10 @@ bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size
         if (cJSON_IsString(region) && region->valuestring) {
             char region_copy[96] = {};
             strlcpy(region_copy, region->valuestring, sizeof(region_copy));
-            char *parts[5] = {};
-            int count = 0;
+            char *parts[kIpRegionMaxParts] = {};
+            size_t count = 0;
             char *token = strtok(region_copy, " ");
-            while (token && count < (int)(sizeof(parts) / sizeof(parts[0]))) {
+            while (token && count < kIpRegionMaxParts) {
                 if (token[0] != '\0') {
                     parts[count++] = token;
                 }
@@ -206,7 +212,7 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
     cJSON *code = cJSON_GetObjectItem(root.get(), "code");
     cJSON *locations = cJSON_GetObjectItem(root.get(), "location");
     cJSON *first = cJSON_IsArray(locations) ? cJSON_GetArrayItem(locations, 0) : nullptr;
-    if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && first) {
+    if (qweather_code_ok(code) && first) {
         ok = json_copy_string(first, "id", city_id, city_id_len) &&
              json_copy_string(first, "name", city_name, city_name_len);
         if (ok) {
@@ -528,7 +534,7 @@ bool qweather_fetch_now(const char *city_id, WeatherData *weather)
     bool ok = false;
     cJSON *code = cJSON_GetObjectItem(root.get(), "code");
     cJSON *now = cJSON_GetObjectItem(root.get(), "now");
-    if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && now) {
+    if (qweather_code_ok(code) && now) {
         ok = json_copy_string(now, "text", weather->text, sizeof(weather->text)) &&
              json_copy_string(now, "icon", weather->icon, sizeof(weather->icon)) &&
              json_copy_string(now, "temp", weather->temp, sizeof(weather->temp)) &&
@@ -609,7 +615,7 @@ static bool qweather_fetch_daily_days(const char *city_id, int days, WeatherFore
     bool ok = false;
     cJSON *code = cJSON_GetObjectItem(root.get(), "code");
     cJSON *daily = cJSON_GetObjectItem(root.get(), "daily");
-    if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && cJSON_IsArray(daily)) {
+    if (qweather_code_ok(code) && cJSON_IsArray(daily)) {
         int count = cJSON_GetArraySize(daily);
         if (count > kWeatherForecastDays) {
             count = kWeatherForecastDays;
@@ -699,7 +705,7 @@ bool qweather_fetch_air(const char *city_id, WeatherAirData *air)
     bool ok = false;
     cJSON *code = cJSON_GetObjectItem(root.get(), "code");
     cJSON *now = cJSON_GetObjectItem(root.get(), "now");
-    if (cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0 && now) {
+    if (qweather_code_ok(code) && now) {
         ok = json_copy_string(now, "aqi", next.aqi, sizeof(next.aqi)) &&
              json_copy_string(now, "category", next.category, sizeof(next.category));
         json_copy_string(now, "primary", next.primary, sizeof(next.primary));

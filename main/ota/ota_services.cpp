@@ -42,6 +42,9 @@ static constexpr size_t kOtaRedirectUrlLen = 1024;
 static constexpr int kOtaHttpTxBufferSize = 2048;
 static constexpr size_t kOtaManifestResponseBufferSize = 2048;
 static constexpr int kOtaManifestSourceNameLen = 16;
+static constexpr int kSemverComponentCount = 3;
+static constexpr size_t kSha256ByteCount = 32;
+static constexpr size_t kSha256HexLen = kSha256ByteCount * 2;
 static constexpr uint32_t kOtaFailureHoldMs = 5000;
 static constexpr uint32_t kOtaSuccessHoldMs = 6000;
 static constexpr uint32_t kOtaOfflineHoldMs = 3500;
@@ -376,7 +379,7 @@ static int compare_versions(const char *remote, const char *current)
     }
     if (*remote == 'v' || *remote == 'V') ++remote;
     if (*current == 'v' || *current == 'V') ++current;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < kSemverComponentCount; ++i) {
         int r = parse_semver_component(&remote);
         int c = parse_semver_component(&current);
         if (r != c) {
@@ -391,7 +394,7 @@ static bool valid_sha256_string(const char *text)
     if (!text) {
         return false;
     }
-    if (strlen(text) != 64) {
+    if (strlen(text) != kSha256HexLen) {
         return false;
     }
     for (const char *p = text; *p; ++p) {
@@ -410,7 +413,7 @@ static void sha256_to_hex(const uint8_t *hash, char *out, size_t out_len)
     if (!out) {
         return;
     }
-    if (out_len < 65) {
+    if (out_len <= kSha256HexLen) {
         if (out_len > 0) out[0] = '\0';
         return;
     }
@@ -418,11 +421,11 @@ static void sha256_to_hex(const uint8_t *hash, char *out, size_t out_len)
         out[0] = '\0';
         return;
     }
-    for (int i = 0; i < 32; ++i) {
+    for (size_t i = 0; i < kSha256ByteCount; ++i) {
         out[i * 2] = kHex[hash[i] >> 4];
         out[i * 2 + 1] = kHex[hash[i] & 0x0F];
     }
-    out[64] = '\0';
+    out[kSha256HexLen] = '\0';
 }
 
 static bool parse_ota_manifest(const char *json, OtaManifest *manifest)

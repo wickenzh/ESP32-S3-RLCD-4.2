@@ -43,6 +43,11 @@ void release_battery_gauge()
 bool init_battery_gauge()
 {
     if (g_battery_adc_ready) {
+        if (!g_battery_adc) {
+            ESP_LOGW(TAG, "battery adc marked ready without handle, resetting");
+            release_battery_gauge();
+            return false;
+        }
         return true;
     }
 

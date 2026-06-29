@@ -8,6 +8,65 @@
 
 namespace {
 TickType_t s_settings_primary_exit_block_until = 0;
+constexpr int kNetworkDiagLocalIpLine = 0;
+constexpr int kNetworkDiagPublicIpLine = 1;
+constexpr int kNetworkDiagGridFirstLine = 2;
+constexpr int kNetworkDiagWideLine = kNetworkDiagLineCount - 1;
+constexpr int kNetworkDiagGridColumns = 2;
+constexpr int kNetworkDiagWideX = 30;
+constexpr int kNetworkDiagWideW = 340;
+constexpr int kNetworkDiagLocalIpY = 88;
+constexpr int kNetworkDiagPublicIpY = 112;
+constexpr int kNetworkDiagGridStartY = 142;
+constexpr int kNetworkDiagGridRowGap = 28;
+constexpr int kNetworkDiagGridColGap = 174;
+constexpr int kNetworkDiagGridW = 160;
+constexpr int kSettingsOtaBarFrameX = 164;
+constexpr int kSettingsOtaBarFrameY = 203;
+constexpr int kSettingsOtaBarFrameW = 200;
+constexpr int kSettingsOtaBarFrameH = 9;
+constexpr int kSettingsOtaBarInset = 2;
+constexpr int kSettingsOtaBarFillW = kSettingsOtaBarFrameW - kSettingsOtaBarInset * 2;
+constexpr int kSettingsOtaBarFillH = kSettingsOtaBarFrameH - kSettingsOtaBarInset * 2;
+constexpr int kSettingsOtaProgressMax = 100;
+constexpr int kSettingsPrimaryX = 12;
+constexpr int kSettingsPrimaryW = 112;
+constexpr int kSettingsSecondaryX = 150;
+constexpr int kSettingsSecondaryW = 228;
+constexpr int kSettingsSecondaryH = 30;
+constexpr int kSettingsSwitchDotX = 362;
+constexpr int kSettingsSwitchDotYOffset = 8;
+constexpr int kSettingsSwitchDotSize = 12;
+constexpr int kSettingsSwitchTextX = 352;
+constexpr int kSettingsSwitchTextYOffset = 6;
+constexpr int kSettingsSwitchTextW = 28;
+constexpr int kSettingsSwitchTextH = 18;
+constexpr int kSettingsListRowY[] = {66, 105, 144, 183, 222, 222, 222};
+constexpr int kSettingsGridRowY[] = {66, 105, 144};
+constexpr size_t kSettingsListRowCount = sizeof(kSettingsListRowY) / sizeof(kSettingsListRowY[0]);
+constexpr size_t kSettingsGridRowCount = sizeof(kSettingsGridRowY) / sizeof(kSettingsGridRowY[0]);
+constexpr int kSettingsGridColumns = 2;
+constexpr int kSettingsGridLeftX = 150;
+constexpr int kSettingsGridRightX = 267;
+constexpr int kSettingsGridColW = 111;
+constexpr int kSettingsGridSwitchDotXOffset = 92;
+constexpr int kSettingsGridSwitchDotYOffset = 9;
+constexpr int kSettingsGridSwitchTextSystemXOffset = 80;
+constexpr int kSettingsGridSwitchTextDisplayXOffset = 90;
+constexpr int kSettingsGridSwitchTextSystemW = 26;
+constexpr int kSettingsGridSwitchTextDisplayW = 30;
+constexpr int kSettingsGridSwitchTextYOffset = 7;
+constexpr int kBatterySegmentCount = 5;
+constexpr int kBatteryPercentPerSegment = 20;
+constexpr int kBatterySegmentX = 3;
+constexpr int kBatterySegmentY = 4;
+constexpr int kBatterySegmentW = 4;
+constexpr int kBatterySegmentH = 8;
+constexpr int kBatterySegmentGap = 6;
+constexpr int kInfoLabelY[] = {70, 104, 138, 172, 206};
+constexpr size_t kInfoLabelCount = sizeof(kInfoLabelY) / sizeof(kInfoLabelY[0]);
+static_assert(kSettingsListRowCount == kSettingsSecondaryMaxCount);
+static_assert(kSettingsGridRowCount * kSettingsGridColumns >= kWorkPageCount);
 }
 
 void draw_boot_anim_frame_index(int frame)
@@ -65,6 +124,9 @@ void finish_boot_anim_to_last_frame()
 
 void style_battery_part(lv_obj_t *obj, bool filled)
 {
+    if (!obj) {
+        return;
+    }
     lv_obj_set_style_bg_color(obj, filled ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
@@ -75,6 +137,9 @@ void style_battery_part(lv_obj_t *obj, bool filled)
 
 void style_battery_frame(lv_obj_t *obj)
 {
+    if (!obj) {
+        return;
+    }
     lv_obj_set_style_bg_color(obj, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_color(obj, lv_color_black(), LV_PART_MAIN);
@@ -123,15 +188,15 @@ void build_battery_icon(lv_obj_t *parent, lv_obj_t **segments)
     lv_obj_set_style_border_width(tip, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(tip, 1, LV_PART_MAIN);
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < kBatterySegmentCount; ++i) {
         segments[i] = lv_obj_create(frame);
         if (!segments[i]) {
             ESP_LOGW(TAG, "battery segment %d create failed", i);
             continue;
         }
         lv_obj_clear_flag(segments[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_pos(segments[i], 3 + i * 6, 4);
-        lv_obj_set_size(segments[i], 4, 8);
+        lv_obj_set_pos(segments[i], kBatterySegmentX + i * kBatterySegmentGap, kBatterySegmentY);
+        lv_obj_set_size(segments[i], kBatterySegmentW, kBatterySegmentH);
         style_battery_part(segments[i], false);
         lv_obj_set_style_border_width(segments[i], 0, LV_PART_MAIN);
         lv_obj_set_style_radius(segments[i], 1, LV_PART_MAIN);
@@ -220,6 +285,9 @@ void build_boot_info_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_info_root = screen;
     lv_obj_add_flag(g_info_root, LV_OBJ_FLAG_HIDDEN);
 
@@ -229,9 +297,10 @@ void build_boot_info_page()
     lv_obj_t *top_line = make_bar(screen, 24, 50, 352, 3);
     set_obj_black(top_line, true);
 
-    static const int y_positions[] = {70, 104, 138, 172, 206};
-    for (int i = 0; i < 5; ++i) {
-        g_info_labels[i] = make_label_with_font(screen, 30, y_positions[i], 340, 24, "--", &lv_font_montserrat_14);
+    static_assert(kInfoLabelCount == sizeof(g_info_labels) / sizeof(g_info_labels[0]),
+                  "System Info labels and row coordinates must stay in sync");
+    for (size_t i = 0; i < kInfoLabelCount; ++i) {
+        g_info_labels[i] = make_label_with_font(screen, 30, kInfoLabelY[i], 340, 24, "--", &lv_font_montserrat_14);
     }
 
     lv_obj_t *bottom_line = make_bar(screen, 24, 238, 352, 3);
@@ -281,6 +350,9 @@ void build_network_diag_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_network_diag_root = screen;
     lv_obj_add_flag(g_network_diag_root, LV_OBJ_FLAG_HIDDEN);
 
@@ -294,23 +366,23 @@ void build_network_diag_page()
     lv_obj_set_style_text_align(g_network_diag_summary_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     for (int i = 0; i < kNetworkDiagLineCount; ++i) {
-        int x = 30;
-        int y = 88;
-        int w = 340;
-        if (i == 0) {
-            y = 88;
-        } else if (i == 1) {
-            y = 112;
+        int x = kNetworkDiagWideX;
+        int y = kNetworkDiagLocalIpY;
+        int w = kNetworkDiagWideW;
+        if (i == kNetworkDiagLocalIpLine) {
+            y = kNetworkDiagLocalIpY;
+        } else if (i == kNetworkDiagPublicIpLine) {
+            y = kNetworkDiagPublicIpY;
         } else {
-            int grid = i - 2;
-            int row = grid / 2;
-            int col = grid & 1;
-            x = 30 + col * 174;
-            y = 142 + row * 28;
-            w = 160;
-            if (i == 8) {
-                x = 30;
-                w = 340;
+            int grid = i - kNetworkDiagGridFirstLine;
+            int row = grid / kNetworkDiagGridColumns;
+            int col = grid % kNetworkDiagGridColumns;
+            x = kNetworkDiagWideX + col * kNetworkDiagGridColGap;
+            y = kNetworkDiagGridStartY + row * kNetworkDiagGridRowGap;
+            w = kNetworkDiagGridW;
+            if (i == kNetworkDiagWideLine) {
+                x = kNetworkDiagWideX;
+                w = kNetworkDiagWideW;
             }
         }
         g_network_diag_labels[i] = make_label(screen, x, y, w, 22, "--");
@@ -362,6 +434,9 @@ void style_settings_item(lv_obj_t *label, bool selected)
 
 static void style_settings_switch_dot(lv_obj_t *dot, bool on, bool selected)
 {
+    if (!dot) {
+        return;
+    }
     lv_color_t fg = selected ? lv_color_white() : lv_color_black();
     lv_color_t bg = selected ? lv_color_black() : lv_color_white();
     lv_obj_set_style_bg_color(dot, on ? fg : bg, LV_PART_MAIN);
@@ -482,6 +557,9 @@ void build_settings_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_settings_root = screen;
     lv_obj_add_flag(g_settings_root, LV_OBJ_FLAG_HIDDEN);
 
@@ -493,35 +571,50 @@ void build_settings_page()
     lv_obj_t *separator = make_bar(screen, 136, 62, 2, 174);
     set_obj_black(separator, true);
 
-    static const int y_positions[] = {66, 105, 144, 183, 222, 222, 222};
     for (int i = 0; i < kSettingsPrimaryCount; ++i) {
-        g_settings_labels[i] = make_label(screen, 12, y_positions[i], 112, 30, "--");
+        g_settings_labels[i] =
+            make_label(screen, kSettingsPrimaryX, kSettingsListRowY[i], kSettingsPrimaryW, kSettingsSecondaryH, "--");
         lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     }
     for (int i = 0; i < kSettingsSecondaryMaxCount; ++i) {
         int slot = kSettingsPrimaryCount + i;
-        g_settings_labels[slot] = make_label(screen, 150, y_positions[i], 228, 30, "--");
+        g_settings_labels[slot] =
+            make_label(screen, kSettingsSecondaryX, kSettingsListRowY[i], kSettingsSecondaryW, kSettingsSecondaryH, "--");
         lv_label_set_long_mode(g_settings_labels[slot], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(g_settings_labels[slot], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         g_settings_switch_dots[i] = lv_obj_create(screen);
-        lv_obj_clear_flag(g_settings_switch_dots[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_pos(g_settings_switch_dots[i], 362, y_positions[i] + 8);
-        lv_obj_set_size(g_settings_switch_dots[i], 12, 12);
-        style_settings_switch_dot(g_settings_switch_dots[i], false, false);
-        lv_obj_add_flag(g_settings_switch_dots[i], LV_OBJ_FLAG_HIDDEN);
-        g_settings_switch_texts[i] = make_label(screen, 352, y_positions[i] + 6, 28, 18, "");
-        lv_obj_set_style_text_align(g_settings_switch_texts[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(g_settings_switch_texts[i], 0, LV_PART_MAIN);
-        lv_label_set_long_mode(g_settings_switch_texts[i], LV_LABEL_LONG_CLIP);
-        lv_obj_add_flag(g_settings_switch_texts[i], LV_OBJ_FLAG_HIDDEN);
+        if (g_settings_switch_dots[i]) {
+            lv_obj_clear_flag(g_settings_switch_dots[i], LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_pos(g_settings_switch_dots[i],
+                           kSettingsSwitchDotX,
+                           kSettingsListRowY[i] + kSettingsSwitchDotYOffset);
+            lv_obj_set_size(g_settings_switch_dots[i], kSettingsSwitchDotSize, kSettingsSwitchDotSize);
+            style_settings_switch_dot(g_settings_switch_dots[i], false, false);
+            lv_obj_add_flag(g_settings_switch_dots[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            ESP_LOGW(TAG, "settings switch dot create failed index=%d", i);
+        }
+        g_settings_switch_texts[i] =
+            make_label(screen,
+                       kSettingsSwitchTextX,
+                       kSettingsListRowY[i] + kSettingsSwitchTextYOffset,
+                       kSettingsSwitchTextW,
+                       kSettingsSwitchTextH,
+                       "");
+        if (g_settings_switch_texts[i]) {
+            lv_obj_set_style_text_align(g_settings_switch_texts[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(g_settings_switch_texts[i], 0, LV_PART_MAIN);
+            lv_label_set_long_mode(g_settings_switch_texts[i], LV_LABEL_LONG_CLIP);
+            lv_obj_add_flag(g_settings_switch_texts[i], LV_OBJ_FLAG_HIDDEN);
+        }
     }
-    g_settings_ota_status_label = make_label(screen, 150, 176, 228, 22, "");
+    g_settings_ota_status_label = make_label(screen, kSettingsSecondaryX, 176, kSettingsSecondaryW, 22, "");
     lv_obj_set_style_text_align(g_settings_ota_status_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     g_settings_ota_bar_frame = lv_obj_create(screen);
     lv_obj_clear_flag(g_settings_ota_bar_frame, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(g_settings_ota_bar_frame, 164, 203);
-    lv_obj_set_size(g_settings_ota_bar_frame, 200, 9);
+    lv_obj_set_pos(g_settings_ota_bar_frame, kSettingsOtaBarFrameX, kSettingsOtaBarFrameY);
+    lv_obj_set_size(g_settings_ota_bar_frame, kSettingsOtaBarFrameW, kSettingsOtaBarFrameH);
     lv_obj_set_style_bg_color(g_settings_ota_bar_frame, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(g_settings_ota_bar_frame, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_color(g_settings_ota_bar_frame, lv_color_black(), LV_PART_MAIN);
@@ -529,11 +622,15 @@ void build_settings_page()
     lv_obj_set_style_radius(g_settings_ota_bar_frame, 3, LV_PART_MAIN);
     lv_obj_set_style_pad_all(g_settings_ota_bar_frame, 0, LV_PART_MAIN);
     lv_obj_add_flag(g_settings_ota_bar_frame, LV_OBJ_FLAG_HIDDEN);
-    g_settings_ota_bar_fill = make_bar(screen, 166, 205, 1, 5);
+    g_settings_ota_bar_fill = make_bar(screen,
+                                       kSettingsOtaBarFrameX + kSettingsOtaBarInset,
+                                       kSettingsOtaBarFrameY + kSettingsOtaBarInset,
+                                       1,
+                                       kSettingsOtaBarFillH);
     set_obj_black(g_settings_ota_bar_fill, true);
     lv_obj_set_style_radius(g_settings_ota_bar_fill, 2, LV_PART_MAIN);
     lv_obj_add_flag(g_settings_ota_bar_fill, LV_OBJ_FLAG_HIDDEN);
-    g_settings_ota_hint_label = make_label(screen, 150, 218, 228, 20, "");
+    g_settings_ota_hint_label = make_label(screen, kSettingsSecondaryX, 218, kSettingsSecondaryW, 20, "");
     lv_obj_set_style_text_align(g_settings_ota_hint_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     g_settings_feedback_label = make_label(screen, 24, 246, 352, 20, "");
@@ -556,7 +653,6 @@ bool update_settings_page()
 
     const char *primary_items[kSettingsPrimaryCount] = {"网络", "声音", "显示", "系统"};
     char secondary_items[kSettingsSecondaryMaxCount][56] = {};
-    static const int y_positions[] = {66, 105, 144, 183, 222, 222, 222};
     int primary = clamp_settings_primary(g_settings_primary_selection);
     int selected = clamp_settings_secondary(primary, g_settings_selection);
     g_settings_primary_selection = primary;
@@ -601,12 +697,11 @@ bool update_settings_page()
                 "全天提醒 0:00 - 24:00",
                 sizeof(secondary_items[kSoundSettingsAllDayItem]));
     } else if (primary == kSettingsPrimaryDisplay) {
-        strlcpy(secondary_items[0], "天气时钟", sizeof(secondary_items[0]));
-        strlcpy(secondary_items[1], "图片时钟", sizeof(secondary_items[1]));
-        strlcpy(secondary_items[2], "温度历史", sizeof(secondary_items[2]));
-        strlcpy(secondary_items[3], "日历", sizeof(secondary_items[3]));
-        strlcpy(secondary_items[4], "天气看板", sizeof(secondary_items[4]));
-        strlcpy(secondary_items[5], "翻页时钟", sizeof(secondary_items[5]));
+        for (int i = 0; i < kDisplaySettingsPageItemCount; ++i) {
+            strlcpy(secondary_items[i],
+                    work_page_name(display_settings_item_work_page(i)),
+                    sizeof(secondary_items[i]));
+        }
         strlcpy(secondary_items[kDisplaySettingsOrderItem],
                 "页面顺序",
                 sizeof(secondary_items[kDisplaySettingsOrderItem]));
@@ -664,14 +759,22 @@ bool update_settings_page()
             continue;
         }
         if (g_settings_page_order_mode) {
-            static const int kOrderGridRowY[3] = {66, 105, 144};
-            static constexpr int kOrderGridLeftX = 150;
-            static constexpr int kOrderGridRightX = 267;
-            static constexpr int kOrderGridColW = 111;
+            if (i >= kWorkPageCount) {
+                set_obj_visible(g_settings_labels[slot], false);
+                if (g_settings_switch_dots[i]) {
+                    set_obj_visible(g_settings_switch_dots[i], false);
+                }
+                if (g_settings_switch_texts[i]) {
+                    set_obj_visible(g_settings_switch_texts[i], false);
+                }
+                continue;
+            }
             int col = i & 1;
             int row = i >> 1;
-            lv_obj_set_pos(g_settings_labels[slot], col == 0 ? kOrderGridLeftX : kOrderGridRightX, kOrderGridRowY[row]);
-            lv_obj_set_size(g_settings_labels[slot], kOrderGridColW, 30);
+            lv_obj_set_pos(g_settings_labels[slot],
+                           col == 0 ? kSettingsGridLeftX : kSettingsGridRightX,
+                           kSettingsGridRowY[row]);
+            lv_obj_set_size(g_settings_labels[slot], kSettingsGridColW, kSettingsSecondaryH);
             if (i < kWorkPageCount) {
                 snprintf(secondary_items[i], sizeof(secondary_items[i]), "%d %s", i + 1,
                          work_page_name(g_work_page_order[i]));
@@ -689,26 +792,30 @@ bool update_settings_page()
                                  ? i < kDisplaySettingsPageItemCount
                                  : i < kSystemSettingsGridItemCount;
             if (grid_item) {
-                static const int kGridRowY[3] = {66, 105, 144};
-                static constexpr int kGridLeftX = 150;
-                static constexpr int kGridRightX = 267;
-                static constexpr int kGridColW = 111;
-                static constexpr int kGridSwitchDotXOffset = 92;
-                int grid_x = col == 0 ? kGridLeftX : kGridRightX;
-                lv_obj_set_pos(g_settings_labels[slot], grid_x, kGridRowY[row]);
-                lv_obj_set_size(g_settings_labels[slot], kGridColW, 30);
+                int grid_x = col == 0 ? kSettingsGridLeftX : kSettingsGridRightX;
+                lv_obj_set_pos(g_settings_labels[slot], grid_x, kSettingsGridRowY[row]);
+                lv_obj_set_size(g_settings_labels[slot], kSettingsGridColW, kSettingsSecondaryH);
                 if (g_settings_switch_dots[i]) {
-                    lv_obj_set_pos(g_settings_switch_dots[i], grid_x + kGridSwitchDotXOffset, kGridRowY[row] + 9);
+                    lv_obj_set_pos(g_settings_switch_dots[i],
+                                   grid_x + kSettingsGridSwitchDotXOffset,
+                                   kSettingsGridRowY[row] + kSettingsGridSwitchDotYOffset);
                 }
                 if (g_settings_switch_texts[i]) {
-                    int status_x = grid_x + (primary == kSettingsPrimarySystem ? 80 : 90);
-                    int status_w = primary == kSettingsPrimarySystem ? 26 : 30;
-                    lv_obj_set_pos(g_settings_switch_texts[i], status_x, kGridRowY[row] + 7);
-                    lv_obj_set_size(g_settings_switch_texts[i], status_w, 18);
+                    int status_x = grid_x +
+                                   (primary == kSettingsPrimarySystem ? kSettingsGridSwitchTextSystemXOffset
+                                                                      : kSettingsGridSwitchTextDisplayXOffset);
+                    int status_w = primary == kSettingsPrimarySystem ? kSettingsGridSwitchTextSystemW
+                                                                     : kSettingsGridSwitchTextDisplayW;
+                    lv_obj_set_pos(g_settings_switch_texts[i],
+                                   status_x,
+                                   kSettingsGridRowY[row] + kSettingsGridSwitchTextYOffset);
+                    lv_obj_set_size(g_settings_switch_texts[i], status_w, kSettingsSwitchTextH);
                 }
             } else {
-                lv_obj_set_pos(g_settings_labels[slot], 150, primary == kSettingsPrimarySystem ? 144 : 183);
-                lv_obj_set_size(g_settings_labels[slot], 228, 30);
+                lv_obj_set_pos(g_settings_labels[slot],
+                               kSettingsSecondaryX,
+                               primary == kSettingsPrimarySystem ? 144 : 183);
+                lv_obj_set_size(g_settings_labels[slot], kSettingsSecondaryW, kSettingsSecondaryH);
                 if (g_settings_switch_dots[i]) {
                     set_obj_visible(g_settings_switch_dots[i], false);
                 }
@@ -717,14 +824,18 @@ bool update_settings_page()
                 }
             }
         } else {
-            lv_obj_set_pos(g_settings_labels[slot], 150, y_positions[i]);
-            lv_obj_set_size(g_settings_labels[slot], 228, 30);
+            lv_obj_set_pos(g_settings_labels[slot], kSettingsSecondaryX, kSettingsListRowY[i]);
+            lv_obj_set_size(g_settings_labels[slot], kSettingsSecondaryW, kSettingsSecondaryH);
             if (g_settings_switch_dots[i]) {
-                lv_obj_set_pos(g_settings_switch_dots[i], 362, y_positions[i] + 8);
+                lv_obj_set_pos(g_settings_switch_dots[i],
+                               kSettingsSwitchDotX,
+                               kSettingsListRowY[i] + kSettingsSwitchDotYOffset);
             }
             if (g_settings_switch_texts[i]) {
-                lv_obj_set_pos(g_settings_switch_texts[i], 352, y_positions[i] + 6);
-                lv_obj_set_size(g_settings_switch_texts[i], 28, 18);
+                lv_obj_set_pos(g_settings_switch_texts[i],
+                               kSettingsSwitchTextX,
+                               kSettingsListRowY[i] + kSettingsSwitchTextYOffset);
+                lv_obj_set_size(g_settings_switch_texts[i], kSettingsSwitchTextW, kSettingsSwitchTextH);
             }
         }
         bool visible = i < secondary_count;
@@ -805,7 +916,7 @@ bool update_settings_page()
                 strlcpy(ota_hint, "正在检查，请等待", sizeof(ota_hint));
             } else if (g_ota_state == kOtaSucceeded) {
                 progress_visible = true;
-                progress = 100;
+                progress = kSettingsOtaProgressMax;
                 snprintf(ota_line, sizeof(ota_line), "%s", g_ota_status);
                 strlcpy(ota_hint, "即将重启", sizeof(ota_hint));
             } else if (g_ota_state == kOtaFailed || g_ota_state == kOtaNoUpdate) {
@@ -827,10 +938,10 @@ bool update_settings_page()
             int clamped = progress;
             if (clamped < 0) {
                 clamped = 0;
-            } else if (clamped > 100) {
-                clamped = 100;
+            } else if (clamped > kSettingsOtaProgressMax) {
+                clamped = kSettingsOtaProgressMax;
             }
-            int fill_w = (196 * clamped) / 100;
+            int fill_w = (kSettingsOtaBarFillW * clamped) / kSettingsOtaProgressMax;
             if (fill_w < 1) {
                 fill_w = 1;
             }
@@ -922,15 +1033,15 @@ void update_battery_segments(lv_obj_t **segments, int percent, bool charging, bo
         if (percent > 100) {
             percent = 100;
         }
-        filled = (percent + 19) / 20;
+        filled = (percent + kBatteryPercentPerSegment - 1) / kBatteryPercentPerSegment;
         if (charging && percent < 100) {
-            blink_index = percent / 20;
-            if (blink_index > 4) {
-                blink_index = 4;
+            blink_index = percent / kBatteryPercentPerSegment;
+            if (blink_index >= kBatterySegmentCount) {
+                blink_index = kBatterySegmentCount - 1;
             }
         }
     }
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < kBatterySegmentCount; ++i) {
         if (segments[i]) {
             bool active = i < filled;
             if (i == blink_index) {

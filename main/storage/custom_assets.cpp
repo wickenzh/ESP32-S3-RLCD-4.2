@@ -349,8 +349,20 @@ void custom_assets_init()
             return;
         }
         if (entry.type == kCustomAssetTypeMainGif) {
+            if (s_main_gif_entry) {
+                ESP_LOGW(TAG, "custom assets diag: duplicate main gif entry");
+                reset_custom_assets();
+                return;
+            }
             s_main_gif_entry = &entry;
         } else if (entry.type == kCustomAssetTypeGalleryImage && s_gallery_count < kCustomAssetMaxEntries) {
+            for (int j = 0; j < s_gallery_count; ++j) {
+                if (s_gallery_entries[j] && s_gallery_entries[j]->index == entry.index) {
+                    ESP_LOGW(TAG, "custom assets diag: duplicate gallery entry index=%u", entry.index);
+                    reset_custom_assets();
+                    return;
+                }
+            }
             s_gallery_entries[s_gallery_count++] = &entry;
         }
     }

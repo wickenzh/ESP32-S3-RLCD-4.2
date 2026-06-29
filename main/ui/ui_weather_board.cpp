@@ -29,6 +29,30 @@ struct ForecastCardUi {
 
 ForecastCardUi s_cards[kWeatherForecastDays];
 
+void set_weather_label_align(lv_obj_t *label, lv_text_align_t align)
+{
+    if (!label) {
+        return;
+    }
+    lv_obj_set_style_text_align(label, align, LV_PART_MAIN);
+}
+
+void set_weather_label_font(lv_obj_t *label, const lv_font_t *font)
+{
+    if (!label || !font) {
+        return;
+    }
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+}
+
+void set_weather_label_long_mode(lv_obj_t *label, lv_label_long_mode_t mode)
+{
+    if (!label) {
+        return;
+    }
+    lv_label_set_long_mode(label, mode);
+}
+
 void style_weather_card(lv_obj_t *obj)
 {
     if (!obj) {
@@ -49,6 +73,16 @@ void set_card_visible(ForecastCardUi &card, bool visible)
     set_obj_visible(card.icon, visible);
     set_obj_visible(card.text, visible);
     set_obj_visible(card.range, visible);
+}
+
+const char *text_or_dash(const char *text)
+{
+    return text && text[0] ? text : "--";
+}
+
+const char *weather_icon_or_default(const char *icon)
+{
+    return weather_icon_text(icon && icon[0] ? icon : "999");
 }
 
 const char *weekday_name_from_date(const char *date)
@@ -103,10 +137,10 @@ bool update_forecast_card(ForecastCardUi &card, const WeatherForecastDay *day)
     char temp_range[20];
     format_short_date(day->date, date_short, sizeof(date_short));
     snprintf(date_line, sizeof(date_line), "%s\n%s", weekday_name_from_date(day->date), date_short);
-    snprintf(temp_range, sizeof(temp_range), "%s/%s", day->temp_min[0] ? day->temp_min : "--", day->temp_max[0] ? day->temp_max : "--");
+    snprintf(temp_range, sizeof(temp_range), "%s/%s", text_or_dash(day->temp_min), text_or_dash(day->temp_max));
     changed |= set_label_text_if_changed(card.date, date_line);
-    changed |= set_label_text_if_changed(card.icon, weather_icon_text(day->icon[0] ? day->icon : "999"));
-    changed |= set_label_text_if_changed(card.text, day->text[0] ? day->text : "--");
+    changed |= set_label_text_if_changed(card.icon, weather_icon_or_default(day->icon));
+    changed |= set_label_text_if_changed(card.text, text_or_dash(day->text));
     changed |= set_label_text_if_changed(card.range, temp_range);
     return changed;
 }
@@ -119,6 +153,9 @@ void build_weather_board_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_weather_board_root = screen;
     lv_obj_add_flag(g_weather_board_root, LV_OBJ_FLAG_HIDDEN);
 
@@ -134,20 +171,22 @@ void build_weather_board_page()
     set_obj_black(top_line, true);
 
     s_city_label = make_label(screen, 20, 66, 135, 28, "等待数据");
-    lv_obj_set_style_text_align(s_city_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    set_weather_label_align(s_city_label, LV_TEXT_ALIGN_LEFT);
 
     s_current_temp_label = make_label_with_font(screen, 20, 86, 88, 54, "--", &lv_font_montserrat_48);
-    lv_obj_set_style_text_align(s_current_temp_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    set_weather_label_align(s_current_temp_label, LV_TEXT_ALIGN_LEFT);
     s_current_unit_label = make_label_with_font(screen, 88, 96, 24, 32, "C", &lv_font_montserrat_24);
-    lv_obj_set_style_text_align(s_current_unit_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    set_weather_label_align(s_current_unit_label, LV_TEXT_ALIGN_LEFT);
 
     s_current_icon_label = make_label(screen, 20, 143, 42, 40, weather_icon_text("999"));
-    lv_obj_set_style_text_font(s_current_icon_label, &qweather_icons_36, LV_PART_MAIN);
-    lv_obj_set_style_text_align(s_current_icon_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    set_weather_label_font(s_current_icon_label, &qweather_icons_36);
+    set_weather_label_align(s_current_icon_label, LV_TEXT_ALIGN_CENTER);
     s_current_text_label = make_label(screen, 62, 151, 92, 24, "--");
     s_today_range_label = make_label(screen, 20, 179, 134, 22, "今日 --/--C");
 
     static const int kCardX[kWeatherForecastDays] = {138, 180, 222, 264, 306, 348};
+    static_assert(sizeof(kCardX) / sizeof(kCardX[0]) == kWeatherForecastDays,
+                  "weather forecast card positions must match forecast day count");
     static const int kCardY = 66;
     for (int i = 0; i < kWeatherForecastDays; ++i) {
         int x = kCardX[i];
@@ -162,17 +201,17 @@ void build_weather_board_page()
         }
 
         s_cards[i].date = make_label(screen, x, y, 34, 30, "--");
-        lv_label_set_long_mode(s_cards[i].date, LV_LABEL_LONG_WRAP);
-        lv_obj_set_style_text_align(s_cards[i].date, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        set_weather_label_long_mode(s_cards[i].date, LV_LABEL_LONG_WRAP);
+        set_weather_label_align(s_cards[i].date, LV_TEXT_ALIGN_CENTER);
         s_cards[i].icon = make_label(screen, x, y + 35, 34, 36, weather_icon_text("999"));
-        lv_obj_set_style_text_font(s_cards[i].icon, &qweather_icons_36, LV_PART_MAIN);
-        lv_obj_set_style_text_align(s_cards[i].icon, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        set_weather_label_font(s_cards[i].icon, &qweather_icons_36);
+        set_weather_label_align(s_cards[i].icon, LV_TEXT_ALIGN_CENTER);
         s_cards[i].text = make_label(screen, x, y + 72, 34, 34, "--");
-        lv_label_set_long_mode(s_cards[i].text, LV_LABEL_LONG_WRAP);
-        lv_obj_set_style_text_align(s_cards[i].text, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        set_weather_label_long_mode(s_cards[i].text, LV_LABEL_LONG_WRAP);
+        set_weather_label_align(s_cards[i].text, LV_TEXT_ALIGN_CENTER);
         s_cards[i].range = make_label(screen, x, y + 108, 34, 16, "--/--");
-        lv_obj_set_style_text_align(s_cards[i].range, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        lv_obj_set_style_text_font(s_cards[i].range, &lv_font_montserrat_12, LV_PART_MAIN);
+        set_weather_label_align(s_cards[i].range, LV_TEXT_ALIGN_CENTER);
+        set_weather_label_font(s_cards[i].range, &lv_font_montserrat_12);
     }
 
     lv_obj_t *detail_line = make_bar(screen, 20, 196, 360, 2);
@@ -184,8 +223,8 @@ void build_weather_board_page()
     s_sunset_label = make_label(screen, 132, 224, 120, 20, "日落 --:--");
     s_alert_label = make_label(screen, 20, 246, 360, 22, "预警 --");
     s_advice_label = make_label(screen, 20, 272, 360, 20, "等待更多天气数据");
-    lv_label_set_long_mode(s_advice_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_align(s_advice_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    set_weather_label_long_mode(s_advice_label, LV_LABEL_LONG_WRAP);
+    set_weather_label_align(s_advice_label, LV_TEXT_ALIGN_LEFT);
 }
 
 bool update_weather_board_page(const struct tm &local)
@@ -210,15 +249,15 @@ bool update_weather_board_page(const struct tm &local)
     if (weather_ready) {
         char temp_line[12];
         char today_range[32];
-        snprintf(temp_line, sizeof(temp_line), "%s", weather.temp[0] ? weather.temp : "--");
-        changed |= set_label_text_if_changed(s_city_label, weather.city[0] ? weather.city : "--");
+        snprintf(temp_line, sizeof(temp_line), "%s", text_or_dash(weather.temp));
+        changed |= set_label_text_if_changed(s_city_label, text_or_dash(weather.city));
         changed |= set_label_text_if_changed(s_current_temp_label, temp_line);
-        changed |= set_label_text_if_changed(s_current_icon_label, weather_icon_text(weather.icon[0] ? weather.icon : "999"));
-        changed |= set_label_text_if_changed(s_current_text_label, weather.text[0] ? weather.text : "--");
+        changed |= set_label_text_if_changed(s_current_icon_label, weather_icon_or_default(weather.icon));
+        changed |= set_label_text_if_changed(s_current_text_label, text_or_dash(weather.text));
         if (forecast.ready && forecast.count > 0 && forecast.days[0].valid) {
             snprintf(today_range, sizeof(today_range), "今日 %s/%sC",
-                     forecast.days[0].temp_min[0] ? forecast.days[0].temp_min : "--",
-                     forecast.days[0].temp_max[0] ? forecast.days[0].temp_max : "--");
+                     text_or_dash(forecast.days[0].temp_min),
+                     text_or_dash(forecast.days[0].temp_max));
         } else {
             snprintf(today_range, sizeof(today_range), "今日 --/--C");
         }
@@ -246,16 +285,16 @@ bool update_weather_board_page(const struct tm &local)
     const WeatherForecastDay *today = (forecast.ready && forecast.count > 0 && forecast.days[0].valid) ? &forecast.days[0] : nullptr;
     if (air.ready) {
         snprintf(air_line, sizeof(air_line), "AQI %s %s",
-                 air.aqi[0] ? air.aqi : "--",
-                 air.category[0] ? air.category : "--");
+                 text_or_dash(air.aqi),
+                 text_or_dash(air.category));
     } else {
         snprintf(air_line, sizeof(air_line), "AQI --");
     }
     snprintf(humi_line, sizeof(humi_line), "湿度 %s%%",
-             today && today->humidity[0] ? today->humidity : (weather.humidity[0] ? weather.humidity : "--"));
+             today && today->humidity[0] ? today->humidity : text_or_dash(weather.humidity));
     snprintf(wind_line, sizeof(wind_line), "%s %s级",
-             today && today->wind_dir[0] ? today->wind_dir : "--",
-             today && today->wind_scale[0] ? today->wind_scale : "--");
+             today ? text_or_dash(today->wind_dir) : "--",
+             today ? text_or_dash(today->wind_scale) : "--");
     snprintf(sunrise_line, sizeof(sunrise_line), "日出 %s",
              today && today->sunrise[0] ? today->sunrise : "--:--");
     snprintf(sunset_line, sizeof(sunset_line), "日落 %s",

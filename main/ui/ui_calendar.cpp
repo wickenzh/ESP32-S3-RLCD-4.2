@@ -8,6 +8,17 @@ static constexpr int kCalendarCanvasW = 364;
 static constexpr int kCalendarCanvasH = 228;
 static constexpr int kCalendarCanvasX = 18;
 static constexpr int kCalendarCanvasY = 62;
+static constexpr int kCalendarWeekdayCount = 7;
+static constexpr int kCalendarVisibleRowCount = 5;
+static constexpr int kCalendarVisibleCellLimit = kCalendarWeekdayCount * kCalendarVisibleRowCount;
+static constexpr int kCalendarSundayColumn = 0;
+static constexpr int kCalendarSaturdayColumn = kCalendarWeekdayCount - 1;
+static constexpr int kCalendarHeaderY = 2;
+static constexpr int kCalendarHeaderH = 18;
+static constexpr int kCalendarCellY = 29;
+static constexpr int kCalendarCellW = 52;
+static constexpr int kCalendarCellH = 41;
+static constexpr int kCalendarGridX = 0;
 
 static void canvas_fill_rect_safe(lv_obj_t *canvas, int w, int h, int x, int y, int rw, int rh, lv_color_t color)
 {
@@ -93,23 +104,38 @@ static void draw_calendar_grid(const struct tm &local)
     lv_canvas_fill_bg(g_calendar_canvas, lv_color_white(), LV_OPA_COVER);
 
     static const char *const weekdays[] = {"日", "一", "二", "三", "四", "五", "六"};
-    constexpr int header_y = 2;
-    constexpr int header_h = 18;
-    constexpr int cell_y = 29;
-    constexpr int cell_w = 52;
-    constexpr int cell_h = 41;
-    constexpr int grid_x = 0;
+    static_assert(sizeof(weekdays) / sizeof(weekdays[0]) == kCalendarWeekdayCount);
 
-    canvas_fill_rect_safe(g_calendar_canvas, kCalendarCanvasW, kCalendarCanvasH, grid_x, header_y, cell_w, header_h, lv_color_black());
-    canvas_fill_rect_safe(g_calendar_canvas, kCalendarCanvasW, kCalendarCanvasH, grid_x + cell_w * 6, header_y, cell_w, header_h, lv_color_black());
-    canvas_dot_rect(g_calendar_canvas, kCalendarCanvasW, kCalendarCanvasH, grid_x + cell_w, header_y, cell_w * 5, header_h);
+    canvas_fill_rect_safe(g_calendar_canvas,
+                          kCalendarCanvasW,
+                          kCalendarCanvasH,
+                          kCalendarGridX,
+                          kCalendarHeaderY,
+                          kCalendarCellW,
+                          kCalendarHeaderH,
+                          lv_color_black());
+    canvas_fill_rect_safe(g_calendar_canvas,
+                          kCalendarCanvasW,
+                          kCalendarCanvasH,
+                          kCalendarGridX + kCalendarCellW * kCalendarSaturdayColumn,
+                          kCalendarHeaderY,
+                          kCalendarCellW,
+                          kCalendarHeaderH,
+                          lv_color_black());
+    canvas_dot_rect(g_calendar_canvas,
+                    kCalendarCanvasW,
+                    kCalendarCanvasH,
+                    kCalendarGridX + kCalendarCellW,
+                    kCalendarHeaderY,
+                    kCalendarCellW * (kCalendarWeekdayCount - 2),
+                    kCalendarHeaderH);
 
-    for (int col = 0; col < 7; ++col) {
-        int x = grid_x + col * cell_w;
-        if (col == 0 || col == 6) {
-            draw_calendar_text(g_calendar_canvas, weekdays[col], x, header_y, cell_w, header_h, &zh_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER);
+    for (int col = 0; col < kCalendarWeekdayCount; ++col) {
+        int x = kCalendarGridX + col * kCalendarCellW;
+        if (col == kCalendarSundayColumn || col == kCalendarSaturdayColumn) {
+            draw_calendar_text(g_calendar_canvas, weekdays[col], x, kCalendarHeaderY, kCalendarCellW, kCalendarHeaderH, &zh_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER);
         } else {
-            draw_calendar_text(g_calendar_canvas, weekdays[col], x, header_y, cell_w, header_h, &zh_font_16, lv_color_black(), LV_TEXT_ALIGN_CENTER);
+            draw_calendar_text(g_calendar_canvas, weekdays[col], x, kCalendarHeaderY, kCalendarCellW, kCalendarHeaderH, &zh_font_16, lv_color_black(), LV_TEXT_ALIGN_CENTER);
         }
     }
 
@@ -119,23 +145,23 @@ static void draw_calendar_grid(const struct tm &local)
     int first_weekday = calendar_first_weekday(year, month);
     int days = calendar_days_in_month(year, month);
     int today_index = first_weekday + today - 1;
-    int today_row = today_index / 7;
-    bool shift_past_first_row = first_weekday + days > 35 && today_row >= 5;
+    int today_row = today_index / kCalendarWeekdayCount;
+    bool shift_past_first_row = first_weekday + days > kCalendarVisibleCellLimit && today_row >= kCalendarVisibleRowCount;
     int row_offset = shift_past_first_row ? 1 : 0;
     for (int day = 1; day <= days; ++day) {
         int index = first_weekday + day - 1;
-        int row = index / 7;
-        int col = index % 7;
+        int row = index / kCalendarWeekdayCount;
+        int col = index % kCalendarWeekdayCount;
         int display_row = row - row_offset;
-        if (display_row < 0 || display_row > 4) {
+        if (display_row < 0 || display_row >= kCalendarVisibleRowCount) {
             continue;
         }
-        int x = grid_x + col * cell_w;
-        int y = cell_y + display_row * cell_h;
+        int x = kCalendarGridX + col * kCalendarCellW;
+        int y = kCalendarCellY + display_row * kCalendarCellH;
         bool is_today = day == today;
 
         if (is_today) {
-            canvas_fill_round_rect_safe(g_calendar_canvas, kCalendarCanvasW, kCalendarCanvasH, x + 4, y + 3, cell_w - 8, cell_h - 5, 5, lv_color_black());
+            canvas_fill_round_rect_safe(g_calendar_canvas, kCalendarCanvasW, kCalendarCanvasH, x + 4, y + 3, kCalendarCellW - 8, kCalendarCellH - 5, 5, lv_color_black());
         }
 
         char day_text[4];
@@ -151,7 +177,7 @@ static void draw_calendar_grid(const struct tm &local)
                            day_text,
                            x + 2,
                            y + 2,
-                           cell_w - 4,
+                           kCalendarCellW - 4,
                            14,
                            &lv_font_montserrat_16,
                            is_today ? lv_color_white() : lv_color_black(),
@@ -169,7 +195,7 @@ static void draw_calendar_grid(const struct tm &local)
                            info.subtext,
                            x + 2,
                            y + 20,
-                           cell_w - 4,
+                           kCalendarCellW - 4,
                            12,
                            &zh_font_16,
                            is_today ? lv_color_white() : lv_color_black(),
@@ -200,6 +226,9 @@ void build_calendar_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_calendar_root = screen;
 
     build_battery_icon(screen, g_calendar_battery_segments);

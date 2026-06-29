@@ -6,6 +6,10 @@
 lv_obj_t *create_page_root()
 {
     lv_obj_t *root = lv_obj_create(lv_scr_act());
+    if (!root) {
+        ESP_LOGW(TAG, "page root create failed");
+        return nullptr;
+    }
     lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(root, 0, 0);
     lv_obj_set_size(root, kDisplayWidth, kDisplayHeight);
@@ -101,6 +105,8 @@ const char *work_page_name(int page)
         "天气看板",
         "翻页时钟",
     };
+    constexpr size_t kPageNameCount = sizeof(kPageNames) / sizeof(kPageNames[0]);
+    static_assert(kPageNameCount == kWorkPageCount, "work page names must cover every work page");
     if (page < 0 || page >= kWorkPageCount) {
         return "未知页面";
     }
@@ -117,7 +123,10 @@ int display_settings_item_work_page(int item)
         kWorkPageWeatherBoard,
         kWorkPageFlipClock,
     };
-    if (item < 0 || item >= (int)(sizeof(kDisplaySettingPages) / sizeof(kDisplaySettingPages[0]))) {
+    constexpr int kDisplaySettingPageCount = sizeof(kDisplaySettingPages) / sizeof(kDisplaySettingPages[0]);
+    static_assert(kDisplaySettingPageCount == kDisplaySettingsPageItemCount,
+                  "display setting page mapping must match the settings item count");
+    if (item < 0 || item >= kDisplaySettingPageCount) {
         return -1;
     }
     return kDisplaySettingPages[item];
@@ -145,6 +154,10 @@ void reset_work_page_order()
         kWorkPageCalendar,
         kWorkPageWeatherBoard,
     };
+    constexpr size_t kDefaultOrderCount = sizeof(kDefaultOrder) / sizeof(kDefaultOrder[0]);
+    static_assert(kDefaultOrderCount == kWorkPageCount, "default work page order must cover every work page");
+    static_assert(sizeof(kDefaultOrder) == sizeof(g_work_page_order),
+                  "default work page order storage must match runtime order storage");
     memcpy(g_work_page_order, kDefaultOrder, sizeof(g_work_page_order));
 }
 
@@ -357,6 +370,9 @@ void clear_info_object_refs()
 
 void remember_lower_panel_object(lv_obj_t *obj)
 {
+    if (!obj) {
+        return;
+    }
     for (lv_obj_t *&slot : g_lower_panel_objects) {
         if (!slot) {
             slot = obj;

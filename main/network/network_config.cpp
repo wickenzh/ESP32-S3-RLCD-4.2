@@ -23,6 +23,8 @@ constexpr const char *kPageOrderV1Key = "page_order_v1";
 constexpr const char *kPageOrderV2Key = "page_order_v2";
 constexpr const char *kPageOrderV3Key = "page_order_v3";
 constexpr size_t kFormEncodedBufferSize = 160;
+constexpr uint8_t kDefaultChimeVolumePercent = 80;
+constexpr uint8_t kValidChimeVolumePercent[] = {20, 40, 60, 80, 100};
 constexpr uint8_t kWeatherClockPageMask = (uint8_t)(1U << kWorkPageWeatherClock);
 constexpr uint8_t kLegacyPageMaskV1KnownBits = (uint8_t)((1U << 4) - 1);
 constexpr uint8_t kPageMaskV2KnownBits = (uint8_t)((1U << 5) - 1);
@@ -31,6 +33,9 @@ constexpr uint8_t kWeatherBoardPageMask = (uint8_t)(1U << kWorkPageWeatherBoard)
 constexpr uint8_t kFlipClockPageMask = (uint8_t)(1U << kWorkPageFlipClock);
 constexpr size_t kLegacyPageOrderV1Count = 4;
 constexpr size_t kPageOrderV2Count = 5;
+static_assert(kWorkPageCount <= 8, "work page enabled mask is stored as uint8_t");
+static_assert(kLegacyPageOrderV1Count <= kWorkPageCount);
+static_assert(kPageOrderV2Count <= kWorkPageCount);
 
 void clear_app_event_bits(EventBits_t bits, const char *reason)
 {
@@ -89,6 +94,16 @@ int hex_digit_value(char ch)
     }
     return -1;
 }
+
+uint8_t normalize_chime_volume(uint8_t volume)
+{
+    for (uint8_t valid : kValidChimeVolumePercent) {
+        if (volume == valid) {
+            return volume;
+        }
+    }
+    return kDefaultChimeVolumePercent;
+}
 } // namespace
 
 bool load_saved_config()
@@ -107,7 +122,7 @@ bool load_saved_config()
     esp_err_t city_err = nvs_get_str(nvs, kManualWeatherCityKey, g_manual_weather_city, &city_len);
     uint8_t chime = 0;
     uint8_t all_day = 0;
-    uint8_t volume = 80;
+    uint8_t volume = kDefaultChimeVolumePercent;
     uint8_t sound = 0;
     uint8_t page_mask = kPageMaskV3KnownBits;
     uint8_t offline = 0;
@@ -182,10 +197,7 @@ bool load_saved_config()
     g_hourly_chime_enabled = chime != 0;
     g_hourly_chime_all_day = all_day != 0;
     g_offline_mode_ui_enabled = offline != 0;
-    if (volume != 20 && volume != 40 && volume != 60 && volume != 80 && volume != 100) {
-        volume = 80;
-    }
-    g_chime_volume_percent = volume;
+    g_chime_volume_percent = normalize_chime_volume(volume);
     g_chime_sound_index = sound < kChimeSoundCount ? sound : 0;
     g_work_page_enabled_mask = (page_mask | kWeatherClockPageMask) & kPageMaskV3KnownBits;
     if (order_err == ESP_OK && page_order_len == sizeof(page_order)) {
@@ -339,11 +351,24 @@ bool save_manual_weather_city(const char *city)
     if (next[0] == '\0') {
         return clear_manual_weather_city();
     }
+    if (!is_weather_city_input_valid(next)) {
+        ESP_LOGW(TAG, "skip saving invalid weather city");
+        return false;
+    }
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "nvs open failed while saving weather city: %s", esp_err_to_name(err));
         return false;
+    }
+    char old_city[kManualWeatherCityLen] = {};
+    size_t old_city_len = sizeof(old_city);
+    if (nvs_get_str(nvs, kManualWeatherCityKey, old_city, &old_city_len) == ESP_OK &&
+        strcmp(old_city, next) == 0) {
+        nvs_close(nvs);
+        strlcpy(g_manual_weather_city, next, sizeof(g_manual_weather_city));
+        g_has_manual_weather_city = true;
+        return true;
     }
     err = nvs_set_str(nvs, kManualWeatherCityKey, next);
     if (err == ESP_OK) {
@@ -367,11 +392,14 @@ bool clear_manual_weather_city()
         ESP_LOGW(TAG, "nvs open failed while clearing weather city: %s", esp_err_to_name(err));
         return false;
     }
+    bool erased = false;
     err = nvs_erase_key(nvs, kManualWeatherCityKey);
-    if (err == ESP_ERR_NVS_NOT_FOUND) {
+    if (err == ESP_OK) {
+        erased = true;
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
         err = ESP_OK;
     }
-    if (err == ESP_OK) {
+    if (err == ESP_OK && erased) {
         err = nvs_commit(nvs);
     }
     nvs_close(nvs);

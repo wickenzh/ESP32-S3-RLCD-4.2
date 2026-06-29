@@ -31,6 +31,33 @@ bool is_qweather_url(const char *url)
             strstr(url, kQweatherDevHost));
 }
 
+bool has_gzip_magic_prefix(const char *data, size_t len)
+{
+    return data && len >= 2 &&
+           (uint8_t)data[0] == kGzipMagic0 &&
+           (uint8_t)data[1] == kGzipMagic1;
+}
+
+bool advance_gzip_pos(size_t *pos, size_t amount, size_t len)
+{
+    if (!pos || amount > len || *pos > len - amount) {
+        return false;
+    }
+    *pos += amount;
+    return true;
+}
+
+bool skip_gzip_zero_terminated_field(const uint8_t *data, size_t len, size_t *pos)
+{
+    if (!data || !pos) {
+        return false;
+    }
+    while (*pos < len && data[*pos] != 0) {
+        ++(*pos);
+    }
+    return advance_gzip_pos(pos, 1, len);
+}
+
 void copy_log_preview(char *out, size_t out_len, const char *text)
 {
     if (!out || out_len == 0) {
@@ -124,20 +151,19 @@ bool gzip_payload_range(const uint8_t *data, size_t len, size_t *payload_offset,
     if (flags & kGzipFlagExtra) {
         if (pos + kGzipExtraLengthFieldSize > len) return false;
         size_t extra_len = data[pos] | (data[pos + 1] << 8);
-        pos += kGzipExtraLengthFieldSize + extra_len;
-        if (pos > len) return false;
+        if (!advance_gzip_pos(&pos, kGzipExtraLengthFieldSize, len) ||
+            !advance_gzip_pos(&pos, extra_len, len)) {
+            return false;
+        }
     }
     if (flags & kGzipFlagName) {
-        while (pos < len && data[pos] != 0) ++pos;
-        if (++pos > len) return false;
+        if (!skip_gzip_zero_terminated_field(data, len, &pos)) return false;
     }
     if (flags & kGzipFlagComment) {
-        while (pos < len && data[pos] != 0) ++pos;
-        if (++pos > len) return false;
+        if (!skip_gzip_zero_terminated_field(data, len, &pos)) return false;
     }
     if (flags & kGzipFlagHeaderCrc) {
-        pos += kGzipExtraLengthFieldSize;
-        if (pos > len) return false;
+        if (!advance_gzip_pos(&pos, kGzipExtraLengthFieldSize, len)) return false;
     }
     if (pos + kGzipTrailerSize > len) {
         return false;
@@ -154,7 +180,7 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
         ESP_LOGW(TAG, "decode http body invalid arg");
         return ESP_ERR_INVALID_ARG;
     }
-    if (*body_len < 3 || (uint8_t)out[0] != kGzipMagic0 || (uint8_t)out[1] != kGzipMagic1) {
+    if (*body_len < 3 || !has_gzip_magic_prefix(out, *body_len)) {
         return ESP_OK;
     }
 
@@ -204,6 +230,7 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
     int timeout_ms = g_http_timeout_ms;
     int remaining_ms = boot_sync_remaining_ms();
     if (remaining_ms <= 0) {
+        ESP_LOGW(TAG, "http get skipped: boot sync time budget exhausted");
         return ESP_ERR_TIMEOUT;
     }
     if (remaining_ms != INT32_MAX && timeout_ms > remaining_ms) {
@@ -249,7 +276,7 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
     ESP_LOGI(TAG, "http get ok status=%d len=%u gzip=%d",
              status,
              (unsigned)buffer.len,
-             buffer.len >= 2 && (uint8_t)out[0] == kGzipMagic0 && (uint8_t)out[1] == kGzipMagic1);
+             has_gzip_magic_prefix(out, buffer.len));
     return decode_http_body(out, out_len, &buffer.len);
 }
 

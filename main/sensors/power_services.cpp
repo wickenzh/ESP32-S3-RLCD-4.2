@@ -196,5 +196,9 @@ void sync_rtc_from_system_time()
     time(&now);
     struct tm local = {};
     localtime_r(&now, &local);
+    if (!is_tm_plausible(local)) {
+        ESP_LOGW(TAG, "skip RTC sync: system time is not plausible");
+        return;
+    }
     Rtc_SetTime(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
 }

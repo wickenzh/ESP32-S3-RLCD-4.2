@@ -82,15 +82,21 @@ static bool create_audio_playback_task(TaskFunction_t task_fn,
                                        void *task_arg,
                                        const char *log_name)
 {
+    const char *display_name = log_name ? log_name : "audio playback";
+    const char *rtos_name = task_name ? task_name : "audio_play";
+    if (!task_fn) {
+        ESP_LOGW(TAG, "failed to create %s task: task function unavailable", display_name);
+        return false;
+    }
     BaseType_t ok = xTaskCreatePinnedToCore(task_fn,
-                                            task_name,
+                                            rtos_name,
                                             kAudioPlaybackTaskStack,
                                             task_arg,
                                             kAudioPlaybackTaskPriority,
                                             nullptr,
                                             kAudioTaskCore);
     if (ok != pdPASS) {
-        ESP_LOGW(TAG, "failed to create %s task", log_name ? log_name : "audio playback");
+        ESP_LOGW(TAG, "failed to create %s task", display_name);
         return false;
     }
     return true;

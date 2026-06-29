@@ -77,6 +77,16 @@ private:
     cJSON *root_;
 };
 
+static bool copy_trimmed_saying_text(const char *text, char *out, size_t out_len)
+{
+    if (!text || !out || out_len == 0) {
+        return false;
+    }
+    strlcpy(out, text, out_len);
+    trim_ascii(out);
+    return out[0] != '\0';
+}
+
 static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int depth)
 {
     static const char *const kFields[] = {
@@ -95,9 +105,7 @@ static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int de
         return false;
     }
     if (cJSON_IsString(obj) && obj->valuestring) {
-        strlcpy(out, obj->valuestring, out_len);
-        trim_ascii(out);
-        return out[0] != '\0';
+        return copy_trimmed_saying_text(obj->valuestring, out, out_len);
     }
     if (!cJSON_IsObject(obj)) {
         return false;
@@ -108,9 +116,7 @@ static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int de
             continue;
         }
         if (cJSON_IsString(item) && item->valuestring) {
-            strlcpy(out, item->valuestring, out_len);
-            trim_ascii(out);
-            return out[0] != '\0';
+            return copy_trimmed_saying_text(item->valuestring, out, out_len);
         }
         if (cJSON_IsObject(item) && copy_json_saying_field(item, out, out_len, depth + 1)) {
             return true;
@@ -152,6 +158,15 @@ static int utf8_char_count(const char *text)
     }
     return count;
 }
+
+static bool saying_within_length(const char *text, int *chars_out)
+{
+    int chars = utf8_char_count(text);
+    if (chars_out) {
+        *chars_out = chars;
+    }
+    return chars <= kMaxSayingChars;
+}
 } // namespace
 
 void load_daily_saying_cache()
@@ -187,8 +202,8 @@ bool perform_daily_saying_update()
             ESP_LOGW(TAG, "daily saying parse failed");
             continue;
         }
-        int chars = utf8_char_count(next);
-        if (chars <= kMaxSayingChars) {
+        int chars = 0;
+        if (saying_within_length(next, &chars)) {
             break;
         }
         ++long_responses;

@@ -135,6 +135,9 @@ void build_flip_clock_page()
         return;
     }
     lv_obj_t *screen = create_page_root();
+    if (!screen) {
+        return;
+    }
     g_flip_clock_root = screen;
     lv_obj_add_flag(g_flip_clock_root, LV_OBJ_FLAG_HIDDEN);
 

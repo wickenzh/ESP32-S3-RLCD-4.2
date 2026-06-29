@@ -13,6 +13,24 @@ constexpr int kNetworkDiagJsonSearchMaxDepth = 8;
 constexpr const char *kNetworkDiagPublicIpUrl = "https://uapis.cn/api/v1/network/myip";
 constexpr const char *kNetworkDiagQweatherDnsHost = "dev.qweather.com";
 constexpr const char *kNetworkDiagGithubDnsHost = "raw.githubusercontent.com";
+constexpr int kNetworkDiagLocalIpLine = 0;
+constexpr int kNetworkDiagPublicIpLine = 1;
+constexpr int kNetworkDiagIpLocationLine = 2;
+constexpr int kNetworkDiagDnsLine = 3;
+constexpr int kNetworkDiagWeatherLine = 4;
+constexpr int kNetworkDiagNtpLine = 5;
+constexpr int kNetworkDiagSayingLine = 6;
+constexpr int kNetworkDiagInternetLine = 7;
+constexpr int kNetworkDiagOtaLine = 8;
+static_assert(kNetworkDiagLocalIpLine >= 0 && kNetworkDiagLocalIpLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagPublicIpLine >= 0 && kNetworkDiagPublicIpLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagIpLocationLine >= 0 && kNetworkDiagIpLocationLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagDnsLine >= 0 && kNetworkDiagDnsLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagWeatherLine >= 0 && kNetworkDiagWeatherLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagNtpLine >= 0 && kNetworkDiagNtpLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagSayingLine >= 0 && kNetworkDiagSayingLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagInternetLine >= 0 && kNetworkDiagInternetLine < kNetworkDiagLineCount);
+static_assert(kNetworkDiagOtaLine >= 0 && kNetworkDiagOtaLine < kNetworkDiagLineCount);
 
 class NetworkDiagResponseBuffer {
 public:
@@ -199,15 +217,15 @@ void network_diag_begin()
     g_network_diag_step = 0;
     g_network_diag_passed = 0;
     g_network_diag_total = 0;
-    network_diag_set_line(0, "本地IP: 等待");
-    network_diag_set_line(1, "公网IP: 等待");
-    network_diag_set_line(2, "IP定位: 等待");
-    network_diag_set_line(3, "DNS: 等待");
-    network_diag_set_line(4, "天气: 等待");
-    network_diag_set_line(5, "NTP: 等待");
-    network_diag_set_line(6, "一言: 等待");
-    network_diag_set_line(7, "公网: 等待");
-    network_diag_set_line(8, "OTA源: 等待");
+    network_diag_set_line(kNetworkDiagLocalIpLine, "本地IP: 等待");
+    network_diag_set_line(kNetworkDiagPublicIpLine, "公网IP: 等待");
+    network_diag_set_line(kNetworkDiagIpLocationLine, "IP定位: 等待");
+    network_diag_set_line(kNetworkDiagDnsLine, "DNS: 等待");
+    network_diag_set_line(kNetworkDiagWeatherLine, "天气: 等待");
+    network_diag_set_line(kNetworkDiagNtpLine, "NTP: 等待");
+    network_diag_set_line(kNetworkDiagSayingLine, "一言: 等待");
+    network_diag_set_line(kNetworkDiagInternetLine, "公网: 等待");
+    network_diag_set_line(kNetworkDiagOtaLine, "OTA源: 等待");
 }
 
 void network_diag_finish()
@@ -220,6 +238,7 @@ void network_diag_finish()
 void network_diag_set_line(int index, const char *fmt, ...)
 {
     if (index < 0 || index >= kNetworkDiagLineCount) {
+        ESP_LOGW(TAG, "network diag line index invalid: %d", index);
         return;
     }
     if (!fmt) {
@@ -250,50 +269,50 @@ void run_network_diagnostics()
     char public_ip[48] = {};
     bool local_ip_ok = g_sta_ip[0] != '\0';
     diag_count(local_ip_ok);
-    network_diag_set_line(0, "本地IP: %s", local_ip_ok ? g_sta_ip : "--");
+    network_diag_set_line(kNetworkDiagLocalIpLine, "本地IP: %s", local_ip_ok ? g_sta_ip : "--");
 
-    network_diag_set_line(1, "公网IP: 检测中");
+    network_diag_set_line(kNetworkDiagPublicIpLine, "公网IP: 检测中");
     bool public_ip_ok = lookup_public_ip(public_ip, sizeof(public_ip));
     diag_count(public_ip_ok);
-    network_diag_set_line(1, "公网IP: %s", public_ip_ok ? public_ip : "超时/失败");
+    network_diag_set_line(kNetworkDiagPublicIpLine, "公网IP: %s", public_ip_ok ? public_ip : "超时/失败");
 
-    network_diag_set_line(3, "DNS: 检测中");
+    network_diag_set_line(kNetworkDiagDnsLine, "DNS: 检测中");
     bool dns_ok = dns_lookup_ok(kNetworkDiagQweatherDnsHost) && dns_lookup_ok(kNetworkDiagGithubDnsHost);
-    network_diag_set_line(2, "IP定位: 检测中");
+    network_diag_set_line(kNetworkDiagIpLocationLine, "IP定位: 检测中");
     bool ip_ok = ip_geolocation_lookup(location, sizeof(location), city, sizeof(city));
     diag_count(ip_ok);
-    network_diag_set_line(2, "IP定位: %s %s",
+    network_diag_set_line(kNetworkDiagIpLocationLine, "IP定位: %s %s",
                           ip_ok ? "OK" : "超时/失败",
                           city[0] ? city : "--");
 
     diag_count(dns_ok);
-    network_diag_set_line(3, "DNS: %s", dns_ok ? "OK" : "超时/失败");
+    network_diag_set_line(kNetworkDiagDnsLine, "DNS: %s", dns_ok ? "OK" : "超时/失败");
 
     bool weather_ok = false;
     if (g_have_weather_key && !g_low_battery_mode) {
-        network_diag_set_line(4, "天气: 检测中");
+        network_diag_set_line(kNetworkDiagWeatherLine, "天气: 检测中");
         weather_ok = perform_weather_update();
     }
-    network_diag_set_line(5, "NTP: 检测中");
+    network_diag_set_line(kNetworkDiagNtpLine, "NTP: 检测中");
     bool ntp_ok = perform_ntp_sync(5);
     diag_count(weather_ok);
     diag_count(ntp_ok);
-    network_diag_set_line(4, "天气: %s", weather_ok ? "OK" : "超时/失败");
-    network_diag_set_line(5, "NTP: %s", ntp_ok ? "OK" : "超时/失败");
+    network_diag_set_line(kNetworkDiagWeatherLine, "天气: %s", weather_ok ? "OK" : "超时/失败");
+    network_diag_set_line(kNetworkDiagNtpLine, "NTP: %s", ntp_ok ? "OK" : "超时/失败");
 
-    network_diag_set_line(6, "一言: 检测中");
+    network_diag_set_line(kNetworkDiagSayingLine, "一言: 检测中");
     bool saying_ok = !g_low_battery_mode && perform_daily_saying_update();
-    network_diag_set_line(7, "公网: 检测中");
+    network_diag_set_line(kNetworkDiagInternetLine, "公网: 检测中");
     bool internet_ok = public_ip_ok || http_probe_ok(kNetworkDiagPublicIpUrl, kNetworkDiagWideProbeBufferSize);
     diag_count(saying_ok);
     diag_count(internet_ok);
-    network_diag_set_line(6, "一言: %s", saying_ok ? "OK" : "超时/失败");
-    network_diag_set_line(7, "公网: %s", internet_ok ? "OK" : "超时/失败");
+    network_diag_set_line(kNetworkDiagSayingLine, "一言: %s", saying_ok ? "OK" : "超时/失败");
+    network_diag_set_line(kNetworkDiagInternetLine, "公网: %s", internet_ok ? "OK" : "超时/失败");
 
-    network_diag_set_line(8, "OTA源: 检测中");
+    network_diag_set_line(kNetworkDiagOtaLine, "OTA源: 检测中");
     bool ota_ok = http_probe_ok(kOtaManifestUrl, kNetworkDiagWideProbeBufferSize);
     diag_count(ota_ok);
-    network_diag_set_line(8, "OTA源: %s", ota_ok ? "OK" : "超时/失败");
+    network_diag_set_line(kNetworkDiagOtaLine, "OTA源: %s", ota_ok ? "OK" : "超时/失败");
 
     network_diag_finish();
 }

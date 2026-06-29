@@ -17,6 +17,9 @@ struct LegacyHourlySensorHistoryBlob {
     HourlySensorSample samples[kLegacyHourlyHistoryCount] = {};
 };
 
+bool is_system_time_plausible(struct tm *local_out);
+int periodic_sample_minutes(const struct tm &local, int day_minutes, int night_minutes);
+
 namespace {
 constexpr const char *kSensorNvsNamespace = "sensor";
 constexpr const char *kHourlyHistoryMetaKey = "hourmeta";
@@ -31,6 +34,8 @@ constexpr int kWeatherSyncSearchHours = 30;
 constexpr int kUnknownTimeSensorSampleMs = 60000;
 constexpr int kSensorSampleDayMinutes = 1;
 constexpr int kSensorSampleNightMinutes = 2;
+static_assert(kHourlyHistoryCount <= 99, "hourly slot key format h%02d supports two-digit indexes");
+static_assert(kHourlySlotKeyBufferSize >= sizeof("h00"), "hourly slot key buffer must fit hNN plus terminator");
 
 int seconds_until_next_interval(const struct tm &local, int interval_seconds)
 {
@@ -45,11 +50,30 @@ int seconds_until_next_interval(const struct tm &local, int interval_seconds)
     }
     return seconds_to_next;
 }
+
+TickType_t next_periodic_sample_tick(TickType_t now,
+                                     int day_minutes,
+                                     int night_minutes,
+                                     int unknown_time_ms)
+{
+    struct tm local = {};
+    if (!is_system_time_plausible(&local)) {
+        return now + pdMS_TO_TICKS(unknown_time_ms);
+    }
+    int interval_seconds = periodic_sample_minutes(local, day_minutes, night_minutes) * kSecondsPerMinute;
+    int seconds_to_next = seconds_until_next_interval(local, interval_seconds);
+    return now + pdMS_TO_TICKS(seconds_to_next * kMsPerSecond);
+}
 } // namespace
 
 static bool hourly_slot_key(int index, char *out, size_t out_len)
 {
     if (!out || out_len == 0) {
+        return false;
+    }
+    if (index < 0 || index >= kHourlyHistoryCount) {
+        out[0] = '\0';
+        ESP_LOGW(TAG, "hourly sensor slot key index invalid: %d", index);
         return false;
     }
     int written = snprintf(out, out_len, kHourlySlotKeyFormat, index);
@@ -269,7 +293,6 @@ time_t next_weather_sync_time(time_t from)
     return from + kWeatherSyncFallbackSeconds;
 }
 
-
 void update_sensor_history(float temp, float humi)
 {
     g_sensor_history[g_sensor_history_next].temperature = temp;
@@ -316,26 +339,16 @@ void sample_sensor()
 
 TickType_t next_sensor_sample_tick(TickType_t now)
 {
-    struct tm local = {};
-    if (!is_system_time_plausible(&local)) {
-        return now + pdMS_TO_TICKS(kUnknownTimeSensorSampleMs);
-    }
-    int interval_seconds =
-        periodic_sample_minutes(local, kSensorSampleDayMinutes, kSensorSampleNightMinutes) * kSecondsPerMinute;
-    int seconds_to_next = seconds_until_next_interval(local, interval_seconds);
-    return now + pdMS_TO_TICKS(seconds_to_next * kMsPerSecond);
+    return next_periodic_sample_tick(now,
+                                     kSensorSampleDayMinutes,
+                                     kSensorSampleNightMinutes,
+                                     kUnknownTimeSensorSampleMs);
 }
 
 TickType_t next_battery_sample_tick(TickType_t now)
 {
-    struct tm local = {};
-    if (!is_system_time_plausible(&local)) {
-        return now + pdMS_TO_TICKS(kBatterySampleUnknownTimeMinutes *
-                                   kSecondsPerMinute *
-                                   kMsPerSecond);
-    }
-    int interval_seconds =
-        periodic_sample_minutes(local, kBatterySampleDayMinutes, kBatterySampleNightMinutes) * kSecondsPerMinute;
-    int seconds_to_next = seconds_until_next_interval(local, interval_seconds);
-    return now + pdMS_TO_TICKS(seconds_to_next * kMsPerSecond);
+    return next_periodic_sample_tick(now,
+                                     kBatterySampleDayMinutes,
+                                     kBatterySampleNightMinutes,
+                                     kBatterySampleUnknownTimeMinutes * kSecondsPerMinute * kMsPerSecond);
 }

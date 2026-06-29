@@ -3,13 +3,25 @@
 
 #include "sensor_services.h"
 
+#include "sdkconfig.h"
+
 namespace {
 constexpr const char *const kNtpServers[] = {
     "pool.ntp.org",
     "ntp.aliyun.com",
     "time.windows.com",
 };
+constexpr size_t kNtpServerCount = sizeof(kNtpServers) / sizeof(kNtpServers[0]);
+#ifdef CONFIG_LWIP_SNTP_MAX_SERVERS
+constexpr size_t kConfiguredNtpServerSlots = CONFIG_LWIP_SNTP_MAX_SERVERS;
+#else
+constexpr size_t kConfiguredNtpServerSlots = 1;
+#endif
+constexpr size_t kActiveNtpServerCount =
+    kNtpServerCount < kConfiguredNtpServerSlots ? kNtpServerCount : kConfiguredNtpServerSlots;
 constexpr uint32_t kNtpPollDelayMs = 1000;
+static_assert(kNtpServerCount > 0, "at least one NTP server is required");
+static_assert(kConfiguredNtpServerSlots > 0, "SNTP must support at least one configured server");
 
 void set_time_synced_event_bit()
 {
@@ -18,6 +30,13 @@ void set_time_synced_event_bit()
         return;
     }
     xEventGroupSetBits(g_app_events, kTimeSyncedBit);
+}
+
+void configure_ntp_servers()
+{
+    for (size_t i = 0; i < kActiveNtpServerCount; ++i) {
+        esp_sntp_setservername(i, kNtpServers[i]);
+    }
 }
 } // namespace
 
@@ -30,9 +49,7 @@ bool perform_ntp_sync(int max_retries)
     esp_sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
     if (!g_ntp_started) {
         esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-        for (size_t i = 0; i < sizeof(kNtpServers) / sizeof(kNtpServers[0]); ++i) {
-            esp_sntp_setservername(i, kNtpServers[i]);
-        }
+        configure_ntp_servers();
         esp_sntp_init();
         g_ntp_started = true;
     } else {
@@ -53,6 +70,8 @@ bool perform_ntp_sync(int max_retries)
         }
         vTaskDelay(pdMS_TO_TICKS(kNtpPollDelayMs));
     }
-    ESP_LOGW(TAG, "ntp sync timeout");
+    ESP_LOGW(TAG, "ntp sync timeout retries=%d poll_ms=%lu",
+             max_retries,
+             (unsigned long)kNtpPollDelayMs);
     return false;
 }

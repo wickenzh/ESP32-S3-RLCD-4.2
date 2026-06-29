@@ -50,6 +50,10 @@ lv_obj_t *make_bar(lv_obj_t *parent, int x, int y, int w, int h)
         ESP_LOGW(TAG, "bar parent unavailable");
         return nullptr;
     }
+    if (w <= 0 || h <= 0) {
+        ESP_LOGW(TAG, "bar invalid size %dx%d", w, h);
+        return nullptr;
+    }
     lv_obj_t *bar = lv_obj_create(parent);
     if (!bar) {
         ESP_LOGW(TAG, "bar create failed");
@@ -156,14 +160,23 @@ void update_progress_canvas(lv_obj_t *canvas, int filled, int *last_filled)
 }
 
 void draw_1bit_icon(lv_obj_t *canvas,
-                           int width,
-                           int height,
-                           int bytes_per_row,
-                           const uint8_t *bits,
-                           lv_color_t fg,
-                           lv_color_t bg)
+                    int width,
+                    int height,
+                    int bytes_per_row,
+                    const uint8_t *bits,
+                    lv_color_t fg,
+                    lv_color_t bg)
 {
     if (!canvas || !bits) {
+        return;
+    }
+    if (width <= 0 || height <= 0 || bytes_per_row <= 0) {
+        ESP_LOGW(TAG, "1bit icon invalid size %dx%d row=%d", width, height, bytes_per_row);
+        return;
+    }
+    int min_bytes_per_row = (width + 7) / 8;
+    if (bytes_per_row < min_bytes_per_row) {
+        ESP_LOGW(TAG, "1bit icon row too small width=%d row=%d min=%d", width, bytes_per_row, min_bytes_per_row);
         return;
     }
     lv_canvas_fill_bg(canvas, bg, LV_OPA_COVER);
@@ -213,6 +226,9 @@ bool update_trend_icon(lv_obj_t *canvas, int trend, int *last_trend)
 
 const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
 {
+    if (!font.chars || !font.glyphs) {
+        return nullptr;
+    }
     const char *pos = strchr(font.chars, ch);
     if (!pos) {
         return nullptr;
@@ -223,6 +239,9 @@ const DsegGlyph *find_dseg_glyph(const DsegFont &font, char ch)
 int draw_dseg_text(lv_obj_t *canvas, const DsegFont &font, const char *text, int cursor_x, int baseline_y)
 {
     int x_cursor = cursor_x;
+    if (!canvas || !text || !font.bitmap) {
+        return x_cursor;
+    }
     for (const char *p = text; *p; ++p) {
         const DsegGlyph *glyph = find_dseg_glyph(font, *p);
         if (!glyph) {
@@ -344,6 +363,10 @@ lv_obj_t *make_label_with_font(lv_obj_t *parent, int x, int y, int w, int h, con
         ESP_LOGW(TAG, "label parent unavailable");
         return nullptr;
     }
+    if (w <= 0 || h <= 0) {
+        ESP_LOGW(TAG, "label invalid size %dx%d", w, h);
+        return nullptr;
+    }
     lv_obj_t *label = lv_label_create(parent);
     if (!label) {
         ESP_LOGW(TAG, "label create failed");
@@ -384,6 +407,9 @@ bool set_label_text_if_changed(lv_obj_t *label, const char *text)
 
 void format_time_or_dash(time_t value, char *out, size_t out_len)
 {
+    if (!out || out_len == 0) {
+        return;
+    }
     if (value <= 0) {
         strlcpy(out, "--", out_len);
         return;
