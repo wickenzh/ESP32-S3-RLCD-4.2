@@ -1,31 +1,37 @@
-name: Sync R2 OTA Releases
+name: Build ESP-IDF Firmware Release
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 * * *"
+  push:
+    branches: [ main, master ]
 
 permissions:
   contents: write
 
-concurrency:
-  group: sync-r2-ota-releases
-  cancel-in-progress: false
-
 jobs:
-  sync:
+  build-release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Sync R2 versions to GitHub Releases
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.3
+          target: esp32s3
+          path: .
+
+      - name: Create GitHub Release from R2 metadata
         env:
           R2_VERSIONS_URL: ${{ vars.R2_VERSIONS_URL }}
-          OTA_RELEASE_KEEP: ${{ vars.OTA_RELEASE_KEEP }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python3 <<'PY'
-          import base64
           import hashlib
           import json
           import os
@@ -34,13 +40,11 @@ jobs:
           import urllib.error
           import urllib.parse
           import urllib.request
+          from pathlib import Path
 
           versions_url = os.environ.get("R2_VERSIONS_URL", "").strip()
           if not versions_url:
               raise SystemExit("Repository variable R2_VERSIONS_URL is not configured")
-
-          keep_raw = os.environ.get("OTA_RELEASE_KEEP", "").strip()
-          keep = int(keep_raw) if keep_raw.isdigit() else 10
 
           repo = os.environ["GITHUB_REPOSITORY"]
           token = os.environ["GITHUB_TOKEN"]
@@ -50,7 +54,7 @@ jobs:
               "Authorization": f"Bearer {token}",
               "Accept": "application/vnd.github+json",
               "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "weather-clock-r2-release-sync",
+              "User-Agent": "esp32-release-builder",
           }
 
           def http_json(method, url, payload=None, raw=None, extra_headers=None, not_found_none=False, timeout=180):
@@ -78,46 +82,17 @@ jobs:
                           raise SystemExit(f"GitHub API {method} {url} failed: HTTP {exc.code} {detail}") from exc
                   time.sleep(attempt * 2)
 
-          def fetch(url, timeout=300):
-              fetch_headers = {
-                  "User-Agent": "weather-clock-r2-release-sync/1.0",
-                  "Accept": "application/json, application/octet-stream;q=0.9, */*;q=0.8",
-                  "Cache-Control": "no-cache",
-              }
-
-              for attempt in range(1, 6):
-                  try:
-                      req = urllib.request.Request(url, headers=fetch_headers)
-                      with urllib.request.urlopen(req, timeout=timeout) as response:
-                          return response.read()
-                  except Exception as exc:
-                      print(f"fetch failed attempt={attempt} error={exc}")
-                      if attempt == 5:
-                          raise
-                  time.sleep(attempt * 2)
-
-          def version_key(version):
-              nums = [int(x) for x in re.findall(r"\d+", version)]
-              return nums or [0]
-
-          def latest_url_from_versions(url):
-              if url.endswith("/versions.json"):
-                  return url[:-len("/versions.json")] + "/latest.json"
-              return url.rsplit("/", 1)[0] + "/latest.json"
-
-          def put_content(path, content_bytes, message):
-              existing = http_json("GET", f"{api}/contents/{path}?ref=main", not_found_none=True)
-
-              payload = {
-                  "message": message,
-                  "content": base64.b64encode(content_bytes).decode("ascii"),
-                  "branch": "main",
-              }
-
-              if existing and existing.get("sha"):
-                  payload["sha"] = existing["sha"]
-
-              http_json("PUT", f"{api}/contents/{path}", payload)
+          def fetch_json(url):
+              req = urllib.request.Request(
+                  url,
+                  headers={
+                      "User-Agent": "esp32-release-builder/1.0",
+                      "Accept": "application/json",
+                      "Cache-Control": "no-cache",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=60) as response:
+                  return json.loads(response.read().decode("utf-8"))
 
           def normalize_tag(version):
               version = str(version).strip()
@@ -125,182 +100,112 @@ jobs:
                   return ""
               return version if version.startswith("v") else f"v{version}"
 
-          def release_body(item, latest):
-              version = normalize_tag(item.get("version", ""))
-              notes = item.get("notes") or "本版本暂无更新日志。"
-              app = item.get("app") or {}
-              merged = item.get("merged") or {}
+          def version_key(version):
+              nums = [int(x) for x in re.findall(r"\d+", version)]
+              return nums or [0]
 
-              lines = [
-                  f"# {version}",
-                  "",
-                  "## 更新日志",
-                  "",
-                  notes,
-                  "",
-                  "## 固件文件",
-                  "",
-                  f"- `weather_clock_{version}.bin`：设备 OTA 升级用 App 固件",
-                  f"- `weather_clock_{version}_merged.bin`：串口完整刷写镜像",
-                  "",
-                  "## 校验信息",
-                  "",
-              ]
-
-              if app.get("sha256"):
-                  lines.append(f"- App SHA256：`{app.get('sha256')}`")
-              if merged.get("sha256"):
-                  lines.append(f"- Merged SHA256：`{merged.get('sha256')}`")
-              if app.get("size"):
-                  lines.append(f"- App Size：`{app.get('size')}` bytes")
-              if merged.get("size"):
-                  lines.append(f"- Merged Size：`{merged.get('size')}` bytes")
-
-              lines += [
-                  "",
-                  "## 来源",
-                  "",
-                  "- 固件来源：Cloudflare R2 OTA Storage",
-                  "- 发布方式：GitHub Actions 自动同步",
-              ]
-
-              if version == latest:
-                  lines.append("- 状态：当前最新版")
-
-              return "\n".join(lines) + "\n"
-
-          data = json.loads(fetch(versions_url, timeout=60).decode("utf-8"))
-
-          raw_items = data.get("items", [])
-          if not raw_items:
+          data = fetch_json(versions_url)
+          items = data.get("items", [])
+          if not items:
               raise SystemExit("R2 versions.json has no items")
 
-          items = sorted(
-              raw_items,
-              key=lambda item: version_key(str(item.get("version", ""))),
-              reverse=True
-          )[:keep]
+          latest = normalize_tag(data.get("latest") or sorted(items, key=lambda x: version_key(x.get("version", "")), reverse=True)[0].get("version"))
 
-          latest = normalize_tag(data.get("latest") or items[0].get("version"))
-          print(f"Syncing {len(items)} version(s), latest={latest}")
-
-          latest_json_bytes = fetch(latest_url_from_versions(versions_url), timeout=60)
-
-          put_content(
-              "firmware/latest.json",
-              latest_json_bytes,
-              f"Sync latest OTA manifest {latest}"
-          )
-
-          put_content(
-              "firmware/versions.json",
-              json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8") + b"\n",
-              f"Sync OTA versions manifest {latest}"
-          )
-
-          readme_lines = [
-              "# ESP32-S3 RLCD Weather Clock OTA",
-              "",
-              "这个仓库是设备 OTA / 上位机固件镜像仓库，不保存固件源码。",
-              "",
-              "## 当前版本",
-              "",
-              f"- 最新版本：`{latest}`",
-              "- Manifest：`firmware/latest.json`",
-              "- 版本清单：`firmware/versions.json`",
-              "",
-              "## 文件用途",
-              "",
-              "- `firmware/latest.json`：设备端检查 OTA 时读取的最新版本清单。",
-              "- `firmware/versions.json`：上位机读取最近版本列表。",
-              "- GitHub Release 附件 `weather_clock_vX.X.X.bin`：设备 OTA 升级用 App 固件。",
-              "- GitHub Release 附件 `weather_clock_vX.X.X_merged.bin`：串口完整刷写镜像。",
-              "",
-              "## 最近版本",
-              "",
-          ]
-
-          for entry in items:
-              ver = normalize_tag(entry.get("version", ""))
-              notes = entry.get("notes") or "暂无更新日志"
-              readme_lines.append(f"- `{ver}`：{notes}")
-
-          put_content(
-              "README.md",
-              ("\n".join(readme_lines) + "\n").encode("utf-8"),
-              f"Sync OTA README {latest}"
-          )
-
+          current = None
           for item in items:
-              version = normalize_tag(item.get("version"))
-              if not version:
-                  continue
+              if normalize_tag(item.get("version")) == latest:
+                  current = item
+                  break
 
-              release = http_json("GET", f"{api}/releases/tags/{version}", not_found_none=True)
+          if current is None:
+              raise SystemExit(f"Cannot find latest version metadata: {latest}")
 
-              release_payload = {
-                  "name": version,
-                  "body": release_body(item, latest),
-                  "draft": False,
-                  "prerelease": False,
-              }
+          notes = current.get("notes") or "本版本暂无更新日志。"
 
-              if version == latest:
-                  release_payload["make_latest"] = "true"
+          build_dir = Path("build")
+          if not build_dir.exists():
+              raise SystemExit("build directory not found")
 
-              if release is None:
-                  create_payload = dict(release_payload)
-                  create_payload["tag_name"] = version
-                  release = http_json("POST", f"{api}/releases", create_payload)
-                  print(f"created release {version}")
-              else:
-                  release = http_json("PATCH", f"{api}/releases/{release['id']}", release_payload)
-                  print(f"updated release {version}")
+          app_bins = list(build_dir.glob("*.bin"))
+          boot_bins = list((build_dir / "bootloader").glob("*.bin"))
+          part_bins = list((build_dir / "partition_table").glob("*.bin"))
 
-              assets = http_json("GET", f"{api}/releases/{release['id']}/assets") or []
-              assets_by_name = {asset.get("name"): asset for asset in assets}
-              upload_url = release["upload_url"].split("{")[0]
+          files = []
+          files.extend(app_bins)
+          files.extend(boot_bins)
+          files.extend(part_bins)
 
-              for kind, suffix in (("app", ".bin"), ("merged", "_merged.bin")):
-                  meta = item.get(kind) or {}
-                  url = meta.get("url")
-                  sha_expected = (meta.get("sha256") or "").lower()
-                  size_expected = int(meta.get("size") or 0)
+          elf_files = list(build_dir.glob("*.elf"))
+          map_files = list(build_dir.glob("*.map"))
+          files.extend(elf_files)
+          files.extend(map_files)
 
-                  if not url or not sha_expected:
-                      print(f"skip {version} {kind}: missing url or sha256")
-                      continue
+          if not files:
+              raise SystemExit("No firmware files found in build directory")
 
-                  name = f"weather_clock_{version}{suffix}"
-                  existing = assets_by_name.get(name)
+          sha_lines = []
+          for file in files:
+              sha = hashlib.sha256(file.read_bytes()).hexdigest()
+              sha_lines.append(f"{sha}  {file.name}")
 
-                  if existing and size_expected and int(existing.get("size") or 0) == size_expected:
-                      print(f"kept {version} {name}")
-                      continue
+          sha_file = Path("build") / "sha256.txt"
+          sha_file.write_text("\n".join(sha_lines) + "\n", encoding="utf-8")
+          files.append(sha_file)
 
-                  blob = fetch(url)
-                  sha_actual = hashlib.sha256(blob).hexdigest()
+          body = f"""# {latest}
 
-                  if sha_actual != sha_expected:
-                      raise SystemExit(f"sha256 mismatch for {name}: {sha_actual} != {sha_expected}")
+          ## 更新日志
 
-                  if size_expected and len(blob) != size_expected:
-                      raise SystemExit(f"size mismatch for {name}: {len(blob)} != {size_expected}")
+          {notes}
 
-                  if existing:
-                      http_json("DELETE", f"{api}/releases/assets/{existing['id']}")
-                      print(f"deleted stale {version} {name}")
+          ## 固件说明
 
-                  encoded_name = urllib.parse.urlencode({"name": name})
-                  http_json(
-                      "POST",
-                      f"{upload_url}?{encoded_name}",
-                      raw=blob,
-                      extra_headers={"Content-Type": "application/octet-stream"},
-                      timeout=300
-                  )
+          - App 固件：用于 OTA 升级
+          - Bootloader：启动引导文件
+          - Partition Table：分区表
+          - ELF / MAP：用于调试和排查问题
 
-                  print(f"uploaded {version} {name} ({len(blob)} bytes)")
+          ## 构建信息
 
-          print("R2 OTA Release sync complete")
+          - Commit: `{os.environ.get("GITHUB_SHA", "")}`
+          - 构建方式：GitHub Actions 自动编译
+          - 版本来源：Cloudflare R2 `versions.json`
+          """
+
+          release = http_json("GET", f"{api}/releases/tags/{latest}", not_found_none=True)
+
+          release_payload = {
+              "name": latest,
+              "body": body,
+              "draft": False,
+              "prerelease": False,
+              "make_latest": "true",
+          }
+
+          if release is None:
+              create_payload = dict(release_payload)
+              create_payload["tag_name"] = latest
+              release = http_json("POST", f"{api}/releases", create_payload)
+          else:
+              release = http_json("PATCH", f"{api}/releases/{release['id']}", release_payload)
+
+          assets = http_json("GET", f"{api}/releases/{release['id']}/assets") or []
+          upload_url = release["upload_url"].split("{")[0]
+
+          for asset in assets:
+              http_json("DELETE", f"{api}/releases/assets/{asset['id']}")
+
+          for file in files:
+              asset_name = f"{latest}_{file.name}"
+              encoded_name = urllib.parse.urlencode({"name": asset_name})
+              http_json(
+                  "POST",
+                  f"{upload_url}?{encoded_name}",
+                  raw=file.read_bytes(),
+                  extra_headers={"Content-Type": "application/octet-stream"},
+                  timeout=300,
+              )
+              print(f"uploaded {asset_name}")
+
+          print(f"Release {latest} created/updated from local build artifacts")
           PY
