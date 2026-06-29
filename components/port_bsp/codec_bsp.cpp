@@ -224,8 +224,12 @@ static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const 
         ESP_LOGW(TAG, "codec is not ready");
         return false;
     }
-    if (source_slot < 0 || source_slot > 3) {
+    if (source_slot < 0 || source_slot >= kChannels) {
         ESP_LOGW(TAG, "invalid pcm source slot: %d", source_slot);
+        return false;
+    }
+    if (!pcm_start || !pcm_end || pcm_end <= pcm_start) {
+        ESP_LOGW(TAG, "invalid pcm range");
         return false;
     }
     if (!codec->CodecPort_SetInfo("es8311", 1, 24000, 4, 16)) {
@@ -263,10 +267,10 @@ static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const 
         }
         memcpy(slot_buffer, data_ptr, chunk);
         int16_t *samples = reinterpret_cast<int16_t *>(slot_buffer);
-        size_t frames = chunk / (4 * sizeof(int16_t));
+        size_t frames = chunk / kFrameBytes;
         for (size_t frame = 0; frame < frames; ++frame) {
             size_t global_frame = (bytes_written / kFrameBytes) + frame;
-            int16_t selected_sample = samples[frame * 4 + source_slot];
+            int16_t selected_sample = samples[frame * kChannels + source_slot];
             if (global_frame < fade_frames) {
                 selected_sample = (int16_t)(((int32_t)selected_sample * (int32_t)global_frame) / (int32_t)fade_frames);
             }
@@ -276,8 +280,8 @@ static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const 
                     selected_sample = (int16_t)(((int32_t)selected_sample * (int32_t)frames_left) / (int32_t)fade_out_frames);
                 }
             }
-            for (int slot = 0; slot < 4; ++slot) {
-                samples[frame * 4 + slot] = slot == 0 ? selected_sample : 0;
+            for (int slot = 0; slot < kChannels; ++slot) {
+                samples[frame * kChannels + slot] = slot == 0 ? selected_sample : 0;
             }
         }
         if (codec->CodecPort_PlayWrite((void *)slot_buffer, (int)chunk) != ESP_CODEC_DEV_OK) {

@@ -6,12 +6,24 @@
 #include "ui_views.h"
 
 static constexpr uint32_t kNetworkOtaActiveWaitMs = 10000;
-static constexpr uint32_t kNetworkIdleDefaultWaitMs = 5 * 60000;
+static constexpr uint32_t kMsPerSecond = 1000;
+static constexpr int64_t kUsPerMs = 1000;
+static constexpr time_t kSecondsPerMinute = 60;
+static constexpr time_t kSecondsPerHour = 60 * kSecondsPerMinute;
+static constexpr time_t kSecondsPerDay = 24 * kSecondsPerHour;
+static constexpr uint32_t kNetworkIdleDefaultWaitMs = 5 * kSecondsPerMinute * kMsPerSecond;
 static constexpr uint32_t kNetworkIdleMinWaitMs = 1000;
 static constexpr uint32_t kNetworkNoWorkWaitMs = 30000;
 static constexpr uint32_t kNetworkShortRetryWaitMs = 1000;
 static constexpr uint32_t kNetworkWifiConnectTimeoutMs = 45000;
-static constexpr time_t kNetworkNtpRetryDelaySec = 5 * 60;
+static constexpr uint32_t kBootScreenShortDelayMs = 200;
+static constexpr uint32_t kBootScreenOfflineDelayMs = 600;
+static constexpr uint32_t kBootScreenSetupDelayMs = 1500;
+static constexpr int kBootWeatherMinRemainingMs = 250;
+static constexpr int kBootSayingMinRemainingMs = 700;
+static constexpr int kBootNtpMinRemainingMs = 600;
+static constexpr uint32_t kNetworkTaskStartupDelayMs = 2500;
+static constexpr time_t kNetworkNtpRetryDelaySec = 5 * kSecondsPerMinute;
 static constexpr time_t kBootWeatherRefreshDelaySec = 8;
 static constexpr time_t kBootSayingRefreshDelaySec = 16;
 
@@ -59,23 +71,23 @@ void run_boot_connectivity_sync()
 {
     if (g_offline_mode_ui_enabled) {
         update_boot_screen(100, "Offline mode", "Using RTC time");
-        vTaskDelay(pdMS_TO_TICKS(600));
+        vTaskDelay(pdMS_TO_TICKS(kBootScreenOfflineDelayMs));
         return;
     }
     if (!g_have_wifi_creds) {
         char detail[64];
         snprintf(detail, sizeof(detail), "Setup AP: %s", g_ap_ssid);
         update_boot_screen(100, "Setup mode", detail);
-        vTaskDelay(pdMS_TO_TICKS(1500));
+        vTaskDelay(pdMS_TO_TICKS(kBootScreenSetupDelayMs));
         return;
     }
 
     update_boot_screen(18, "Connecting Wi-Fi", g_wifi_ssid);
     acquire_network_awake_lock();
-    g_boot_sync_deadline_us = esp_timer_get_time() + (int64_t)kBootStartupBudgetMs * 1000;
+    g_boot_sync_deadline_us = esp_timer_get_time() + (int64_t)kBootStartupBudgetMs * kUsPerMs;
     if (!start_wifi_radio(false)) {
         update_boot_screen(100, "Wi-Fi start failed", "Starting clock");
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(kBootScreenShortDelayMs));
         release_network_awake_lock();
         g_boot_sync_deadline_us = 0;
         return;
@@ -86,7 +98,7 @@ void run_boot_connectivity_sync()
                                    : kBootWifiConnectTimeoutMs;
     if (!wait_for_wifi_connected(wifi_timeout_ms)) {
         update_boot_screen(100, "Wi-Fi timeout", "Check SSID or password");
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(kBootScreenShortDelayMs));
         stop_wifi_radio();
         release_network_awake_lock();
         g_boot_sync_deadline_us = 0;
@@ -98,7 +110,7 @@ void run_boot_connectivity_sync()
     bool boot_gallery_page_visible = g_active_work_page == kWorkPageGallery;
     update_boot_screen(42, "Wi-Fi connected", boot_weather_page_visible ? "Loading weather" : "Checking time");
     remaining_ms = boot_sync_remaining_ms();
-    if (boot_weather_page_visible && g_have_weather_key && !g_low_battery_mode && remaining_ms > 250) {
+    if (boot_weather_page_visible && g_have_weather_key && !g_low_battery_mode && remaining_ms > kBootWeatherMinRemainingMs) {
         bool weather_ok = false;
         int previous_timeout = g_http_timeout_ms;
         g_http_timeout_ms = kHttpBootTimeoutMs;
@@ -122,7 +134,7 @@ void run_boot_connectivity_sync()
     }
 
     remaining_ms = boot_sync_remaining_ms();
-    if (boot_gallery_page_visible && !g_low_battery_mode && remaining_ms > 700) {
+    if (boot_gallery_page_visible && !g_low_battery_mode && remaining_ms > kBootSayingMinRemainingMs) {
         int previous_timeout = g_http_timeout_ms;
         g_http_timeout_ms = kHttpBootTimeoutMs;
         update_boot_screen(78, "Loading quote", "Fetching daily text");
@@ -141,7 +153,7 @@ void run_boot_connectivity_sync()
 
     bool ntp_ok = false;
     remaining_ms = boot_sync_remaining_ms();
-    if (remaining_ms > 600) {
+    if (remaining_ms > kBootNtpMinRemainingMs) {
         update_boot_screen(82, "Synchronizing time", "Short NTP check");
         ntp_ok = perform_ntp_sync(kBootNtpRetries);
     }
@@ -149,7 +161,7 @@ void run_boot_connectivity_sync()
                        ntp_ok ? "Time synchronized" : "NTP retry later",
                        "Starting clock");
 
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(kBootScreenShortDelayMs));
     stop_wifi_radio();
     release_network_awake_lock();
     g_boot_sync_deadline_us = 0;
@@ -176,13 +188,13 @@ uint32_t network_idle_wait_ms(time_t now, time_t next_weather_at, time_t next_nt
 {
     uint32_t wait_ms = kNetworkIdleDefaultWaitMs;
     if (next_weather_at > now) {
-        uint32_t weather_wait = (uint32_t)((next_weather_at - now) * 1000);
+        uint32_t weather_wait = (uint32_t)((next_weather_at - now) * kMsPerSecond);
         if (weather_wait < wait_ms) {
             wait_ms = weather_wait;
         }
     }
     if (next_ntp_retry_at > now) {
-        uint32_t ntp_wait = (uint32_t)((next_ntp_retry_at - now) * 1000);
+        uint32_t ntp_wait = (uint32_t)((next_ntp_retry_at - now) * kMsPerSecond);
         if (ntp_wait < wait_ms) {
             wait_ms = ntp_wait;
         }
@@ -214,7 +226,7 @@ static bool weather_cache_current_hour(time_t now)
     localtime_r(&now, &now_local);
     localtime_r(&g_last_weather_sync_time, &last_local);
     if (!is_tm_plausible(now_local) || !is_tm_plausible(last_local)) {
-        return now - g_last_weather_sync_time < 3600;
+        return now - g_last_weather_sync_time < kSecondsPerHour;
     }
     return now_local.tm_year == last_local.tm_year &&
            now_local.tm_yday == last_local.tm_yday &&
@@ -231,7 +243,7 @@ static bool saying_cache_current_day(time_t now)
     localtime_r(&now, &now_local);
     localtime_r(&g_last_saying_sync_time, &last_local);
     if (!is_tm_plausible(now_local) || !is_tm_plausible(last_local)) {
-        return now - g_last_saying_sync_time < 24 * 3600;
+        return now - g_last_saying_sync_time < kSecondsPerDay;
     }
     return now_local.tm_year == last_local.tm_year &&
            now_local.tm_yday == last_local.tm_yday;
@@ -251,7 +263,7 @@ static time_t earliest_pending_boot_sync(time_t current, bool weather_pending, t
 
 void network_sync_task(void *)
 {
-    vTaskDelay(pdMS_TO_TICKS(2500));
+    vTaskDelay(pdMS_TO_TICKS(kNetworkTaskStartupDelayMs));
     EventBits_t initial_bits = xEventGroupGetBits(g_app_events);
     bool boot_ntp_due = (initial_bits & kTimeSyncedBit) == 0;
     time_t next_ntp_retry_at = 0;
@@ -262,11 +274,12 @@ void network_sync_task(void *)
                             g_have_weather_key &&
                             !g_offline_mode_ui_enabled &&
                             !g_low_battery_mode &&
-                            (is_work_page_enabled(0) || is_work_page_enabled(4));
+                            (is_work_page_enabled(kWorkPageWeatherClock) ||
+                             is_work_page_enabled(kWorkPageWeatherBoard));
     bool boot_saying_due = g_have_wifi_creds &&
                            !g_offline_mode_ui_enabled &&
                            !g_low_battery_mode &&
-                           is_work_page_enabled(2);
+                           is_work_page_enabled(kWorkPageGallery);
     time_t boot_weather_due_at = boot_schedule_now + kBootWeatherRefreshDelaySec;
     time_t boot_saying_due_at = boot_schedule_now + kBootSayingRefreshDelaySec;
     if (boot_weather_due || boot_saying_due) {

@@ -16,6 +16,7 @@ constexpr TickType_t kSettingsChimeRetryDelay = pdMS_TO_TICKS(180);
 constexpr TickType_t kSetupPromptChainDelay = pdMS_TO_TICKS(120);
 constexpr int kHourlyChimeQuietStartHour = 7;
 constexpr int kHourlyChimeQuietEndHour = 22;
+constexpr const char *kAudioCodecBoardName = "S3_RLCD_4_2";
 } // namespace
 
 bool try_mark_audio_playing()
@@ -49,7 +50,7 @@ bool is_audio_playing()
 static CodecPort *ensure_audio_codec()
 {
     if (!g_codec) {
-        g_codec = new (std::nothrow) CodecPort(g_i2c, "S3_RLCD_4_2");
+        g_codec = new (std::nothrow) CodecPort(g_i2c, kAudioCodecBoardName);
         if (!g_codec) {
             ESP_LOGW(TAG, "audio codec allocation failed");
         }

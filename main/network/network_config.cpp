@@ -55,6 +55,14 @@ void set_app_event_bits(EventBits_t bits, const char *reason)
     xEventGroupSetBits(g_app_events, bits);
 }
 
+bool form_field_matches_key(const char *field, size_t field_len, const char *key, size_t key_len)
+{
+    return field && key &&
+           field_len > key_len &&
+           field[key_len] == '=' &&
+           strncmp(field, key, key_len) == 0;
+}
+
 bool find_form_value_range(const char *body, const char *key, const char **value_start, size_t *value_len)
 {
     if (!body || !key || key[0] == '\0' || !value_start || !value_len) {
@@ -66,9 +74,7 @@ bool find_form_value_range(const char *body, const char *key, const char **value
     while (*field) {
         const char *field_end = strchr(field, '&');
         const size_t field_len = field_end ? (size_t)(field_end - field) : strlen(field);
-        if (field_len > key_len &&
-            field[key_len] == '=' &&
-            strncmp(field, key, key_len) == 0) {
+        if (form_field_matches_key(field, field_len, key, key_len)) {
             *value_start = field + key_len + 1;
             *value_len = field_len - key_len - 1;
             return true;
@@ -95,6 +101,20 @@ int hex_digit_value(char ch)
     return -1;
 }
 
+bool decode_url_percent_byte(const char *src, char *out)
+{
+    if (!src || !out || src[0] != '%' || src[1] == '\0' || src[2] == '\0') {
+        return false;
+    }
+    const int hi = hex_digit_value(src[1]);
+    const int lo = hex_digit_value(src[2]);
+    if (hi < 0 || lo < 0) {
+        return false;
+    }
+    *out = (char)((hi << 4) | lo);
+    return true;
+}
+
 uint8_t normalize_chime_volume(uint8_t volume)
 {
     for (uint8_t valid : kValidChimeVolumePercent) {
@@ -103,6 +123,41 @@ uint8_t normalize_chime_volume(uint8_t volume)
         }
     }
     return kDefaultChimeVolumePercent;
+}
+
+esp_err_t erase_nvs_key_if_present(nvs_handle_t nvs, const char *key, bool *erased)
+{
+    esp_err_t err = nvs_erase_key(nvs, key);
+    if (err == ESP_OK) {
+        if (erased) {
+            *erased = true;
+        }
+        return ESP_OK;
+    }
+    return err == ESP_ERR_NVS_NOT_FOUND ? ESP_OK : err;
+}
+
+void append_work_page_for_migration(uint8_t *order, int *count, uint8_t page)
+{
+    if (!order || !count || *count >= kWorkPageCount) {
+        return;
+    }
+    order[(*count)++] = page;
+}
+
+int migrate_order_with_flip_clock(const uint8_t *source, size_t source_count, uint8_t *dest)
+{
+    if (!source || !dest) {
+        return 0;
+    }
+    int out = 0;
+    for (size_t i = 0; i < source_count && out < kWorkPageCount; ++i) {
+        append_work_page_for_migration(dest, &out, source[i]);
+        if (source[i] == kWorkPageWeatherClock) {
+            append_work_page_for_migration(dest, &out, kWorkPageFlipClock);
+        }
+    }
+    return out;
 }
 } // namespace
 
@@ -151,15 +206,9 @@ bool load_saved_config()
         size_t v2_len = sizeof(v2_order);
         if (nvs_get_blob(nvs, kPageOrderV2Key, v2_order, &v2_len) == ESP_OK &&
             v2_len == sizeof(v2_order)) {
-            int out = 0;
-            for (size_t i = 0; i < kPageOrderV2Count && out < kWorkPageCount; ++i) {
-                page_order[out++] = v2_order[i];
-                if (v2_order[i] == kWorkPageWeatherClock && out < kWorkPageCount) {
-                    page_order[out++] = kWorkPageFlipClock;
-                }
-            }
+            int out = migrate_order_with_flip_clock(v2_order, kPageOrderV2Count, page_order);
             while (out < kWorkPageCount) {
-                page_order[out++] = kWorkPageFlipClock;
+                append_work_page_for_migration(page_order, &out, kWorkPageFlipClock);
             }
             page_order_len = sizeof(page_order);
             order_err = ESP_OK;
@@ -168,19 +217,9 @@ bool load_saved_config()
             size_t legacy_len = sizeof(legacy_order);
             if (nvs_get_blob(nvs, kPageOrderV1Key, legacy_order, &legacy_len) == ESP_OK &&
                 legacy_len == sizeof(legacy_order)) {
-                int out = 0;
-                for (size_t i = 0; i < kLegacyPageOrderV1Count && out < kWorkPageCount; ++i) {
-                    page_order[out++] = legacy_order[i];
-                    if (legacy_order[i] == kWorkPageWeatherClock && out < kWorkPageCount) {
-                        page_order[out++] = kWorkPageFlipClock;
-                    }
-                }
-                if (out < kWorkPageCount) {
-                    page_order[out++] = kWorkPageWeatherBoard;
-                }
-                if (out < kWorkPageCount) {
-                    page_order[out++] = kWorkPageFlipClock;
-                }
+                int out = migrate_order_with_flip_clock(legacy_order, kLegacyPageOrderV1Count, page_order);
+                append_work_page_for_migration(page_order, &out, kWorkPageWeatherBoard);
+                append_work_page_for_migration(page_order, &out, kWorkPageFlipClock);
                 page_order_len = sizeof(page_order);
                 order_err = ESP_OK;
             }
@@ -321,7 +360,11 @@ bool save_config(const char *ssid, const char *pass, const char *api_key, const 
             }
         }
     }
-    (void)nvs_erase_key(nvs, kLegacyApiHostKey);
+    esp_err_t legacy_erase_err = erase_nvs_key_if_present(nvs, kLegacyApiHostKey, nullptr);
+    if (legacy_erase_err != ESP_OK) {
+        ESP_LOGW(TAG, "nvs erase legacy api host failed while saving config: %s",
+                 esp_err_to_name(legacy_erase_err));
+    }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);
     }
@@ -393,12 +436,7 @@ bool clear_manual_weather_city()
         return false;
     }
     bool erased = false;
-    err = nvs_erase_key(nvs, kManualWeatherCityKey);
-    if (err == ESP_OK) {
-        erased = true;
-    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
-        err = ESP_OK;
-    }
+    err = erase_nvs_key_if_present(nvs, kManualWeatherCityKey, &erased);
     if (err == ESP_OK && erased) {
         err = nvs_commit(nvs);
     }
@@ -523,13 +561,28 @@ bool clear_saved_config()
     nvs_handle_t nvs;
     esp_err_t open_err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
     if (open_err == ESP_OK) {
-        (void)nvs_erase_key(nvs, kWifiSsidKey);
-        (void)nvs_erase_key(nvs, kWifiPassKey);
-        (void)nvs_erase_key(nvs, kWeatherApiKeyKey);
-        (void)nvs_erase_key(nvs, kManualWeatherCityKey);
-        (void)nvs_erase_key(nvs, kLegacyApiHostKey);
-        (void)nvs_erase_key(nvs, kOfflineModeKey);
-        esp_err_t err = nvs_commit(nvs);
+        bool erased = false;
+        esp_err_t err = ESP_OK;
+        const char *keys[] = {
+            kWifiSsidKey,
+            kWifiPassKey,
+            kWeatherApiKeyKey,
+            kManualWeatherCityKey,
+            kLegacyApiHostKey,
+            kOfflineModeKey,
+        };
+        for (const char *key : keys) {
+            bool key_erased = false;
+            err = erase_nvs_key_if_present(nvs, key, &key_erased);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "nvs erase key %s failed while clearing config: %s", key, esp_err_to_name(err));
+                break;
+            }
+            erased = erased || key_erased;
+        }
+        if (err == ESP_OK && erased) {
+            err = nvs_commit(nvs);
+        }
         nvs_close(nvs);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "nvs clear config failed: %s", esp_err_to_name(err));
@@ -564,14 +617,9 @@ void url_decode(char *dst, size_t dst_len, const char *src)
     }
     size_t di = 0;
     for (size_t si = 0; src[si] != '\0' && di + 1 < dst_len; ++si) {
-        int hi = -1;
-        int lo = -1;
-        if (src[si] == '%' && src[si + 1] != '\0' && src[si + 2] != '\0') {
-            hi = hex_digit_value(src[si + 1]);
-            lo = hex_digit_value(src[si + 2]);
-        }
-        if (hi >= 0 && lo >= 0) {
-            dst[di++] = (char)((hi << 4) | lo);
+        char decoded = '\0';
+        if (decode_url_percent_byte(&src[si], &decoded)) {
+            dst[di++] = decoded;
             si += 2;
         } else if (src[si] == '+') {
             dst[di++] = ' ';

@@ -8,6 +8,15 @@ constexpr size_t kDailySayingResponseBufferSize = 768;
 constexpr int kMaxSayingChars = 22;
 constexpr int kMaxSayingAttempts = 8;
 constexpr int kMaxSayingJsonDepth = 8;
+constexpr const char *const kDailySayingJsonFields[] = {
+    "content",
+    "saying",
+    "text",
+    "sentence",
+    "hitokoto",
+    "quote",
+    "data",
+};
 
 class DailySayingResponseBuffer {
 public:
@@ -87,17 +96,13 @@ static bool copy_trimmed_saying_text(const char *text, char *out, size_t out_len
     return out[0] != '\0';
 }
 
+static bool plain_text_saying_candidate(const char *text)
+{
+    return text && text[0] != '\0' && text[0] != '{' && text[0] != '[';
+}
+
 static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int depth)
 {
-    static const char *const kFields[] = {
-        "content",
-        "saying",
-        "text",
-        "sentence",
-        "hitokoto",
-        "quote",
-        "data",
-    };
     if (!obj || !out || out_len == 0) {
         return false;
     }
@@ -110,7 +115,7 @@ static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int de
     if (!cJSON_IsObject(obj)) {
         return false;
     }
-    for (const char *field : kFields) {
+    for (const char *field : kDailySayingJsonFields) {
         cJSON *item = cJSON_GetObjectItem(obj, field);
         if (!item) {
             continue;
@@ -140,7 +145,7 @@ static bool extract_daily_saying(const char *response, char *out, size_t out_len
     }
     strlcpy(out, response, out_len);
     trim_ascii(out);
-    return out[0] != '\0' && out[0] != '{' && out[0] != '[';
+    return plain_text_saying_candidate(out);
 }
 
 static int utf8_char_count(const char *text)

@@ -23,6 +23,7 @@ constexpr TickType_t kCaptiveDnsStopWaitDelay = pdMS_TO_TICKS(100);
 constexpr uint32_t kCaptiveDnsTaskStack = 3072;
 constexpr UBaseType_t kCaptiveDnsTaskPriority = 3;
 constexpr BaseType_t kCaptiveDnsTaskCore = 0;
+constexpr uint16_t kMaxListedApCount = 32;
 
 class WifiScanRecords {
 public:
@@ -309,7 +310,6 @@ void append_wifi_scan_list(char *html, size_t html_len)
     if (!html || html_len == 0) {
         return;
     }
-    static constexpr uint16_t kMaxListedApCount = 32;
     html_append(html, html_len, "<section><div class='section-title'><span>Nearby Wi-Fi</span><a href='/'>Refresh</a></div><div class='wifi-list'>");
     wifi_scan_config_t scan_config = {};
     esp_err_t err = esp_wifi_scan_start(&scan_config, true);

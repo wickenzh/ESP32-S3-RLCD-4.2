@@ -20,6 +20,8 @@ constexpr size_t kConfiguredNtpServerSlots = 1;
 constexpr size_t kActiveNtpServerCount =
     kNtpServerCount < kConfiguredNtpServerSlots ? kNtpServerCount : kConfiguredNtpServerSlots;
 constexpr uint32_t kNtpPollDelayMs = 1000;
+constexpr int kTmYearOffset = 1900;
+constexpr int kTmMonthOffset = 1;
 static_assert(kNtpServerCount > 0, "at least one NTP server is required");
 static_assert(kConfiguredNtpServerSlots > 0, "SNTP must support at least one configured server");
 
@@ -37,6 +39,20 @@ void configure_ntp_servers()
     for (size_t i = 0; i < kActiveNtpServerCount; ++i) {
         esp_sntp_setservername(i, kNtpServers[i]);
     }
+}
+
+void log_ntp_synced_time(const struct tm &local)
+{
+    ESP_LOGI(TAG, "ntp synced: %04d-%02d-%02d %02d:%02d:%02d",
+             local.tm_year + kTmYearOffset, local.tm_mon + kTmMonthOffset, local.tm_mday,
+             local.tm_hour, local.tm_min, local.tm_sec);
+}
+
+bool ntp_synced_time_available(struct tm *local)
+{
+    return local &&
+           esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED &&
+           is_system_time_plausible(local);
 }
 } // namespace
 
@@ -58,14 +74,11 @@ bool perform_ntp_sync(int max_retries)
 
     for (int retry = 0; retry < max_retries; ++retry) {
         struct tm local = {};
-        if (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED &&
-            is_system_time_plausible(&local)) {
+        if (ntp_synced_time_available(&local)) {
             sync_rtc_from_system_time();
             time(&g_last_ntp_sync_time);
             set_time_synced_event_bit();
-            ESP_LOGI(TAG, "ntp synced: %04d-%02d-%02d %02d:%02d:%02d",
-                     local.tm_year + 1900, local.tm_mon + 1, local.tm_mday,
-                     local.tm_hour, local.tm_min, local.tm_sec);
+            log_ntp_synced_time(local);
             return true;
         }
         vTaskDelay(pdMS_TO_TICKS(kNtpPollDelayMs));

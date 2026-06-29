@@ -11,6 +11,12 @@ constexpr uint16_t kRtcMaxDay = 31;
 constexpr uint16_t kRtcMaxHour = 23;
 constexpr uint16_t kRtcMaxMinute = 59;
 constexpr uint16_t kRtcMaxSecond = 59;
+constexpr int kTmYearOffset = 1900;
+constexpr int kTmMonthOffset = 1;
+constexpr const char *kNetworkPmLockName = "network_sync";
+constexpr const char *kAudioPmLockName = "audio_play";
+constexpr const char *kNetworkPmLogName = "network";
+constexpr const char *kAudioPmLogName = "audio";
 
 bool rtc_time_fields_in_range(const rtcTimeStruct_t &rtc_time)
 {
@@ -23,6 +29,13 @@ bool rtc_time_fields_in_range(const rtcTimeStruct_t &rtc_time)
            rtc_time.hour <= kRtcMaxHour &&
            rtc_time.minute <= kRtcMaxMinute &&
            rtc_time.second <= kRtcMaxSecond;
+}
+
+bool rtc_date_matches_tm(const rtcTimeStruct_t &rtc_time, const struct tm &local_time)
+{
+    return local_time.tm_year + kTmYearOffset == rtc_time.year &&
+           local_time.tm_mon + kTmMonthOffset == rtc_time.month &&
+           local_time.tm_mday == rtc_time.day;
 }
 } // namespace
 
@@ -110,12 +123,12 @@ void init_power_management()
     if (!s_pm_lock_mutex) {
         ESP_LOGW(TAG, "pm lock mutex create failed");
     }
-    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "network_sync", &g_network_pm_lock);
+    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, kNetworkPmLockName, &g_network_pm_lock);
     if (err != ESP_OK) {
         g_network_pm_lock = nullptr;
         ESP_LOGW(TAG, "network pm lock create failed: %s", esp_err_to_name(err));
     }
-    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "audio_play", &g_audio_pm_lock);
+    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, kAudioPmLockName, &g_audio_pm_lock);
     if (err != ESP_OK) {
         g_audio_pm_lock = nullptr;
         ESP_LOGW(TAG, "audio pm lock create failed: %s", esp_err_to_name(err));
@@ -128,28 +141,28 @@ void init_power_management()
 void acquire_network_awake_lock()
 {
 #if CONFIG_PM_ENABLE
-    acquire_pm_lock(g_network_pm_lock, &g_network_pm_lock_depth, "network");
+    acquire_pm_lock(g_network_pm_lock, &g_network_pm_lock_depth, kNetworkPmLogName);
 #endif
 }
 
 void release_network_awake_lock()
 {
 #if CONFIG_PM_ENABLE
-    release_pm_lock(g_network_pm_lock, &g_network_pm_lock_depth, "network");
+    release_pm_lock(g_network_pm_lock, &g_network_pm_lock_depth, kNetworkPmLogName);
 #endif
 }
 
 void acquire_audio_awake_lock()
 {
 #if CONFIG_PM_ENABLE
-    acquire_pm_lock(g_audio_pm_lock, &g_audio_pm_lock_depth, "audio");
+    acquire_pm_lock(g_audio_pm_lock, &g_audio_pm_lock_depth, kAudioPmLogName);
 #endif
 }
 
 void release_audio_awake_lock()
 {
 #if CONFIG_PM_ENABLE
-    release_pm_lock(g_audio_pm_lock, &g_audio_pm_lock_depth, "audio");
+    release_pm_lock(g_audio_pm_lock, &g_audio_pm_lock_depth, kAudioPmLogName);
 #endif
 }
 
@@ -164,8 +177,8 @@ void restore_system_time_from_rtc()
         return;
     }
     struct tm tm_time = {};
-    tm_time.tm_year = rtc_time.year - 1900;
-    tm_time.tm_mon = rtc_time.month - 1;
+    tm_time.tm_year = rtc_time.year - kTmYearOffset;
+    tm_time.tm_mon = rtc_time.month - kTmMonthOffset;
     tm_time.tm_mday = rtc_time.day;
     tm_time.tm_hour = rtc_time.hour;
     tm_time.tm_min = rtc_time.minute;
@@ -173,9 +186,7 @@ void restore_system_time_from_rtc()
     time_t epoch = mktime(&tm_time);
     struct tm normalized = {};
     localtime_r(&epoch, &normalized);
-    if (normalized.tm_year + 1900 != rtc_time.year ||
-        normalized.tm_mon + 1 != rtc_time.month ||
-        normalized.tm_mday != rtc_time.day) {
+    if (!rtc_date_matches_tm(rtc_time, normalized)) {
         ESP_LOGW(TAG, "ignore normalized RTC time mismatch");
         return;
     }
@@ -200,5 +211,10 @@ void sync_rtc_from_system_time()
         ESP_LOGW(TAG, "skip RTC sync: system time is not plausible");
         return;
     }
-    Rtc_SetTime(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
+    Rtc_SetTime(local.tm_year + kTmYearOffset,
+                local.tm_mon + kTmMonthOffset,
+                local.tm_mday,
+                local.tm_hour,
+                local.tm_min,
+                local.tm_sec);
 }

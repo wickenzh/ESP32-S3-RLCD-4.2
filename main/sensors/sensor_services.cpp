@@ -7,6 +7,14 @@
 namespace {
 constexpr TickType_t kHousekeepingOtaPauseDelay = pdMS_TO_TICKS(5000);
 constexpr TickType_t kHousekeepingFallbackDelay = pdMS_TO_TICKS(1000);
+
+TickType_t next_housekeeping_wake_tick(bool low_battery, TickType_t next_sensor, TickType_t next_battery)
+{
+    if (low_battery) {
+        return next_battery;
+    }
+    return next_sensor < next_battery ? next_sensor : next_battery;
+}
 } // namespace
 
 void housekeeping_task(void *)
@@ -49,9 +57,7 @@ void housekeeping_task(void *)
                                ? after_battery + pdMS_TO_TICKS(kBatteryChargingSampleMs)
                                : next_battery_sample_tick(after_battery);
         }
-        TickType_t next_wake = g_low_battery_mode
-                                   ? next_battery
-                                   : (next_sensor < next_battery ? next_sensor : next_battery);
+        TickType_t next_wake = next_housekeeping_wake_tick(g_low_battery_mode, next_sensor, next_battery);
         TickType_t delay_now = xTaskGetTickCount();
         TickType_t delay_ticks = next_wake > delay_now ? next_wake - delay_now : kHousekeepingFallbackDelay;
         vTaskDelay(delay_ticks);

@@ -17,6 +17,7 @@ static int s_gallery_count = 0;
 static bool s_assets_ready = false;
 static constexpr const char *kCustomAssetsPartitionLabel = "assets";
 static constexpr size_t kCustomAssetCrcChunkSize = 256;
+static constexpr uint16_t kBitsPerByte = 8;
 static constexpr uint16_t kCustomAssetMaxGalleryImages = 24;
 static constexpr int kCustomAssetDiagGifFrames[] = {0, 1, 30, 59};
 
@@ -51,7 +52,7 @@ static uint32_t crc32_update_raw(uint32_t crc, const uint8_t *data, size_t len)
     }
     for (size_t i = 0; i < len; ++i) {
         crc ^= data[i];
-        for (int bit = 0; bit < 8; ++bit) {
+        for (int bit = 0; bit < kBitsPerByte; ++bit) {
             uint32_t mask = -(crc & 1U);
             crc = (crc >> 1) ^ (0xEDB88320U & mask);
         }
@@ -149,28 +150,44 @@ static bool validate_entry_bounds(const CustomAssetEntry &entry)
     return true;
 }
 
+static uint16_t packed_1bit_bytes_per_row(uint16_t width)
+{
+    return (width + kBitsPerByte - 1) / kBitsPerByte;
+}
+
 static bool validate_entry_shape(const CustomAssetEntry &entry)
 {
+    bool valid = false;
     if (entry.type == kCustomAssetTypeMainGif) {
         size_t expected = (size_t)STATUS_GIF_FRAME_COUNT * STATUS_GIF_BYTES_PER_FRAME;
-        bool row_ok = entry.bytes_per_row == 0 || entry.bytes_per_row == (STATUS_GIF_WIDTH + 7) / 8;
-        return entry.index == 0 &&
-               entry.width == STATUS_GIF_WIDTH &&
-               entry.height == STATUS_GIF_HEIGHT &&
-               entry.frame_count == STATUS_GIF_FRAME_COUNT &&
-               row_ok &&
-               entry.length == expected;
-    }
-    if (entry.type == kCustomAssetTypeGalleryImage) {
+        bool row_ok = entry.bytes_per_row == 0 || entry.bytes_per_row == packed_1bit_bytes_per_row(STATUS_GIF_WIDTH);
+        valid = entry.index == 0 &&
+                entry.width == STATUS_GIF_WIDTH &&
+                entry.height == STATUS_GIF_HEIGHT &&
+                entry.frame_count == STATUS_GIF_FRAME_COUNT &&
+                row_ok &&
+                entry.length == expected;
+    } else if (entry.type == kCustomAssetTypeGalleryImage) {
         size_t expected = (size_t)CLOCK_GALLERY_IMAGE_BYTES_PER_ROW * CLOCK_GALLERY_IMAGE_HEIGHT;
-        return entry.index < kCustomAssetMaxGalleryImages &&
-               entry.width == CLOCK_GALLERY_IMAGE_WIDTH &&
-               entry.height == CLOCK_GALLERY_IMAGE_HEIGHT &&
-               entry.frame_count == 1 &&
-               entry.bytes_per_row == CLOCK_GALLERY_IMAGE_BYTES_PER_ROW &&
-               entry.length == expected;
+        valid = entry.index < kCustomAssetMaxGalleryImages &&
+                entry.width == CLOCK_GALLERY_IMAGE_WIDTH &&
+                entry.height == CLOCK_GALLERY_IMAGE_HEIGHT &&
+                entry.frame_count == 1 &&
+                entry.bytes_per_row == CLOCK_GALLERY_IMAGE_BYTES_PER_ROW &&
+                entry.length == expected;
     }
-    return false;
+    if (!valid) {
+        ESP_LOGW(TAG,
+                 "custom asset entry shape invalid type=%u index=%u size=%ux%u frames=%u row=%u length=%lu",
+                 (unsigned)entry.type,
+                 (unsigned)entry.index,
+                 (unsigned)entry.width,
+                 (unsigned)entry.height,
+                 (unsigned)entry.frame_count,
+                 (unsigned)entry.bytes_per_row,
+                 (unsigned long)entry.length);
+    }
+    return valid;
 }
 
 static bool validate_entry_crc(const CustomAssetEntry &entry)

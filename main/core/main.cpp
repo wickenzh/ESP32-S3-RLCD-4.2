@@ -18,6 +18,9 @@ constexpr uint32_t kOtaTaskStack = 16384;
 constexpr uint32_t kHousekeepingTaskStack = 5120;
 constexpr uint32_t kUiTaskStack = 8192;
 constexpr uint32_t kButtonTaskStack = 3072;
+constexpr uint32_t kBootSyncWaitMarginMs = 500;
+constexpr uint32_t kBootAnimStopWaitMs = 1500;
+constexpr uint32_t kSetupPromptStartDelayMs = 350;
 constexpr UBaseType_t kHighServiceTaskPriority = 4;
 constexpr UBaseType_t kNormalServiceTaskPriority = 3;
 constexpr UBaseType_t kInputTaskPriority = 2;
@@ -172,14 +175,14 @@ extern "C" void app_main(void)
                         kBootSyncDoneBit,
                         pdFALSE,
                         pdTRUE,
-                        pdMS_TO_TICKS(kBootStartupBudgetMs + 500));
+                        pdMS_TO_TICKS(kBootStartupBudgetMs + kBootSyncWaitMarginMs));
     update_boot_screen(100, "Ready", "Starting clock");
     g_boot_anim_running = false;
     xEventGroupWaitBits(g_app_events,
                         kBootAnimDoneBit,
                         pdFALSE,
                         pdTRUE,
-                        pdMS_TO_TICKS(1500));
+                        pdMS_TO_TICKS(kBootAnimStopWaitMs));
     finish_boot_anim_to_last_frame();
     finish_boot_screen();
     g_startup_screen_active = false;
@@ -216,7 +219,7 @@ extern "C" void app_main(void)
                     kUiTaskCore);
 
     if (g_setup_prompt_pending) {
-        vTaskDelay(pdMS_TO_TICKS(350));
+        vTaskDelay(pdMS_TO_TICKS(kSetupPromptStartDelayMs));
         (void)start_setup_prompt_playback();
     }
 }

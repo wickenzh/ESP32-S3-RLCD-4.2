@@ -15,10 +15,15 @@ constexpr size_t kGzipMinSize = 18;
 constexpr size_t kGzipBaseHeaderSize = 10;
 constexpr size_t kGzipTrailerSize = 8;
 constexpr size_t kGzipExtraLengthFieldSize = 2;
+constexpr size_t kGzipMagicPrefixSize = 2;
+constexpr size_t kGzipHeaderProbeSize = 3;
 constexpr int kHttpStatusOkMin = 200;
 constexpr int kHttpStatusOkMax = 300;
 constexpr size_t kHttpPreviewBufferSize = 121;
+constexpr const char *kUrlHexDigits = "0123456789ABCDEF";
+constexpr const char *kHttpAcceptHeaderName = "Accept";
 constexpr const char *kHttpAcceptHeader = "application/json,text/plain,*/*";
+constexpr const char *kHttpAcceptEncodingHeaderName = "Accept-Encoding";
 constexpr const char *kHttpAcceptEncodingHeader = "identity";
 constexpr const char *kQweatherApiKeyHeader = "X-QW-Api-Key";
 constexpr const char *kQweatherGeoHost = "://geoapi.qweather.com/";
@@ -33,9 +38,19 @@ bool is_qweather_url(const char *url)
 
 bool has_gzip_magic_prefix(const char *data, size_t len)
 {
-    return data && len >= 2 &&
+    return data && len >= kGzipMagicPrefixSize &&
            (uint8_t)data[0] == kGzipMagic0 &&
            (uint8_t)data[1] == kGzipMagic1;
+}
+
+bool http_status_ok(int status)
+{
+    return status >= kHttpStatusOkMin && status < kHttpStatusOkMax;
+}
+
+bool http_ascii_space(char ch)
+{
+    return isspace((unsigned char)ch);
 }
 
 bool advance_gzip_pos(size_t *pos, size_t amount, size_t len)
@@ -180,7 +195,7 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
         ESP_LOGW(TAG, "decode http body invalid arg");
         return ESP_ERR_INVALID_ARG;
     }
-    if (*body_len < 3 || !has_gzip_magic_prefix(out, *body_len)) {
+    if (*body_len < kGzipHeaderProbeSize || !has_gzip_magic_prefix(out, *body_len)) {
         return ESP_OK;
     }
 
@@ -247,8 +262,8 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
         ESP_LOGW(TAG, "http client init failed");
         return ESP_FAIL;
     }
-    esp_http_client_set_header(client, "Accept", kHttpAcceptHeader);
-    esp_http_client_set_header(client, "Accept-Encoding", kHttpAcceptEncodingHeader);
+    esp_http_client_set_header(client, kHttpAcceptHeaderName, kHttpAcceptHeader);
+    esp_http_client_set_header(client, kHttpAcceptEncodingHeaderName, kHttpAcceptEncodingHeader);
     if (api_key && api_key[0] != '\0') {
         esp_http_client_set_header(client, kQweatherApiKeyHeader, api_key);
     }
@@ -256,7 +271,7 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
     int status = esp_http_client_get_status_code(client);
     int64_t content_length = esp_http_client_get_content_length(client);
     esp_http_client_cleanup(client);
-    if (err != ESP_OK || status < kHttpStatusOkMin || status >= kHttpStatusOkMax) {
+    if (err != ESP_OK || !http_status_ok(status)) {
         if (buffer.len > 0) {
             char preview[kHttpPreviewBufferSize] = {};
             copy_log_preview(preview, sizeof(preview), out);
@@ -286,11 +301,11 @@ void trim_ascii(char *text)
         return;
     }
     size_t len = strlen(text);
-    while (len > 0 && isspace((unsigned char)text[len - 1])) {
+    while (len > 0 && http_ascii_space(text[len - 1])) {
         text[--len] = '\0';
     }
     char *start = text;
-    while (*start && isspace((unsigned char)*start)) {
+    while (*start && http_ascii_space(*start)) {
         ++start;
     }
     if (start != text) {
@@ -323,7 +338,6 @@ bool url_encode_component(const char *in, char *out, size_t out_len)
     if (!in || !out || out_len == 0) {
         return false;
     }
-    static const char kHex[] = "0123456789ABCDEF";
     size_t pos = 0;
     for (const unsigned char *p = (const unsigned char *)in; *p; ++p) {
         if (url_is_unreserved((char)*p)) {
@@ -336,8 +350,8 @@ bool url_encode_component(const char *in, char *out, size_t out_len)
                 return false;
             }
             out[pos++] = '%';
-            out[pos++] = kHex[*p >> 4];
-            out[pos++] = kHex[*p & 0x0F];
+            out[pos++] = kUrlHexDigits[*p >> 4];
+            out[pos++] = kUrlHexDigits[*p & 0x0F];
         }
     }
     out[pos] = '\0';

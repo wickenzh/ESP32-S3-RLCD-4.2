@@ -3,16 +3,19 @@
 
 #include "ui_views.h"
 
+static constexpr uint16_t kHourlyHistoryMetaVersion = 2;
+static constexpr uint16_t kLegacyHourlyHistoryVersion = 1;
+
 struct HourlySensorHistoryMeta {
     uint32_t magic = kHourlyHistoryMagic;
-    uint16_t version = 2;
+    uint16_t version = kHourlyHistoryMetaVersion;
     uint16_t count = kHourlyHistoryCount;
     int64_t last_saved_at = 0;
 };
 
 struct LegacyHourlySensorHistoryBlob {
     uint32_t magic = kHourlyHistoryMagic;
-    uint16_t version = 1;
+    uint16_t version = kLegacyHourlyHistoryVersion;
     uint16_t count = kLegacyHourlyHistoryCount;
     HourlySensorSample samples[kLegacyHourlyHistoryCount] = {};
 };
@@ -27,13 +30,15 @@ constexpr const char *kLegacyHourlyHistoryKey = "hourly24";
 constexpr const char *kHourlySlotKeyFormat = "h%02d";
 constexpr size_t kHourlySlotKeyBufferSize = 8;
 constexpr int kMsPerSecond = 1000;
+constexpr int kUsPerMs = 1000;
 constexpr int kSecondsPerMinute = 60;
 constexpr int kSecondsPerHour = 60 * kSecondsPerMinute;
 constexpr int kWeatherSyncFallbackSeconds = kSecondsPerHour;
 constexpr int kWeatherSyncSearchHours = 30;
-constexpr int kUnknownTimeSensorSampleMs = 60000;
+constexpr int kUnknownTimeSensorSampleMs = kSecondsPerMinute * kMsPerSecond;
 constexpr int kSensorSampleDayMinutes = 1;
 constexpr int kSensorSampleNightMinutes = 2;
+constexpr int kTmYearOffset = 1900;
 static_assert(kHourlyHistoryCount <= 99, "hourly slot key format h%02d supports two-digit indexes");
 static_assert(kHourlySlotKeyBufferSize >= sizeof("h00"), "hourly slot key buffer must fit hNN plus terminator");
 
@@ -63,6 +68,27 @@ TickType_t next_periodic_sample_tick(TickType_t now,
     int interval_seconds = periodic_sample_minutes(local, day_minutes, night_minutes) * kSecondsPerMinute;
     int seconds_to_next = seconds_until_next_interval(local, interval_seconds);
     return now + pdMS_TO_TICKS(seconds_to_next * kMsPerSecond);
+}
+
+bool should_log_nvs_read_error(esp_err_t err)
+{
+    return err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND;
+}
+
+bool is_hourly_meta_valid(const HourlySensorHistoryMeta &meta, size_t meta_len)
+{
+    return meta_len == sizeof(meta) &&
+           meta.magic == kHourlyHistoryMagic &&
+           meta.version == kHourlyHistoryMetaVersion &&
+           meta.count == kHourlyHistoryCount;
+}
+
+bool is_legacy_hourly_history_valid(const LegacyHourlySensorHistoryBlob &legacy, size_t legacy_len)
+{
+    return legacy_len == sizeof(legacy) &&
+           legacy.magic == kHourlyHistoryMagic &&
+           legacy.version == kLegacyHourlyHistoryVersion &&
+           legacy.count == kLegacyHourlyHistoryCount;
 }
 } // namespace
 
@@ -94,7 +120,7 @@ int boot_sync_remaining_ms()
     if (remaining_us <= 0) {
         return 0;
     }
-    int64_t remaining_ms = remaining_us / 1000;
+    int64_t remaining_ms = remaining_us / kUsPerMs;
     return remaining_ms > INT32_MAX ? INT32_MAX : (int)remaining_ms;
 }
 
@@ -104,7 +130,7 @@ bool is_system_time_plausible(struct tm *local_out)
     time(&now);
     struct tm local = {};
     localtime_r(&now, &local);
-    int year = local.tm_year + 1900;
+    int year = local.tm_year + kTmYearOffset;
     if (local_out) {
         *local_out = local;
     }
@@ -113,7 +139,7 @@ bool is_system_time_plausible(struct tm *local_out)
 
 bool is_tm_plausible(const struct tm &local)
 {
-    int year = local.tm_year + 1900;
+    int year = local.tm_year + kTmYearOffset;
     return year >= kMinValidYear && year <= kMaxValidYear;
 }
 
@@ -152,16 +178,15 @@ void load_hourly_sensor_history()
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(kSensorNvsNamespace, NVS_READONLY, &nvs);
     if (err != ESP_OK) {
+        if (should_log_nvs_read_error(err)) {
+            ESP_LOGW(TAG, "open sensor history nvs failed: %s", esp_err_to_name(err));
+        }
         return;
     }
     HourlySensorHistoryMeta meta = {};
     size_t meta_len = sizeof(meta);
     err = nvs_get_blob(nvs, kHourlyHistoryMetaKey, &meta, &meta_len);
-    if (err == ESP_OK &&
-        meta_len == sizeof(meta) &&
-        meta.magic == kHourlyHistoryMagic &&
-        meta.version == 2 &&
-        meta.count == kHourlyHistoryCount) {
+    if (err == ESP_OK && is_hourly_meta_valid(meta, meta_len)) {
         int loaded = 0;
         int64_t newest_slot = 0;
         for (int i = 0; i < kHourlyHistoryCount; ++i) {
@@ -171,13 +196,15 @@ void load_hourly_sensor_history()
             if (!hourly_slot_key(i, key, sizeof(key))) {
                 continue;
             }
-            if (nvs_get_blob(nvs, key, &sample, &sample_len) == ESP_OK &&
-                sample_len == sizeof(sample)) {
+            esp_err_t slot_err = nvs_get_blob(nvs, key, &sample, &sample_len);
+            if (slot_err == ESP_OK && sample_len == sizeof(sample)) {
                 g_hourly_history.samples[i] = sample;
                 if (sample.valid && sample.timestamp > newest_slot) {
                     newest_slot = sample.timestamp;
                 }
                 ++loaded;
+            } else if (should_log_nvs_read_error(slot_err)) {
+                ESP_LOGW(TAG, "read hourly sensor slot %s failed: %s", key, esp_err_to_name(slot_err));
             }
         }
         if (loaded > 0) {
@@ -189,16 +216,18 @@ void load_hourly_sensor_history()
             ++g_hourly_history_version;
             return;
         }
+    } else if (should_log_nvs_read_error(err)) {
+        ESP_LOGW(TAG, "read hourly sensor meta failed: %s", esp_err_to_name(err));
     }
 
     LegacyHourlySensorHistoryBlob legacy = {};
     size_t legacy_len = sizeof(legacy);
     err = nvs_get_blob(nvs, kLegacyHourlyHistoryKey, &legacy, &legacy_len);
     nvs_close(nvs);
-    if (err != ESP_OK || legacy_len != sizeof(legacy) ||
-        legacy.magic != kHourlyHistoryMagic ||
-        legacy.version != 1 ||
-        legacy.count != kLegacyHourlyHistoryCount) {
+    if (err != ESP_OK || !is_legacy_hourly_history_valid(legacy, legacy_len)) {
+        if (should_log_nvs_read_error(err)) {
+            ESP_LOGW(TAG, "read legacy hourly sensor history failed: %s", esp_err_to_name(err));
+        }
         return;
     }
     for (int i = 0; i < kLegacyHourlyHistoryCount; ++i) {

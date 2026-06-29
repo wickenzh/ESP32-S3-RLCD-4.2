@@ -436,17 +436,31 @@ static bool parse_ota_manifest(const char *json, OtaManifest *manifest)
     }
     OtaJsonRoot root(json);
     if (!root.get()) {
+        ESP_LOGW(TAG, "OTA manifest JSON parse failed");
         return false;
     }
-    bool ok = json_copy_string(root.get(), "version", manifest->version, sizeof(manifest->version)) &&
-              json_copy_string(root.get(), "url", manifest->url, sizeof(manifest->url)) &&
-              json_copy_string(root.get(), "sha256", manifest->sha256, sizeof(manifest->sha256));
+    bool have_version = json_copy_string(root.get(), "version", manifest->version, sizeof(manifest->version)) &&
+                        manifest->version[0] != '\0';
+    bool have_url = json_copy_string(root.get(), "url", manifest->url, sizeof(manifest->url)) &&
+                    manifest->url[0] != '\0';
+    bool have_sha = json_copy_string(root.get(), "sha256", manifest->sha256, sizeof(manifest->sha256));
     cJSON *size = cJSON_GetObjectItem(root.get(), "size");
     if (cJSON_IsNumber(size)) {
         manifest->size = size->valueint;
     }
     (void)json_copy_string(root.get(), "notes", manifest->notes, sizeof(manifest->notes));
-    return ok && manifest->version[0] && manifest->url[0] && valid_sha256_string(manifest->sha256);
+    if (!have_version || !have_url || !have_sha) {
+        ESP_LOGW(TAG, "OTA manifest missing required fields version=%d url=%d sha=%d",
+                 have_version,
+                 have_url,
+                 have_sha);
+        return false;
+    }
+    if (!valid_sha256_string(manifest->sha256)) {
+        ESP_LOGW(TAG, "OTA manifest sha invalid len=%u", (unsigned)strlen(manifest->sha256));
+        return false;
+    }
+    return true;
 }
 
 static bool ota_manifest_source_valid(const OtaManifestSource &source)

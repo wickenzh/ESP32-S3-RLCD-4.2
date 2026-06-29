@@ -6,6 +6,10 @@
 #include "ui_views.h"
 
 namespace {
+constexpr int kButtonDebounceMs = 40;
+constexpr int kButtonLongPressMs = 1200;
+constexpr int kButtonBusyFeedbackMs = 2000;
+
 bool low_refresh_button_idle_context()
 {
     if (g_battery_charging ||
@@ -62,7 +66,7 @@ void button_task(void *)
         } else {
             if (boot_pressed_since != 0 && g_settings_requested) {
                 TickType_t held = now - boot_pressed_since;
-                if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
+                if (held >= pdMS_TO_TICKS(kButtonDebounceMs) && held < pdMS_TO_TICKS(kButtonLongPressMs)) {
                     g_settings_action_seq = g_settings_action_seq + 1;
                     notify_ui_task();
                 }
@@ -73,7 +77,7 @@ void button_task(void *)
                        !g_setup_portal_active &&
                        !g_low_battery_mode) {
                 TickType_t held = now - boot_pressed_since;
-                if (held >= pdMS_TO_TICKS(40) && held < pdMS_TO_TICKS(1200)) {
+                if (held >= pdMS_TO_TICKS(kButtonDebounceMs) && held < pdMS_TO_TICKS(kButtonLongPressMs)) {
                     g_active_work_page = next_enabled_work_page(g_active_work_page);
                     ESP_LOGI(TAG, "switch work page: %d", g_active_work_page + 1);
                     notify_ui_task();
@@ -106,19 +110,19 @@ void button_task(void *)
             } else if (!key_press_opened_settings &&
                        !key_long_handled &&
                        g_settings_requested &&
-                       now - key_pressed_since >= pdMS_TO_TICKS(1200)) {
+                       now - key_pressed_since >= pdMS_TO_TICKS(kButtonLongPressMs)) {
                 g_settings_last_activity_tick = now;
                 if (!is_settings_sync_busy() && !ota_flow_active()) {
                     handle_settings_key_long();
                 } else {
-                    set_settings_feedback("请等待操作完成", 2000);
+                    set_settings_feedback("请等待操作完成", kButtonBusyFeedbackMs);
                 }
                 key_long_handled = true;
                 notify_ui_task();
             } else if (!key_long_handled &&
                        g_boot_info_requested &&
                        !g_settings_requested &&
-                       now - key_pressed_since >= pdMS_TO_TICKS(1200)) {
+                       now - key_pressed_since >= pdMS_TO_TICKS(kButtonLongPressMs)) {
                 g_boot_info_requested = false;
                 g_info_page_until_tick = 0;
                 g_settings_requested = true;
@@ -133,7 +137,7 @@ void button_task(void *)
             } else if (!key_long_handled &&
                        g_network_diag_page_requested &&
                        !g_settings_requested &&
-                       now - key_pressed_since >= pdMS_TO_TICKS(1200)) {
+                       now - key_pressed_since >= pdMS_TO_TICKS(kButtonLongPressMs)) {
                 g_network_diag_page_requested = false;
                 g_settings_requested = true;
                 g_settings_focus_secondary = true;
@@ -148,20 +152,20 @@ void button_task(void *)
         } else {
             if (key_pressed_since != 0 && !key_press_opened_settings && !key_long_handled && g_settings_requested) {
                 TickType_t held = now - key_pressed_since;
-                if (held >= pdMS_TO_TICKS(1200)) {
+                if (held >= pdMS_TO_TICKS(kButtonLongPressMs)) {
                     g_settings_last_activity_tick = now;
                     if (!is_settings_sync_busy() && !ota_flow_active()) {
                         handle_settings_key_long();
                     } else {
-                        set_settings_feedback("请等待操作完成", 2000);
+                        set_settings_feedback("请等待操作完成", kButtonBusyFeedbackMs);
                     }
                     notify_ui_task();
-                } else if (held >= pdMS_TO_TICKS(40)) {
+                } else if (held >= pdMS_TO_TICKS(kButtonDebounceMs)) {
                     g_settings_last_activity_tick = now;
                     if (!is_settings_sync_busy() && !ota_flow_active()) {
                         handle_settings_key_short();
                     } else {
-                        set_settings_feedback("请等待操作完成", 2000);
+                        set_settings_feedback("请等待操作完成", kButtonBusyFeedbackMs);
                         notify_ui_task();
                     }
                 }

@@ -16,6 +16,25 @@ constexpr size_t kQweatherAlertResponseBufferSize = 16384;
 constexpr size_t kQweatherDailyResponseBufferSize = 24576;
 constexpr size_t kQweatherAirResponseBufferSize = 8192;
 constexpr size_t kIpRegionMaxParts = 5;
+constexpr size_t kWeatherAlertCompactTitleChars = 6;
+constexpr const char *kIpGeolocationUrl = "https://uapis.cn/api/v1/network/myip";
+constexpr const char *kWeatherAlertSuffix = "预警";
+
+struct WarningColorInfo {
+    const char *code;
+    const char *name;
+    const char *short_name;
+    int rank;
+};
+
+constexpr WarningColorInfo kWarningColors[] = {
+    {"blue", "蓝色", "蓝", 2},
+    {"yellow", "黄色", "黄", 3},
+    {"orange", "橙色", "橙", 4},
+    {"red", "红色", "红", 5},
+    {"white", "白色", "白", 1},
+    {"black", "黑色", "黑", 1},
+};
 
 bool format_qweather_url(char *out, size_t out_len, const char *stage, const char *fmt, ...)
 {
@@ -112,6 +131,24 @@ bool qweather_code_ok(const cJSON *code)
 {
     return cJSON_IsString(code) && strcmp(code->valuestring, "200") == 0;
 }
+
+const char *qweather_code_text(const cJSON *code)
+{
+    return cJSON_IsString(code) ? code->valuestring : "missing";
+}
+
+const WarningColorInfo *find_warning_color(const char *code)
+{
+    if (!code) {
+        return nullptr;
+    }
+    for (const WarningColorInfo &color : kWarningColors) {
+        if (strcmp(code, color.code) == 0) {
+            return &color;
+        }
+    }
+    return nullptr;
+}
 } // namespace
 
 bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size_t city_len)
@@ -124,7 +161,7 @@ bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size
     if (!response) {
         return false;
     }
-    if (http_get_text("https://uapis.cn/api/v1/network/myip", response.get(), kIpGeoResponseBufferSize) != ESP_OK) {
+    if (http_get_text(kIpGeolocationUrl, response.get(), kIpGeoResponseBufferSize) != ESP_OK) {
         return false;
     }
     QweatherJsonRoot root(response.get());
@@ -136,7 +173,12 @@ bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size
     cJSON *lon = cJSON_GetObjectItem(root.get(), "longitude");
     cJSON *region = cJSON_GetObjectItem(root.get(), "region");
     if (cJSON_IsNumber(lat) && cJSON_IsNumber(lon)) {
-        snprintf(location, location_len, "%.4f,%.4f", lon->valuedouble, lat->valuedouble);
+        int written = snprintf(location, location_len, "%.4f,%.4f", lon->valuedouble, lat->valuedouble);
+        if (written < 0 || written >= (int)location_len) {
+            location[0] = '\0';
+            ESP_LOGW(TAG, "ip location coordinate text too long");
+            return false;
+        }
         if (cJSON_IsString(region) && region->valuestring) {
             char region_copy[96] = {};
             strlcpy(region_copy, region->valuestring, sizeof(region_copy));
@@ -161,6 +203,8 @@ bool ip_geolocation_lookup(char *location, size_t location_len, char *city, size
         }
         ESP_LOGI(TAG, "ip location resolved: %s city=%s", location, city);
         ok = true;
+    } else {
+        ESP_LOGW(TAG, "ip location response missing latitude/longitude");
     }
     return ok;
 }
@@ -226,8 +270,7 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
         }
         status = ok ? kQweatherCityLookupOk : kQweatherCityLookupError;
     } else {
-        ESP_LOGW(TAG, "qweather city lookup failed code=%s",
-                 cJSON_IsString(code) ? code->valuestring : "missing");
+        ESP_LOGW(TAG, "qweather city lookup failed code=%s", qweather_code_text(code));
     }
     return status;
 }
@@ -255,30 +298,14 @@ bool qweather_lookup_city(const char *location,
 
 const char *warning_color_name(const char *code)
 {
-    if (!code) {
-        return "";
-    }
-    if (strcmp(code, "blue") == 0) return "蓝色";
-    if (strcmp(code, "yellow") == 0) return "黄色";
-    if (strcmp(code, "orange") == 0) return "橙色";
-    if (strcmp(code, "red") == 0) return "红色";
-    if (strcmp(code, "white") == 0) return "白色";
-    if (strcmp(code, "black") == 0) return "黑色";
-    return "";
+    const WarningColorInfo *color = find_warning_color(code);
+    return color ? color->name : "";
 }
 
 int warning_color_rank(const char *code)
 {
-    if (!code) {
-        return 0;
-    }
-    if (strcmp(code, "red") == 0) return 5;
-    if (strcmp(code, "orange") == 0) return 4;
-    if (strcmp(code, "yellow") == 0) return 3;
-    if (strcmp(code, "blue") == 0) return 2;
-    if (strcmp(code, "white") == 0) return 1;
-    if (strcmp(code, "black") == 0) return 1;
-    return 0;
+    const WarningColorInfo *color = find_warning_color(code);
+    return color ? color->rank : 0;
 }
 
 static size_t alert_utf8_char_len(unsigned char ch)
@@ -369,19 +396,16 @@ static void compact_weather_alert_title(char *title, size_t title_len)
     if (!title || title[0] == '\0') {
         return;
     }
-    if (alert_utf8_char_count(title) <= 6) {
+    if (alert_utf8_char_count(title) <= kWeatherAlertCompactTitleChars) {
         return;
     }
-    replace_all(title, title_len, "预警", "");
-    replace_all(title, title_len, "蓝色", "蓝");
-    replace_all(title, title_len, "黄色", "黄");
-    replace_all(title, title_len, "橙色", "橙");
-    replace_all(title, title_len, "红色", "红");
-    replace_all(title, title_len, "白色", "白");
-    replace_all(title, title_len, "黑色", "黑");
-    if (alert_utf8_char_count(title) > 6) {
+    replace_all(title, title_len, kWeatherAlertSuffix, "");
+    for (const WarningColorInfo &color : kWarningColors) {
+        replace_all(title, title_len, color.name, color.short_name);
+    }
+    if (alert_utf8_char_count(title) > kWeatherAlertCompactTitleChars) {
         char clipped[kWeatherAlertTitleLen] = {};
-        alert_utf8_copy_chars(clipped, sizeof(clipped), title, 6);
+        alert_utf8_copy_chars(clipped, sizeof(clipped), title, kWeatherAlertCompactTitleChars);
         strlcpy(title, clipped, title_len);
     }
 }
@@ -481,11 +505,11 @@ bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *al
         char title[kWeatherAlertTitleLen] = {};
         const char *color_name = warning_color_name(color_code);
         if (event_name[0] != '\0' && color_name[0] != '\0') {
-            snprintf(title, sizeof(title), "%s%s预警", event_name, color_name);
+            snprintf(title, sizeof(title), "%s%s%s", event_name, color_name, kWeatherAlertSuffix);
         } else if (headline[0] != '\0') {
             strlcpy(title, headline, sizeof(title));
         } else if (event_name[0] != '\0') {
-            snprintf(title, sizeof(title), "%s预警", event_name);
+            snprintf(title, sizeof(title), "%s%s", event_name, kWeatherAlertSuffix);
         }
         add_weather_alert_title(&next, title, rank);
     }
@@ -540,8 +564,7 @@ bool qweather_fetch_now(const char *city_id, WeatherData *weather)
              json_copy_string(now, "temp", weather->temp, sizeof(weather->temp)) &&
              json_copy_string(now, "humidity", weather->humidity, sizeof(weather->humidity));
     } else {
-        ESP_LOGW(TAG, "qweather now failed code=%s",
-                 cJSON_IsString(code) ? code->valuestring : "missing");
+        ESP_LOGW(TAG, "qweather now failed code=%s", qweather_code_text(code));
     }
     return ok;
 }
@@ -650,8 +673,7 @@ static bool qweather_fetch_daily_days(const char *city_id, int days, WeatherFore
             ok = true;
         }
     } else {
-        ESP_LOGW(TAG, "qweather daily failed code=%s",
-                 cJSON_IsString(code) ? code->valuestring : "missing");
+        ESP_LOGW(TAG, "qweather daily failed code=%s", qweather_code_text(code));
     }
     return ok;
 }
@@ -716,8 +738,7 @@ bool qweather_fetch_air(const char *city_id, WeatherAirData *air)
             *air = next;
         }
     } else {
-        ESP_LOGW(TAG, "qweather air failed code=%s",
-                 cJSON_IsString(code) ? code->valuestring : "missing");
+        ESP_LOGW(TAG, "qweather air failed code=%s", qweather_code_text(code));
     }
     return ok;
 }

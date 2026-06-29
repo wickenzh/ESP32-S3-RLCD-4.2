@@ -13,6 +13,12 @@ constexpr int kUiNetworkDiagRunningPollMs = 250;
 constexpr int kUiNetworkDiagIdlePollMs = 500;
 constexpr int kUiSettingsPollMs = 100;
 constexpr int kUiPostPageSwitchPollMs = 250;
+constexpr int64_t kUiUsPerSecond = 1000000;
+constexpr int kUiMsPerSecond = 1000;
+constexpr int kUiSecondsPerMinute = 60;
+constexpr int kUiBoundaryWakeSlackMs = 5;
+constexpr int kUiNextSecondDelayMinMs = 10;
+constexpr int kUiNextSecondDelayMaxMs = kUiMsPerSecond + kUiBoundaryWakeSlackMs;
 } // namespace
 
 void ui_task(void *)
@@ -42,21 +48,21 @@ void ui_task(void *)
 
     auto delay_to_next_second = []() {
         int64_t us = esp_timer_get_time();
-        int64_t until_next = 1000000 - (us % 1000000);
-        int delay_ms = (int)(until_next / 1000) + 5;
-        if (delay_ms < 10) {
-            delay_ms = 10;
-        } else if (delay_ms > 1005) {
-            delay_ms = 1005;
+        int64_t until_next = kUiUsPerSecond - (us % kUiUsPerSecond);
+        int delay_ms = (int)(until_next / kUiMsPerSecond) + kUiBoundaryWakeSlackMs;
+        if (delay_ms < kUiNextSecondDelayMinMs) {
+            delay_ms = kUiNextSecondDelayMinMs;
+        } else if (delay_ms > kUiNextSecondDelayMaxMs) {
+            delay_ms = kUiNextSecondDelayMaxMs;
         }
         return pdMS_TO_TICKS(delay_ms);
     };
     auto delay_to_next_minute = [](const struct tm &local) {
-        int seconds_to_next = 60 - local.tm_sec;
-        if (seconds_to_next <= 0 || seconds_to_next > 60) {
-            seconds_to_next = 60;
+        int seconds_to_next = kUiSecondsPerMinute - local.tm_sec;
+        if (seconds_to_next <= 0 || seconds_to_next > kUiSecondsPerMinute) {
+            seconds_to_next = kUiSecondsPerMinute;
         }
-        return pdMS_TO_TICKS(seconds_to_next * 1000 + 5);
+        return pdMS_TO_TICKS(seconds_to_next * kUiMsPerSecond + kUiBoundaryWakeSlackMs);
     };
     auto weather_cache_stale = [](time_t now_value) {
         if (g_last_weather_sync_time <= 0) {

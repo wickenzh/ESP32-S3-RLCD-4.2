@@ -95,6 +95,16 @@ int battery_percent_from_voltage(float voltage)
     return percent;
 }
 
+int battery_adc_raw_to_mv(int raw)
+{
+    return (raw * kBatteryAdcReferenceMv) / kBatteryAdcRawMax;
+}
+
+float battery_voltage_from_adc_mv(int adc_mv)
+{
+    return adc_mv * kBatteryMillivoltsToVolts * kBatteryVoltageDivider;
+}
+
 bool read_battery_percent(int *percent)
 {
     if (!percent) {
@@ -113,7 +123,7 @@ bool read_battery_percent(int *percent)
         return false;
     }
 
-    int adc_mv = (raw * kBatteryAdcReferenceMv) / kBatteryAdcRawMax;
+    int adc_mv = battery_adc_raw_to_mv(raw);
     if (g_battery_adc_cali_ready) {
         err = adc_cali_raw_to_voltage(g_battery_adc_cali, raw, &adc_mv);
         if (err != ESP_OK) {
@@ -121,7 +131,7 @@ bool read_battery_percent(int *percent)
         }
     }
 
-    float voltage = adc_mv * kBatteryMillivoltsToVolts * kBatteryVoltageDivider;
+    float voltage = battery_voltage_from_adc_mv(adc_mv);
     int soc = battery_percent_from_voltage(voltage);
     ESP_LOGI(TAG, "battery adc raw=%d adc_mv=%d battery=%.3fV soc=%d%%", raw, adc_mv, voltage, soc);
     *percent = soc;
