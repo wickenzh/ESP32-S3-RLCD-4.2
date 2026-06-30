@@ -44,7 +44,8 @@ bool rtc_date_matches_tm(const rtcTimeStruct_t &rtc_time, const struct tm &local
 
 namespace {
 SemaphoreHandle_t s_pm_lock_mutex = nullptr;
-constexpr TickType_t kPmLockMutexTimeout = pdMS_TO_TICKS(1000);
+constexpr uint32_t kPmLockMutexTimeoutMs = 1000;
+constexpr TickType_t kPmLockMutexTimeout = pdMS_TO_TICKS(kPmLockMutexTimeoutMs);
 
 bool take_pm_lock_mutex(const char *name)
 {

@@ -19,6 +19,8 @@ static constexpr int kCalendarCellY = 29;
 static constexpr int kCalendarCellW = 52;
 static constexpr int kCalendarCellH = 41;
 static constexpr int kCalendarGridX = 0;
+static constexpr int kTmYearOffset = 1900;
+static constexpr int kTmMonthOffset = 1;
 
 static void canvas_fill_rect_safe(lv_obj_t *canvas, int w, int h, int x, int y, int rw, int rh, lv_color_t color)
 {
@@ -139,8 +141,8 @@ static void draw_calendar_grid(const struct tm &local)
         }
     }
 
-    int year = local.tm_year + 1900;
-    int month = local.tm_mon + 1;
+    int year = local.tm_year + kTmYearOffset;
+    int month = local.tm_mon + kTmMonthOffset;
     int today = local.tm_mday;
     int first_weekday = calendar_first_weekday(year, month);
     int days = calendar_days_in_month(year, month);
@@ -208,7 +210,7 @@ bool update_calendar_page(const struct tm &local)
 {
     build_calendar_page();
     bool changed = false;
-    int month_key = (local.tm_year + 1900) * 12 + local.tm_mon;
+    int month_key = (local.tm_year + kTmYearOffset) * 12 + local.tm_mon;
     if (month_key != g_last_calendar_drawn_month || local.tm_mday != g_last_calendar_drawn_day) {
         g_last_calendar_drawn_month = month_key;
         g_last_calendar_drawn_day = local.tm_mday;

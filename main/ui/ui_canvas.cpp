@@ -4,15 +4,42 @@
 namespace {
 constexpr int kDashedLineRunPixels = 5;
 constexpr int kDashedLinePeriodPixels = kDashedLineRunPixels * 2;
+constexpr int kBresenhamErrorScale = 2;
+
+bool canvas_size_valid(int w, int h)
+{
+    return w > 0 && h > 0;
+}
+
+void order_int_pair(int *first, int *second)
+{
+    if (!first || !second || *first <= *second) {
+        return;
+    }
+    int tmp = *first;
+    *first = *second;
+    *second = tmp;
+}
+
+int abs_delta(int start, int end)
+{
+    return end > start ? end - start : start - end;
+}
+
+int line_step(int start, int end)
+{
+    return start < end ? 1 : -1;
+}
+
+int square_int(int value)
+{
+    return value * value;
+}
 } // namespace
 
 int clamp_int(int value, int min_value, int max_value)
 {
-    if (min_value > max_value) {
-        int tmp = min_value;
-        min_value = max_value;
-        max_value = tmp;
-    }
+    order_int_pair(&min_value, &max_value);
     if (value < min_value) {
         return min_value;
     }
@@ -24,7 +51,7 @@ int clamp_int(int value, int min_value, int max_value)
 
 void canvas_set_px_safe(lv_obj_t *canvas, int x, int y, int w, int h, lv_color_t color)
 {
-    if (!canvas || w <= 0 || h <= 0 || x < 0 || y < 0 || x >= w || y >= h) {
+    if (!canvas || !canvas_size_valid(w, h) || x < 0 || y < 0 || x >= w || y >= h) {
         return;
     }
     lv_canvas_set_px_color(canvas, x, y, color);
@@ -32,20 +59,20 @@ void canvas_set_px_safe(lv_obj_t *canvas, int x, int y, int w, int h, lv_color_t
 
 void canvas_draw_line(lv_obj_t *canvas, int w, int h, int x0, int y0, int x1, int y1, lv_color_t color)
 {
-    if (!canvas || w <= 0 || h <= 0) {
+    if (!canvas || !canvas_size_valid(w, h)) {
         return;
     }
-    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
-    int sx = x0 < x1 ? 1 : -1;
-    int dy = y1 > y0 ? y0 - y1 : y1 - y0;
-    int sy = y0 < y1 ? 1 : -1;
+    int dx = abs_delta(x0, x1);
+    int sx = line_step(x0, x1);
+    int dy = -abs_delta(y0, y1);
+    int sy = line_step(y0, y1);
     int err = dx + dy;
     for (;;) {
         canvas_set_px_safe(canvas, x0, y0, w, h, color);
         if (x0 == x1 && y0 == y1) {
             break;
         }
-        int e2 = 2 * err;
+        int e2 = kBresenhamErrorScale * err;
         if (e2 >= dy) {
             err += dy;
             x0 += sx;
@@ -59,14 +86,10 @@ void canvas_draw_line(lv_obj_t *canvas, int w, int h, int x0, int y0, int x1, in
 
 void canvas_draw_dashed_hline(lv_obj_t *canvas, int w, int h, int x1, int x2, int y, lv_color_t color)
 {
-    if (!canvas || w <= 0 || h <= 0 || y < 0 || y >= h) {
+    if (!canvas || !canvas_size_valid(w, h) || y < 0 || y >= h) {
         return;
     }
-    if (x2 < x1) {
-        int tmp = x1;
-        x1 = x2;
-        x2 = tmp;
-    }
+    order_int_pair(&x1, &x2);
     if (x2 < 0 || x1 >= w) {
         return;
     }
@@ -81,15 +104,16 @@ void canvas_draw_dashed_hline(lv_obj_t *canvas, int w, int h, int x1, int x2, in
 
 void canvas_draw_filled_circle(lv_obj_t *canvas, int w, int h, int cx, int cy, int radius, lv_color_t color)
 {
-    if (!canvas || w <= 0 || h <= 0 || radius < 0) {
+    if (!canvas || !canvas_size_valid(w, h) || radius < 0) {
         return;
     }
     if (cx + radius < 0 || cx - radius >= w || cy + radius < 0 || cy - radius >= h) {
         return;
     }
+    const int radius_squared = square_int(radius);
     for (int y = -radius; y <= radius; ++y) {
         for (int x = -radius; x <= radius; ++x) {
-            if (x * x + y * y <= radius * radius) {
+            if (square_int(x) + square_int(y) <= radius_squared) {
                 canvas_set_px_safe(canvas, cx + x, cy + y, w, h, color);
             }
         }

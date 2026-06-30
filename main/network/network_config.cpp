@@ -23,6 +23,10 @@ constexpr const char *kPageOrderV1Key = "page_order_v1";
 constexpr const char *kPageOrderV2Key = "page_order_v2";
 constexpr const char *kPageOrderV3Key = "page_order_v3";
 constexpr size_t kFormEncodedBufferSize = 160;
+constexpr size_t kManualTimeFieldSize = 32;
+constexpr size_t kSetupSsidFieldSize = 33;
+constexpr size_t kSetupPasswordFieldSize = 65;
+constexpr size_t kSetupApiKeyFieldSize = 96;
 constexpr uint8_t kDefaultChimeVolumePercent = 80;
 constexpr uint8_t kValidChimeVolumePercent[] = {20, 40, 60, 80, 100};
 constexpr uint8_t kWeatherClockPageMask = (uint8_t)(1U << kWorkPageWeatherClock);
@@ -33,6 +37,8 @@ constexpr uint8_t kWeatherBoardPageMask = (uint8_t)(1U << kWorkPageWeatherBoard)
 constexpr uint8_t kFlipClockPageMask = (uint8_t)(1U << kWorkPageFlipClock);
 constexpr size_t kLegacyPageOrderV1Count = 4;
 constexpr size_t kPageOrderV2Count = 5;
+constexpr int kTmYearOffset = 1900;
+constexpr int kTmMonthOffset = 1;
 static_assert(kWorkPageCount <= 8, "work page enabled mask is stored as uint8_t");
 static_assert(kLegacyPageOrderV1Count <= kWorkPageCount);
 static_assert(kPageOrderV2Count <= kWorkPageCount);
@@ -699,8 +705,8 @@ static bool parse_manual_datetime(const char *text, struct tm *out)
         return false;
     }
     struct tm local = {};
-    local.tm_year = year - 1900;
-    local.tm_mon = month - 1;
+    local.tm_year = year - kTmYearOffset;
+    local.tm_mon = month - kTmMonthOffset;
     local.tm_mday = day;
     local.tm_hour = hour;
     local.tm_min = minute;
@@ -729,7 +735,7 @@ bool save_offline_datetime_from_body(const char *body)
         ESP_LOGW(TAG, "offline setup ignored empty request body");
         return false;
     }
-    char manual_time[32] = {};
+    char manual_time[kManualTimeFieldSize] = {};
     form_value_fallback(body, "manual_time", "datetime", manual_time, sizeof(manual_time));
     trim_ascii(manual_time);
     struct tm local = {};
@@ -750,8 +756,8 @@ bool save_offline_datetime_from_body(const char *body)
     }
     set_app_event_bits(kTimeSyncedBit, "offline manual time");
     ESP_LOGI(TAG, "offline mode enabled with manual time: %04d-%02d-%02d %02d:%02d:%02d",
-             local.tm_year + 1900,
-             local.tm_mon + 1,
+             local.tm_year + kTmYearOffset,
+             local.tm_mon + kTmMonthOffset,
              local.tm_mday,
              local.tm_hour,
              local.tm_min,
@@ -765,9 +771,9 @@ bool save_credentials_from_body(const char *body)
         ESP_LOGW(TAG, "provisioning ignored empty request body");
         return false;
     }
-    char ssid[33] = {};
-    char pass[65] = {};
-    char api_key[96] = {};
+    char ssid[kSetupSsidFieldSize] = {};
+    char pass[kSetupPasswordFieldSize] = {};
+    char api_key[kSetupApiKeyFieldSize] = {};
     char weather_city[kManualWeatherCityLen] = {};
     form_value(body, "ssid", ssid, sizeof(ssid));
     form_value_fallback(body, "pass", "password", pass, sizeof(pass));

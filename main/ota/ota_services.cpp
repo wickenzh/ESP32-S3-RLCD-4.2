@@ -45,6 +45,7 @@ static constexpr int kOtaManifestSourceNameLen = 16;
 static constexpr int kSemverComponentCount = 3;
 static constexpr size_t kSha256ByteCount = 32;
 static constexpr size_t kSha256HexLen = kSha256ByteCount * 2;
+static constexpr size_t kOtaDownloadStatusTextLen = 48;
 static constexpr uint32_t kOtaFailureHoldMs = 5000;
 static constexpr uint32_t kOtaSuccessHoldMs = 6000;
 static constexpr uint32_t kOtaOfflineHoldMs = 3500;
@@ -720,7 +721,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
                               now_us - last_status_us >= (int64_t)kOtaStatusMinIntervalMs * 1000 ||
                               progress >= 100;
             if (progress_step && status_due) {
-                char status_text[48];
+                char status_text[kOtaDownloadStatusTextLen];
                 snprintf(status_text, sizeof(status_text), "Installing %d%%  %dKB/s", progress, speed_kbps);
                 g_ota_speed_kbps = speed_kbps;
                 ota_set_status(kOtaUpdating, status_text, progress);
@@ -735,7 +736,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
         }
     }
 
-    uint8_t hash[32];
+    uint8_t hash[kSha256ByteCount];
     wdt.reset();
     mbedtls_sha256_finish(&sha_ctx, hash);
     mbedtls_sha256_free(&sha_ctx);

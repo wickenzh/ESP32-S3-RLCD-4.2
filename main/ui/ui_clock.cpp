@@ -10,6 +10,19 @@ namespace {
 constexpr int kChimeVolumeLevels[] = {20, 40, 60, 80, 100};
 constexpr int kChimeVolumeLevelCount = sizeof(kChimeVolumeLevels) / sizeof(kChimeVolumeLevels[0]);
 constexpr int kDefaultChimeVolumePercent = kChimeVolumeLevels[0];
+constexpr int kSettingsFeedbackDefaultMs = 2500;
+constexpr int kSettingsFeedbackBusyMs = 2000;
+constexpr int kSettingsFeedbackSavedMs = 1800;
+constexpr int kSettingsFeedbackInstructionMs = 3500;
+constexpr size_t kSettingsFeedbackTextSize = 32;
+constexpr int kTmYearOffset = 1900;
+constexpr int kTmMonthOffset = 1;
+constexpr int kSecondsPerMinute = 60;
+constexpr int kMinutesPerHour = 60;
+constexpr int kHoursPerDay = 24;
+constexpr int kProgressSegmentCount = 60;
+constexpr int kSecondsPerHour = kMinutesPerHour * kSecondsPerMinute;
+constexpr int kSecondsPerDay = kHoursPerDay * kSecondsPerHour;
 } // namespace
 
 void build_clock_ui()
@@ -352,8 +365,8 @@ bool update_time_ui(const struct tm &local, bool clock_page_active, int active_w
     if (clock_page_active && minute_key != g_last_ui_minute) {
         draw_time_canvas(local);
         if (!g_low_battery_mode) {
-            int day_seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
-            int day_filled = (day_seconds * 60) / (24 * 3600);
+            int day_seconds = local.tm_hour * kSecondsPerHour + local.tm_min * kSecondsPerMinute + local.tm_sec;
+            int day_filled = (day_seconds * kProgressSegmentCount) / kSecondsPerDay;
             update_progress_canvas(g_day_progress_canvas, day_filled, &g_last_day_progress_filled);
         }
         g_last_ui_minute = minute_key;
@@ -367,7 +380,7 @@ bool update_time_ui(const struct tm &local, bool clock_page_active, int active_w
         changed = true;
     }
 
-    int date_key = (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
+    int date_key = (local.tm_year + kTmYearOffset) * 10000 + (local.tm_mon + kTmMonthOffset) * 100 + local.tm_mday;
     int date_page = (active_work_page == kWorkPageWeatherClock || g_low_battery_mode || g_setup_portal_active)
                         ? kWorkPageWeatherClock
                         : active_work_page;
@@ -375,8 +388,8 @@ bool update_time_ui(const struct tm &local, bool clock_page_active, int active_w
         static const char *week_days[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
         char date[48];
         snprintf(date, sizeof(date), "%04d/%02d/%02d / %s",
-                 local.tm_year + 1900,
-                 local.tm_mon + 1,
+                 local.tm_year + kTmYearOffset,
+                 local.tm_mon + kTmMonthOffset,
                  local.tm_mday,
                  week_days[local.tm_wday]);
         if (date_page == kWorkPageWeatherClock) {
@@ -433,9 +446,9 @@ void handle_settings_action()
         g_settings_page_order_selection = next;
         if (save_work_page_order()) {
             g_active_work_page = first_enabled_work_page();
-            set_settings_feedback("页面顺序已保存", 1800);
+            set_settings_feedback("页面顺序已保存", kSettingsFeedbackSavedMs);
         } else {
-            set_settings_feedback("保存失败", 2500);
+            set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
         }
         return;
     }
@@ -447,7 +460,7 @@ void handle_settings_action()
         return;
     }
     if (is_settings_sync_busy()) {
-        set_settings_feedback("请等待同步完成", 2000);
+        set_settings_feedback("请等待同步完成", kSettingsFeedbackBusyMs);
         return;
     }
     if (!(primary == kSettingsPrimarySystem && selected == kSystemSettingsFactoryResetItem)) {
@@ -462,7 +475,7 @@ void handle_settings_action()
     if (primary == kSettingsPrimaryNetwork) {
         if (selected == kNetworkSettingsWeatherCityItem) {
             if (!g_has_manual_weather_city) {
-                set_settings_feedback("请进入配网页修改", 2500);
+                set_settings_feedback("请进入配网页修改", kSettingsFeedbackDefaultMs);
                 return;
             }
             if (!g_weather_city_clear_confirm_pending) {
@@ -471,12 +484,12 @@ void handle_settings_action()
                 return;
             }
             if (!clear_manual_weather_city()) {
-                set_settings_feedback("保存失败", 2500);
+                set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
                 return;
             }
             g_weather_city_clear_confirm_pending = false;
             if (g_offline_mode_ui_enabled) {
-                set_settings_feedback("已恢复自动定位", 2500);
+                set_settings_feedback("已恢复自动定位", kSettingsFeedbackDefaultMs);
                 return;
             }
             begin_settings_sync(kSettingsSyncWeather, "正在同步天气...");
@@ -485,7 +498,7 @@ void handle_settings_action()
             return;
         }
         if (g_offline_mode_ui_enabled) {
-            set_settings_feedback("离线模式已开启", 2500);
+            set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
             return;
         }
         if (selected == kNetworkSettingsNtpItem) {
@@ -516,34 +529,34 @@ void handle_settings_action()
             g_chime_volume_percent = next;
             if (!save_hourly_chime_setting()) {
                 g_chime_volume_percent = previous;
-                set_settings_feedback("保存失败", 2500);
+                set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
                 return;
             }
-            char feedback[32];
+            char feedback[kSettingsFeedbackTextSize];
             snprintf(feedback, sizeof(feedback), "音量 %d%%", g_chime_volume_percent);
-            set_settings_feedback(feedback, 2500);
+            set_settings_feedback(feedback, kSettingsFeedbackDefaultMs);
             request_settings_confirmation_chime();
         } else if (selected == kSoundSettingsSoundItem) {
             int previous = g_chime_sound_index;
             g_chime_sound_index = (g_chime_sound_index + 1) % kChimeSoundCount;
             if (!save_hourly_chime_setting()) {
                 g_chime_sound_index = previous;
-                set_settings_feedback("保存失败", 2500);
+                set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
                 return;
             }
-            char feedback[32];
+            char feedback[kSettingsFeedbackTextSize];
             snprintf(feedback, sizeof(feedback), "声音 %d", g_chime_sound_index + 1);
-            set_settings_feedback(feedback, 2500);
+            set_settings_feedback(feedback, kSettingsFeedbackDefaultMs);
             request_settings_confirmation_chime();
         } else if (selected == kSoundSettingsHourlyItem) {
             bool previous = g_hourly_chime_enabled;
             g_hourly_chime_enabled = !g_hourly_chime_enabled;
             if (!save_hourly_chime_setting()) {
                 g_hourly_chime_enabled = previous;
-                set_settings_feedback("保存失败", 2500);
+                set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
                 return;
             }
-            set_settings_feedback(g_hourly_chime_enabled ? "整点提醒已开启" : "整点提醒已关闭", 2500);
+            set_settings_feedback(g_hourly_chime_enabled ? "整点提醒已开启" : "整点提醒已关闭", kSettingsFeedbackDefaultMs);
             ESP_LOGI(TAG, "hourly chime %s", g_hourly_chime_enabled ? "enabled" : "disabled");
             if (g_hourly_chime_enabled) {
                 request_settings_confirmation_chime();
@@ -553,10 +566,10 @@ void handle_settings_action()
             g_hourly_chime_all_day = !g_hourly_chime_all_day;
             if (!save_hourly_chime_setting()) {
                 g_hourly_chime_all_day = previous;
-                set_settings_feedback("保存失败", 2500);
+                set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
                 return;
             }
-            set_settings_feedback(g_hourly_chime_all_day ? "全天提醒已开启" : "全天提醒已关闭", 2500);
+            set_settings_feedback(g_hourly_chime_all_day ? "全天提醒已开启" : "全天提醒已关闭", kSettingsFeedbackDefaultMs);
             ESP_LOGI(TAG, "hourly chime all-day %s", g_hourly_chime_all_day ? "enabled" : "disabled");
             if (g_hourly_chime_all_day) {
                 request_settings_confirmation_chime();
@@ -569,13 +582,13 @@ void handle_settings_action()
             g_settings_page_order_mode = true;
             g_settings_page_order_selection = 0;
             normalize_work_page_order();
-            set_settings_feedback("BOOT交换并保存", 3500);
+            set_settings_feedback("BOOT交换并保存", kSettingsFeedbackInstructionMs);
             return;
         }
         int page = display_settings_item_work_page(selected);
         if (page == kWorkPageWeatherClock) {
             g_work_page_enabled_mask |= (1U << kWorkPageWeatherClock);
-            set_settings_feedback("天气时钟不可关闭", 2500);
+            set_settings_feedback("天气时钟不可关闭", kSettingsFeedbackDefaultMs);
             return;
         }
         uint8_t previous = g_work_page_enabled_mask;
@@ -583,35 +596,35 @@ void handle_settings_action()
         g_work_page_enabled_mask |= (1U << kWorkPageWeatherClock);
         if (!save_work_page_settings()) {
             g_work_page_enabled_mask = previous;
-            set_settings_feedback("保存失败", 2500);
+            set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
             return;
         }
         ensure_active_work_page_enabled();
-        char feedback[32];
+        char feedback[kSettingsFeedbackTextSize];
         snprintf(feedback, sizeof(feedback), "%s%s",
                  work_page_name(page),
                  is_work_page_enabled(page) ? "已开启" : "已关闭");
-        set_settings_feedback(feedback, 2500);
+        set_settings_feedback(feedback, kSettingsFeedbackDefaultMs);
         return;
     }
     if (primary == kSettingsPrimarySystem) {
         if (selected == kSystemSettingsOfflineItem) {
             if (!g_offline_mode_ui_enabled) {
                 if (!set_offline_mode_enabled(true)) {
-                    set_settings_feedback("保存失败", 2500);
+                    set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
                     return;
                 }
                 g_offline_disable_confirm_pending = false;
-                set_settings_feedback("离线模式已开启", 2500);
+                set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
                 return;
             }
             if (can_leave_offline_mode_without_setup()) {
                 if (!set_offline_mode_enabled(false)) {
-                    set_settings_feedback("保存失败", 2500);
+                    set_settings_feedback("保存失败", kSettingsFeedbackDefaultMs);
                     return;
                 }
                 g_offline_disable_confirm_pending = false;
-                set_settings_feedback("离线模式已关闭", 2500);
+                set_settings_feedback("离线模式已关闭", kSettingsFeedbackDefaultMs);
                 return;
             }
             if (!g_offline_disable_confirm_pending) {
@@ -620,14 +633,14 @@ void handle_settings_action()
                 return;
             }
             if (!start_wifi_radio(true)) {
-                set_settings_feedback("配网启动失败", 2500);
+                set_settings_feedback("配网启动失败", kSettingsFeedbackDefaultMs);
                 return;
             }
             g_offline_disable_confirm_pending = false;
-            set_settings_feedback("请完成配网后关闭", 3500);
+            set_settings_feedback("请完成配网后关闭", kSettingsFeedbackInstructionMs);
         } else if (selected == kSystemSettingsNetworkDiagItem) {
             if (g_offline_mode_ui_enabled) {
-                set_settings_feedback("离线模式已开启", 2500);
+                set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
                 return;
             }
             begin_settings_sync(kSettingsSyncNetworkDiag, "正在网络检测...");
@@ -649,11 +662,11 @@ void handle_settings_action()
             }
             ESP_LOGW(TAG, "factory reset requested from settings");
             if (!clear_saved_config()) {
-                set_settings_feedback("恢复失败", 2500);
+                set_settings_feedback("恢复失败", kSettingsFeedbackDefaultMs);
                 return;
             }
             if (!start_wifi_radio(true)) {
-                set_settings_feedback("配网启动失败", 2500);
+                set_settings_feedback("配网启动失败", kSettingsFeedbackDefaultMs);
                 return;
             }
             g_settings_requested = false;
@@ -669,7 +682,7 @@ void handle_settings_action()
             ESP_LOGI(TAG, "system info requested from settings");
         } else if (selected == kSystemSettingsOtaItem) {
             if (g_offline_mode_ui_enabled) {
-                set_settings_feedback("离线模式已开启", 2500);
+                set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
                 return;
             }
             ota_handle_info_key();

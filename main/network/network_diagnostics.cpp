@@ -9,7 +9,11 @@ namespace {
 constexpr size_t kNetworkDiagPublicIpResponseBufferSize = 2048;
 constexpr size_t kNetworkDiagDefaultProbeBufferSize = 512;
 constexpr size_t kNetworkDiagWideProbeBufferSize = 1024;
+constexpr size_t kNetworkDiagLocationTextSize = 32;
+constexpr size_t kNetworkDiagCityTextSize = 32;
+constexpr size_t kNetworkDiagPublicIpTextSize = 48;
 constexpr int kNetworkDiagJsonSearchMaxDepth = 8;
+constexpr int kNetworkDiagNtpMaxRetries = 5;
 constexpr const char *kNetworkDiagPublicIpUrl = "https://uapis.cn/api/v1/network/myip";
 constexpr const char *kNetworkDiagPublicIpJsonKey = "ip";
 constexpr const char *kNetworkDiagQweatherDnsHost = "dev.qweather.com";
@@ -302,9 +306,9 @@ void run_network_diagnostics()
 {
     network_diag_begin();
 
-    char location[32] = {};
-    char city[32] = {};
-    char public_ip[48] = {};
+    char location[kNetworkDiagLocationTextSize] = {};
+    char city[kNetworkDiagCityTextSize] = {};
+    char public_ip[kNetworkDiagPublicIpTextSize] = {};
     bool local_ip_ok = g_sta_ip[0] != '\0';
     diag_count(local_ip_ok);
     network_diag_set_line(kNetworkDiagLocalIpLine, "本地IP: %s", local_ip_ok ? g_sta_ip : kNetworkDiagPlaceholder);
@@ -334,7 +338,7 @@ void run_network_diagnostics()
         weather_ok = perform_weather_update();
     }
     network_diag_set_line(kNetworkDiagNtpLine, "NTP: %s", kNetworkDiagStatusChecking);
-    bool ntp_ok = perform_ntp_sync(5);
+    bool ntp_ok = perform_ntp_sync(kNetworkDiagNtpMaxRetries);
     diag_count(weather_ok);
     diag_count(ntp_ok);
     network_diag_set_line(kNetworkDiagWeatherLine, "天气: %s", diag_result_text(weather_ok));

@@ -5,8 +5,10 @@
 #include "ui_views.h"
 
 namespace {
-constexpr TickType_t kHousekeepingOtaPauseDelay = pdMS_TO_TICKS(5000);
-constexpr TickType_t kHousekeepingFallbackDelay = pdMS_TO_TICKS(1000);
+constexpr uint32_t kHousekeepingOtaPauseDelayMs = 5000;
+constexpr uint32_t kHousekeepingFallbackDelayMs = 1000;
+constexpr TickType_t kHousekeepingOtaPauseDelay = pdMS_TO_TICKS(kHousekeepingOtaPauseDelayMs);
+constexpr TickType_t kHousekeepingFallbackDelay = pdMS_TO_TICKS(kHousekeepingFallbackDelayMs);
 
 TickType_t next_housekeeping_wake_tick(bool low_battery, TickType_t next_sensor, TickType_t next_battery)
 {

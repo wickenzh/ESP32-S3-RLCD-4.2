@@ -44,6 +44,11 @@ static const char *const kSolarTermNames[] = {
     "寒露", "霜降", "立冬", "小雪", "大雪", "冬至",
 };
 
+static constexpr int kTmYearOffset = 1900;
+static constexpr int kTmMonthOffset = 1;
+static constexpr int kSolarTermBaseYear = 1900;
+static constexpr double kMsPerMinute = 60000.0;
+
 static const int kSolarTermMinutes[] = {
     0, 21208, 42467, 63836, 85337, 107014,
     128867, 150921, 173149, 195551, 218072, 240693,
@@ -223,7 +228,7 @@ static const char *solar_term(int year, int month, int day)
     int first = (month - 1) * 2;
     for (int i = 0; i < 2; ++i) {
         int term = first + i;
-        double ms = kBaseMs + kYearMs * (year - 1900) + (double)kSolarTermMinutes[term] * 60000.0;
+        double ms = kBaseMs + kYearMs * (year - kSolarTermBaseYear) + (double)kSolarTermMinutes[term] * kMsPerMinute;
         int days = (int)(ms / kDayMs);
         int ty = 0;
         unsigned tm = 0;
@@ -242,8 +247,8 @@ bool calendar_day_info(const struct tm &local, CalendarDayInfo *info)
         return false;
     }
     memset(info, 0, sizeof(*info));
-    info->year = local.tm_year + 1900;
-    info->month = local.tm_mon + 1;
+    info->year = local.tm_year + kTmYearOffset;
+    info->month = local.tm_mon + kTmMonthOffset;
     info->day = local.tm_mday;
     if (info->year < kMinValidYear || info->year > kMaxValidYear) {
         strlcpy(info->subtext, "--", sizeof(info->subtext));

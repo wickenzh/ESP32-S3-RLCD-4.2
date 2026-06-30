@@ -17,6 +17,10 @@ constexpr TickType_t kSetupPromptChainDelay = pdMS_TO_TICKS(120);
 constexpr int kHourlyChimeQuietStartHour = 7;
 constexpr int kHourlyChimeQuietEndHour = 22;
 constexpr const char *kAudioCodecBoardName = "S3_RLCD_4_2";
+constexpr const char *kDefaultAudioTaskName = "audio_play";
+constexpr const char *kHourlyChimeTaskName = "hourly_chime";
+constexpr const char *kSetupPromptTaskName = "setup_prompt";
+constexpr const char *kSettingsChimeRetryTaskName = "settings_chime";
 } // namespace
 
 bool try_mark_audio_playing()
@@ -84,7 +88,7 @@ static bool create_audio_playback_task(TaskFunction_t task_fn,
                                        const char *log_name)
 {
     const char *display_name = log_name ? log_name : "audio playback";
-    const char *rtos_name = task_name ? task_name : "audio_play";
+    const char *rtos_name = task_name ? task_name : kDefaultAudioTaskName;
     if (!task_fn) {
         ESP_LOGW(TAG, "failed to create %s task: task function unavailable", display_name);
         return false;
@@ -153,7 +157,7 @@ bool start_chime_playback(int source_slot)
         return false;
     }
     if (!create_audio_playback_task(hourly_chime_task,
-                                    "hourly_chime",
+                                    kHourlyChimeTaskName,
                                     (void *)(intptr_t)source_slot,
                                     "hourly chime")) {
         clear_audio_playing();
@@ -169,7 +173,7 @@ bool start_setup_prompt_playback()
     }
     g_setup_prompt_pending = false;
     if (!create_audio_playback_task(setup_prompt_task,
-                                    "setup_prompt",
+                                    kSetupPromptTaskName,
                                     nullptr,
                                     "setup prompt")) {
         clear_audio_playing();
@@ -200,7 +204,7 @@ void request_settings_confirmation_chime()
         return;
     }
     BaseType_t ok = xTaskCreatePinnedToCore(settings_confirmation_chime_task,
-                                            "settings_chime",
+                                            kSettingsChimeRetryTaskName,
                                             kSettingsChimeRetryTaskStack,
                                             nullptr,
                                             kSettingsChimeRetryTaskPriority,

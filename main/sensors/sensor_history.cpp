@@ -32,9 +32,11 @@ constexpr size_t kHourlySlotKeyBufferSize = 8;
 constexpr int kMsPerSecond = 1000;
 constexpr int kUsPerMs = 1000;
 constexpr int kSecondsPerMinute = 60;
-constexpr int kSecondsPerHour = 60 * kSecondsPerMinute;
+constexpr int kMinutesPerHour = 60;
+constexpr int kSecondsPerHour = kMinutesPerHour * kSecondsPerMinute;
 constexpr int kWeatherSyncFallbackSeconds = kSecondsPerHour;
 constexpr int kWeatherSyncSearchHours = 30;
+constexpr int kWeatherSyncSearchStepHours = 1;
 constexpr int kUnknownTimeSensorSampleMs = kSecondsPerMinute * kMsPerSecond;
 constexpr int kSensorSampleDayMinutes = 1;
 constexpr int kSensorSampleNightMinutes = 2;
@@ -166,7 +168,7 @@ void reset_hourly_sensor_history()
 {
     memset(&g_hourly_history, 0, sizeof(g_hourly_history));
     g_hourly_history.magic = kHourlyHistoryMagic;
-    g_hourly_history.version = 1;
+    g_hourly_history.version = kLegacyHourlyHistoryVersion;
     g_hourly_history.count = kHourlyHistoryCount;
     g_last_hourly_saved_at = 0;
     ++g_hourly_history_version;
@@ -308,7 +310,7 @@ time_t next_weather_sync_time(time_t from)
     }
     candidate.tm_sec = 0;
     candidate.tm_min = 0;
-    candidate.tm_hour += 1;
+    candidate.tm_hour += kWeatherSyncSearchStepHours;
     time_t next = mktime(&candidate);
     for (int i = 0; i < kWeatherSyncSearchHours; ++i) {
         struct tm local = {};
@@ -316,7 +318,7 @@ time_t next_weather_sync_time(time_t from)
         if (!is_night_slow_window(local) || (local.tm_hour % 2 == 0)) {
             return next;
         }
-        local.tm_hour += 1;
+        local.tm_hour += kWeatherSyncSearchStepHours;
         next = mktime(&local);
     }
     return from + kWeatherSyncFallbackSeconds;

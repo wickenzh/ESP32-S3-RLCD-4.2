@@ -12,18 +12,24 @@ constexpr const char *const kNtpServers[] = {
     "time.windows.com",
 };
 constexpr size_t kNtpServerCount = sizeof(kNtpServers) / sizeof(kNtpServers[0]);
+constexpr size_t kDefaultConfiguredNtpServerSlots = 1;
 #ifdef CONFIG_LWIP_SNTP_MAX_SERVERS
 constexpr size_t kConfiguredNtpServerSlots = CONFIG_LWIP_SNTP_MAX_SERVERS;
 #else
-constexpr size_t kConfiguredNtpServerSlots = 1;
+constexpr size_t kConfiguredNtpServerSlots = kDefaultConfiguredNtpServerSlots;
 #endif
-constexpr size_t kActiveNtpServerCount =
-    kNtpServerCount < kConfiguredNtpServerSlots ? kNtpServerCount : kConfiguredNtpServerSlots;
 constexpr uint32_t kNtpPollDelayMs = 1000;
 constexpr int kTmYearOffset = 1900;
 constexpr int kTmMonthOffset = 1;
 static_assert(kNtpServerCount > 0, "at least one NTP server is required");
 static_assert(kConfiguredNtpServerSlots > 0, "SNTP must support at least one configured server");
+
+constexpr size_t min_size(size_t a, size_t b)
+{
+    return a < b ? a : b;
+}
+
+constexpr size_t kActiveNtpServerCount = min_size(kNtpServerCount, kConfiguredNtpServerSlots);
 
 void set_time_synced_event_bit()
 {

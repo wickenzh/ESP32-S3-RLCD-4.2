@@ -8,6 +8,10 @@ constexpr size_t kDailySayingResponseBufferSize = 768;
 constexpr int kMaxSayingChars = 22;
 constexpr int kMaxSayingAttempts = 8;
 constexpr int kMaxSayingJsonDepth = 8;
+constexpr unsigned char kUtf8ContinuationMask = 0xC0;
+constexpr unsigned char kUtf8ContinuationPrefix = 0x80;
+constexpr char kJsonObjectStart = '{';
+constexpr char kJsonArrayStart = '[';
 constexpr const char *const kDailySayingJsonFields[] = {
     "content",
     "saying",
@@ -86,7 +90,7 @@ private:
     cJSON *root_;
 };
 
-static bool copy_trimmed_saying_text(const char *text, char *out, size_t out_len)
+bool copy_trimmed_saying_text(const char *text, char *out, size_t out_len)
 {
     if (!text || !out || out_len == 0) {
         return false;
@@ -96,12 +100,12 @@ static bool copy_trimmed_saying_text(const char *text, char *out, size_t out_len
     return out[0] != '\0';
 }
 
-static bool plain_text_saying_candidate(const char *text)
+bool plain_text_saying_candidate(const char *text)
 {
-    return text && text[0] != '\0' && text[0] != '{' && text[0] != '[';
+    return text && text[0] != '\0' && text[0] != kJsonObjectStart && text[0] != kJsonArrayStart;
 }
 
-static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int depth)
+bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int depth)
 {
     if (!obj || !out || out_len == 0) {
         return false;
@@ -130,7 +134,7 @@ static bool copy_json_saying_field(cJSON *obj, char *out, size_t out_len, int de
     return false;
 }
 
-static bool extract_daily_saying(const char *response, char *out, size_t out_len)
+bool extract_daily_saying(const char *response, char *out, size_t out_len)
 {
     if (!response || !out || out_len == 0) {
         return false;
@@ -148,7 +152,7 @@ static bool extract_daily_saying(const char *response, char *out, size_t out_len
     return plain_text_saying_candidate(out);
 }
 
-static int utf8_char_count(const char *text)
+int utf8_char_count(const char *text)
 {
     if (!text) {
         return 0;
@@ -156,7 +160,7 @@ static int utf8_char_count(const char *text)
     int count = 0;
     const unsigned char *p = (const unsigned char *)text;
     while (*p) {
-        if ((*p & 0xC0) != 0x80) {
+        if ((*p & kUtf8ContinuationMask) != kUtf8ContinuationPrefix) {
             ++count;
         }
         ++p;
@@ -164,7 +168,7 @@ static int utf8_char_count(const char *text)
     return count;
 }
 
-static bool saying_within_length(const char *text, int *chars_out)
+bool saying_within_length(const char *text, int *chars_out)
 {
     int chars = utf8_char_count(text);
     if (chars_out) {

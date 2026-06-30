@@ -9,8 +9,10 @@ static constexpr uint32_t kNetworkOtaActiveWaitMs = 10000;
 static constexpr uint32_t kMsPerSecond = 1000;
 static constexpr int64_t kUsPerMs = 1000;
 static constexpr time_t kSecondsPerMinute = 60;
-static constexpr time_t kSecondsPerHour = 60 * kSecondsPerMinute;
-static constexpr time_t kSecondsPerDay = 24 * kSecondsPerHour;
+static constexpr time_t kMinutesPerHour = 60;
+static constexpr time_t kHoursPerDay = 24;
+static constexpr time_t kSecondsPerHour = kMinutesPerHour * kSecondsPerMinute;
+static constexpr time_t kSecondsPerDay = kHoursPerDay * kSecondsPerHour;
 static constexpr uint32_t kNetworkIdleDefaultWaitMs = 5 * kSecondsPerMinute * kMsPerSecond;
 static constexpr uint32_t kNetworkIdleMinWaitMs = 1000;
 static constexpr uint32_t kNetworkNoWorkWaitMs = 30000;
@@ -26,6 +28,7 @@ static constexpr uint32_t kNetworkTaskStartupDelayMs = 2500;
 static constexpr time_t kNetworkNtpRetryDelaySec = 5 * kSecondsPerMinute;
 static constexpr time_t kBootWeatherRefreshDelaySec = 8;
 static constexpr time_t kBootSayingRefreshDelaySec = 16;
+static constexpr size_t kBootSetupDetailTextSize = 64;
 
 class NetworkDisplayDmaGuard {
 public:
@@ -75,7 +78,7 @@ void run_boot_connectivity_sync()
         return;
     }
     if (!g_have_wifi_creds) {
-        char detail[64];
+        char detail[kBootSetupDetailTextSize];
         snprintf(detail, sizeof(detail), "Setup AP: %s", g_ap_ssid);
         update_boot_screen(100, "Setup mode", detail);
         vTaskDelay(pdMS_TO_TICKS(kBootScreenSetupDelayMs));

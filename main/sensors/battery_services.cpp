@@ -7,8 +7,10 @@ static constexpr float kBatteryVoltageDivider = 3.0f;
 static constexpr float kBatteryMillivoltsToVolts = 0.001f;
 static constexpr float kBatteryEmptyVoltage = 3.00f;
 static constexpr float kBatteryFullVoltage = 4.12f;
+static constexpr float kBatteryVoltageRange = kBatteryFullVoltage - kBatteryEmptyVoltage;
 static constexpr float kBatteryPercentScale = 100.0f;
 static constexpr float kBatteryPercentRoundOffset = 0.5f;
+static constexpr float kBatteryValidPreviousVoltageMin = 0.0f;
 static constexpr adc_unit_t kBatteryAdcUnit = ADC_UNIT_1;
 static constexpr adc_channel_t kBatteryAdcChannel = ADC_CHANNEL_3;
 static constexpr adc_bitwidth_t kBatteryAdcBitwidth = ADC_BITWIDTH_12;
@@ -89,7 +91,7 @@ bool init_battery_gauge()
 int battery_percent_from_voltage(float voltage)
 {
     int percent = (int)(((voltage - kBatteryEmptyVoltage) * kBatteryPercentScale /
-                         (kBatteryFullVoltage - kBatteryEmptyVoltage)) + kBatteryPercentRoundOffset);
+                         kBatteryVoltageRange) + kBatteryPercentRoundOffset);
     if (percent < kBatteryPercentMin) return kBatteryPercentMin;
     if (percent > kBatteryPercentMax) return kBatteryPercentMax;
     return percent;
@@ -147,7 +149,7 @@ void sample_battery()
     float previous_voltage = g_battery_voltage;
     if (read_battery_percent(&percent)) {
         g_battery_percent = percent;
-        if (previous_voltage >= 0.0f) {
+        if (previous_voltage >= kBatteryValidPreviousVoltageMin) {
             float delta = g_battery_voltage - previous_voltage;
             if (delta >= kBatteryChargingRiseVoltage) {
                 if (charging_rise_samples < kBatteryChargingRiseSamples) {
@@ -159,7 +161,7 @@ void sample_battery()
 
             if (g_battery_charging) {
                 if (delta <= kBatteryChargingStopVoltage ||
-                    (previous_percent >= 0 && percent < previous_percent)) {
+                    (previous_percent >= kBatteryPercentMin && percent < previous_percent)) {
                     g_battery_charging = false;
                     charging_rise_samples = 0;
                 }

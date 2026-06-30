@@ -19,7 +19,11 @@ constexpr size_t kGzipMagicPrefixSize = 2;
 constexpr size_t kGzipHeaderProbeSize = 3;
 constexpr int kHttpStatusOkMin = 200;
 constexpr int kHttpStatusOkMax = 300;
-constexpr size_t kHttpPreviewBufferSize = 121;
+constexpr size_t kHttpPreviewMaxChars = 120;
+constexpr size_t kCStringTerminatorSize = 1;
+constexpr size_t kHttpPreviewBufferSize = kHttpPreviewMaxChars + kCStringTerminatorSize;
+constexpr size_t kUrlEncodedPlainCharSize = 1;
+constexpr size_t kUrlEncodedEscapedCharSize = 3;
 constexpr const char *kUrlHexDigits = "0123456789ABCDEF";
 constexpr const char *kHttpAcceptHeaderName = "Accept";
 constexpr const char *kHttpAcceptHeader = "application/json,text/plain,*/*";
@@ -138,10 +142,10 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
     if (!evt->data || evt->data_len <= 0) {
         return ESP_OK;
     }
-    if (buffer->len + 1 >= buffer->cap) {
+    if (buffer->len + kCStringTerminatorSize >= buffer->cap) {
         return ESP_OK;
     }
-    size_t room = buffer->cap - buffer->len - 1;
+    size_t room = buffer->cap - buffer->len - kCStringTerminatorSize;
     size_t event_len = (size_t)evt->data_len;
     size_t copy_len = event_len < room ? event_len : room;
     if (copy_len > 0) {
@@ -213,7 +217,7 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
     memcpy(compressed.get(), out, *body_len);
 
     size_t written = tinfl_decompress_mem_to_mem(out,
-                                                 out_len - 1,
+                                                 out_len - kCStringTerminatorSize,
                                                  compressed.get() + payload_offset,
                                                  payload_len,
                                                  TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
@@ -281,7 +285,7 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
         }
         return err == ESP_OK ? ESP_FAIL : err;
     }
-    if ((content_length >= 0 && (uint64_t)content_length >= out_len) || buffer.len + 1 >= out_len) {
+    if ((content_length >= 0 && (uint64_t)content_length >= out_len) || buffer.len + kCStringTerminatorSize >= out_len) {
         ESP_LOGW(TAG,
                  "http response may be truncated status=%d content_len=%lld buffer=%u",
                  status,
@@ -309,7 +313,7 @@ void trim_ascii(char *text)
         ++start;
     }
     if (start != text) {
-        memmove(text, start, strlen(start) + 1);
+        memmove(text, start, strlen(start) + kCStringTerminatorSize);
     }
 }
 
@@ -341,12 +345,12 @@ bool url_encode_component(const char *in, char *out, size_t out_len)
     size_t pos = 0;
     for (const unsigned char *p = (const unsigned char *)in; *p; ++p) {
         if (url_is_unreserved((char)*p)) {
-            if (pos + 1 >= out_len) {
+            if (pos + kUrlEncodedPlainCharSize >= out_len) {
                 return false;
             }
             out[pos++] = (char)*p;
         } else {
-            if (pos + 3 >= out_len) {
+            if (pos + kUrlEncodedEscapedCharSize >= out_len) {
                 return false;
             }
             out[pos++] = '%';

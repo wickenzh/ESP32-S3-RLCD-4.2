@@ -11,6 +11,17 @@ static constexpr int kCardH = 112;
 static constexpr int kCardY = 66;
 static constexpr int kCardRadius = 8;
 static constexpr int kCardX[kCardCount] = {18, 144, 270};
+static constexpr int kSecondsPerMinute = 60;
+static constexpr int kMinutesPerHour = 60;
+static constexpr int kHoursPerDay = 24;
+static constexpr int kProgressSegmentCount = 60;
+static constexpr int kSecondsPerHour = kMinutesPerHour * kSecondsPerMinute;
+static constexpr int kSecondsPerDay = kHoursPerDay * kSecondsPerHour;
+static constexpr int kDigitScaleNumerator = 3;
+static constexpr int kDigitScaleDenominator = 4;
+static constexpr int kDigitBaselineY = 84;
+static constexpr size_t kFlipSensorTextSize = 48;
+static constexpr const char *kFlipSensorPlaceholder = "温度 --.-C  湿度 --%";
 
 void apply_card_rounding(lv_obj_t *canvas)
 {
@@ -75,18 +86,16 @@ void draw_card_shell(lv_obj_t *canvas)
 
 void draw_card_digits(lv_obj_t *canvas, int value, int clip_y0 = 0, int clip_y1 = kCardH)
 {
-    constexpr int scale_num = 3;
-    constexpr int scale_den = 4;
     const DsegGlyph *tens = find_dseg_glyph(kDSEG84Font, (char)('0' + value / 10));
     const DsegGlyph *ones = find_dseg_glyph(kDSEG84Font, (char)('0' + value % 10));
     if (!tens || !ones) {
         return;
     }
     auto scaled = [=](int value) {
-        return (value * scale_num) / scale_den;
+        return (value * kDigitScaleNumerator) / kDigitScaleDenominator;
     };
     auto scaled_size = [=](int value) {
-        return (value * scale_num + scale_den - 1) / scale_den;
+        return (value * kDigitScaleNumerator + kDigitScaleDenominator - 1) / kDigitScaleDenominator;
     };
     int tens_origin = 0;
     int ones_origin = scaled(tens->x_advance);
@@ -95,10 +104,23 @@ void draw_card_digits(lv_obj_t *canvas, int value, int clip_y0 = 0, int clip_y1 
     int right = std::max(tens_origin + scaled(tens->x_offset) + scaled_size(tens->width),
                          ones_origin + scaled(ones->x_offset) + scaled_size(ones->width));
     int x = (kCardW - (right - left)) / 2 - left;
-    int baseline_y = 84;
-    draw_scaled_dseg_digit(canvas, tens, x, baseline_y, scale_num, scale_den, clip_y0, clip_y1);
+    draw_scaled_dseg_digit(canvas,
+                           tens,
+                           x,
+                           kDigitBaselineY,
+                           kDigitScaleNumerator,
+                           kDigitScaleDenominator,
+                           clip_y0,
+                           clip_y1);
     x += scaled(tens->x_advance);
-    draw_scaled_dseg_digit(canvas, ones, x, baseline_y, scale_num, scale_den, clip_y0, clip_y1);
+    draw_scaled_dseg_digit(canvas,
+                           ones,
+                           x,
+                           kDigitBaselineY,
+                           kDigitScaleNumerator,
+                           kDigitScaleDenominator,
+                           clip_y0,
+                           clip_y1);
 }
 
 void draw_flip_card(int card_index, int value)
@@ -118,11 +140,11 @@ bool update_flip_sensor_text()
     if (!g_flip_clock_sensor_label) {
         return false;
     }
-    char text[48];
+    char text[kFlipSensorTextSize];
     if (g_sensor_ok) {
         snprintf(text, sizeof(text), "温度 %.1fC  湿度 %.0f%%", g_temperature, g_humidity);
     } else {
-        snprintf(text, sizeof(text), "温度 --.-C  湿度 --%%");
+        snprintf(text, sizeof(text), "%s", kFlipSensorPlaceholder);
     }
     return set_label_text_if_changed(g_flip_clock_sensor_label, text);
 }
@@ -177,9 +199,13 @@ void build_flip_clock_page()
         }
     }
 
-    g_flip_clock_sensor_label = make_label(screen, 18, 232, 364, 28, "温度 --.-C  湿度 --%");
-    lv_obj_set_style_text_align(g_flip_clock_sensor_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_text_font(g_flip_clock_sensor_label, &zh_font_16, LV_PART_MAIN);
+    g_flip_clock_sensor_label = make_label(screen, 18, 232, 364, 28, kFlipSensorPlaceholder);
+    if (g_flip_clock_sensor_label) {
+        lv_obj_set_style_text_align(g_flip_clock_sensor_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_text_font(g_flip_clock_sensor_label, &zh_font_16, LV_PART_MAIN);
+    } else {
+        ESP_LOGW(TAG, "flip clock sensor label create failed");
+    }
 
     update_battery_segments(g_flip_clock_battery_segments, g_battery_percent);
     g_last_flip_clock_hour = -1;
@@ -216,8 +242,8 @@ bool update_flip_clock_page(const struct tm &local)
         changed = true;
     }
 
-    int seconds_of_day = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
-    int day_filled = (seconds_of_day * 60) / (24 * 3600);
+    int seconds_of_day = local.tm_hour * kSecondsPerHour + local.tm_min * kSecondsPerMinute + local.tm_sec;
+    int day_filled = (seconds_of_day * kProgressSegmentCount) / kSecondsPerDay;
     update_progress_canvas(g_flip_clock_day_progress_canvas, day_filled, &g_last_flip_day_progress_filled);
     if (minute != g_last_flip_sensor_minute) {
         g_last_flip_sensor_minute = minute;

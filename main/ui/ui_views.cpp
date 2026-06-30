@@ -13,12 +13,20 @@ constexpr int kUiNetworkDiagRunningPollMs = 250;
 constexpr int kUiNetworkDiagIdlePollMs = 500;
 constexpr int kUiSettingsPollMs = 100;
 constexpr int kUiPostPageSwitchPollMs = 250;
+constexpr int kUiLvglLockTimeoutMs = 80;
 constexpr int64_t kUiUsPerSecond = 1000000;
 constexpr int kUiMsPerSecond = 1000;
 constexpr int kUiSecondsPerMinute = 60;
+constexpr int kUiMinutesPerHour = 60;
+constexpr int kUiHoursPerDay = 24;
+constexpr int kUiSecondsPerHour = kUiSecondsPerMinute * kUiMinutesPerHour;
+constexpr int kUiSecondsPerDay = kUiSecondsPerHour * kUiHoursPerDay;
 constexpr int kUiBoundaryWakeSlackMs = 5;
 constexpr int kUiNextSecondDelayMinMs = 10;
 constexpr int kUiNextSecondDelayMaxMs = kUiMsPerSecond + kUiBoundaryWakeSlackMs;
+constexpr size_t kUiSensorValueTextSize = 32;
+constexpr size_t kUiWeatherCityTextSize = 48;
+constexpr size_t kUiWeatherValueTextSize = 24;
 } // namespace
 
 void ui_task(void *)
@@ -73,7 +81,7 @@ void ui_task(void *)
         localtime_r(&now_value, &now_local);
         localtime_r(&g_last_weather_sync_time, &last_local);
         if (!is_tm_plausible(now_local) || !is_tm_plausible(last_local)) {
-            return now_value - g_last_weather_sync_time >= 3600;
+            return now_value - g_last_weather_sync_time >= kUiSecondsPerHour;
         }
         return now_local.tm_year != last_local.tm_year ||
                now_local.tm_yday != last_local.tm_yday ||
@@ -96,7 +104,7 @@ void ui_task(void *)
         struct tm saying_local = {};
         localtime_r(&g_last_saying_sync_time, &saying_local);
         if (!is_tm_plausible(saying_local) || !is_tm_plausible(local_value)) {
-            return now_value - g_last_saying_sync_time >= 24 * 3600;
+            return now_value - g_last_saying_sync_time >= kUiSecondsPerDay;
         }
         return saying_local.tm_year != local_value.tm_year ||
                saying_local.tm_yday != local_value.tm_yday;
@@ -158,7 +166,7 @@ void ui_task(void *)
         bool setup_due = g_setup_portal_active != setup_panel_visible;
         bool mode_due = g_low_battery_mode != low_mode_visible;
 
-        if (Lvgl_lock(80)) {
+        if (Lvgl_lock(kUiLvglLockTimeoutMs)) {
             bool refresh_now = false;
             bool info_requested = g_boot_info_requested;
             bool network_diag_requested = g_network_diag_page_requested;
@@ -596,8 +604,8 @@ void ui_task(void *)
                 if (setup_active) {
                     content_changed |= update_setup_status_panel();
                 }
-                char temp[32];
-                char humi[32];
+                char temp[kUiSensorValueTextSize];
+                char humi[kUiSensorValueTextSize];
                 if (g_sensor_ok) {
                     snprintf(temp, sizeof(temp), "%.1f℃", g_temperature);
                     snprintf(humi, sizeof(humi), "%.1f%%", g_humidity);
@@ -614,9 +622,9 @@ void ui_task(void *)
                     if (bits & kWeatherReadyBit) {
                         WeatherData weather = {};
                         get_weather_snapshot(&weather, nullptr);
-                        char city[48];
-                        char weather_temp[24];
-                        char weather_humi[24];
+                        char city[kUiWeatherCityTextSize];
+                        char weather_temp[kUiWeatherValueTextSize];
+                        char weather_humi[kUiWeatherValueTextSize];
                         snprintf(city, sizeof(city), "%s", weather.city);
                         snprintf(weather_temp, sizeof(weather_temp), "%s℃", weather.temp);
                         snprintf(weather_humi, sizeof(weather_humi), "%s%%", weather.humidity);

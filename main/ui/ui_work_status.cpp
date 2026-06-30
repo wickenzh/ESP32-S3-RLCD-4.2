@@ -18,6 +18,16 @@ static constexpr int kStatusTimeH = 18;
 static constexpr int kStatusChimeX = 64;
 static constexpr int kStatusWifiX = 90;
 static constexpr int kStatusIconY = 15;
+static constexpr const char *kStatusDatePlaceholder = "----/--/-- / 星期-";
+static constexpr const char *kStatusSummaryPlaceholder = "--C --%";
+static constexpr const char *kStatusTimePlaceholder = "--:--";
+static constexpr size_t kStatusTimeTextSize = 8;
+static constexpr const char *kStatusTimeFormat = "%02d:%02d";
+
+bool is_status_icon_page(int page)
+{
+    return page > 0 && page < kWorkPageCount;
+}
 
 void build_status_icon(lv_obj_t *screen,
                        lv_obj_t **canvas,
@@ -57,6 +67,19 @@ void build_status_icon(lv_obj_t *screen,
     lv_obj_add_flag(*canvas, LV_OBJ_FLAG_HIDDEN);
 }
 
+bool set_status_icon_visible_if_changed(lv_obj_t *icon, bool visible)
+{
+    if (!icon) {
+        return false;
+    }
+    bool already_visible = !lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN);
+    if (already_visible == visible) {
+        return false;
+    }
+    set_obj_visible(icon, visible);
+    return true;
+}
+
 } // namespace
 
 void build_work_page_status_bar(lv_obj_t *screen,
@@ -70,7 +93,7 @@ void build_work_page_status_bar(lv_obj_t *screen,
         return;
     }
     if (date_label) {
-        *date_label = make_label(screen, kStatusDateX, kStatusDateY, kStatusDateW, kStatusDateH, "----/--/-- / 星期-");
+        *date_label = make_label(screen, kStatusDateX, kStatusDateY, kStatusDateW, kStatusDateH, kStatusDatePlaceholder);
         if (*date_label) {
             lv_obj_set_style_text_align(*date_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
         } else {
@@ -83,7 +106,7 @@ void build_work_page_status_bar(lv_obj_t *screen,
                                               kStatusSummaryY,
                                               kStatusSummaryW,
                                               kStatusSummaryH,
-                                              "--C --%",
+                                              kStatusSummaryPlaceholder,
                                               &lv_font_montserrat_16);
         if (*summary_label) {
             style_work_page_sensor_summary(*summary_label);
@@ -100,7 +123,7 @@ void build_work_page_status_bar(lv_obj_t *screen,
                                            kStatusTimeY,
                                            kStatusTimeW,
                                            kStatusTimeH,
-                                           "--:--",
+                                           kStatusTimePlaceholder,
                                            &lv_font_montserrat_16);
         if (*time_label) {
             lv_obj_set_style_text_align(*time_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
@@ -109,7 +132,7 @@ void build_work_page_status_bar(lv_obj_t *screen,
             ESP_LOGW(TAG, "work status time label create failed page=%d", page);
         }
     }
-    if (page > 0 && page < kWorkPageCount) {
+    if (is_status_icon_page(page)) {
         build_status_icon(screen,
                           &g_work_status_chime_icon_canvas[page],
                           &g_work_status_chime_icon_canvas_buf[page],
@@ -136,14 +159,14 @@ bool update_work_page_status_time(lv_obj_t *label, const struct tm &local)
     if (!label) {
         return false;
     }
-    char text[8];
-    snprintf(text, sizeof(text), "%02d:%02d", local.tm_hour, local.tm_min);
+    char text[kStatusTimeTextSize];
+    snprintf(text, sizeof(text), kStatusTimeFormat, local.tm_hour, local.tm_min);
     return set_label_text_if_changed(label, text);
 }
 
 bool update_work_page_status_icons(int page)
 {
-    if (page <= 0 || page >= kWorkPageCount) {
+    if (!is_status_icon_page(page)) {
         return false;
     }
     bool allow = !g_low_battery_mode && !g_setup_portal_active;
@@ -152,19 +175,7 @@ bool update_work_page_status_icons(int page)
     lv_obj_t *chime = g_work_status_chime_icon_canvas[page];
     lv_obj_t *wifi = g_work_status_wifi_icon_canvas[page];
     bool changed = false;
-    if (chime) {
-        bool hidden = lv_obj_has_flag(chime, LV_OBJ_FLAG_HIDDEN);
-        if (hidden == chime_visible) {
-            set_obj_visible(chime, chime_visible);
-            changed = true;
-        }
-    }
-    if (wifi) {
-        bool hidden = lv_obj_has_flag(wifi, LV_OBJ_FLAG_HIDDEN);
-        if (hidden == wifi_visible) {
-            set_obj_visible(wifi, wifi_visible);
-            changed = true;
-        }
-    }
+    changed |= set_status_icon_visible_if_changed(chime, chime_visible);
+    changed |= set_status_icon_visible_if_changed(wifi, wifi_visible);
     return changed;
 }

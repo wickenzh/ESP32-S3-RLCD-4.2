@@ -24,6 +24,19 @@ constexpr uint32_t kCaptiveDnsTaskStack = 3072;
 constexpr UBaseType_t kCaptiveDnsTaskPriority = 3;
 constexpr BaseType_t kCaptiveDnsTaskCore = 0;
 constexpr uint16_t kMaxListedApCount = 32;
+constexpr uint16_t kSetupHttpServerPort = 80;
+constexpr size_t kSetupHttpServerStackSize = 8192;
+constexpr size_t kPortalEscapedSsidSize = 80;
+constexpr size_t kPortalEscapedCitySize = 80;
+constexpr size_t kPortalSaveExtraTextSize = 220;
+constexpr size_t kPortalRootHtmlSize = 12288;
+constexpr size_t kPortalSaveResultHtmlSize = 1700;
+constexpr size_t kPortalOfflineResultHtmlSize = 1200;
+constexpr size_t kPortalSubmitSsidFieldSize = 33;
+constexpr size_t kPortalRequestBufferSize = 640;
+constexpr size_t kPortalWeatherCityIdSize = 24;
+constexpr size_t kPortalWeatherCityNameSize = 32;
+constexpr uint32_t kPortalSaveWifiConnectWaitMs = 12000;
 
 class WifiScanRecords {
 public:
@@ -351,7 +364,7 @@ void append_wifi_scan_list(char *html, size_t html_len)
             if (records.data()[i].ssid[0] == '\0') {
                 continue;
             }
-            char ssid[80] = {};
+            char ssid[kPortalEscapedSsidSize] = {};
             html_escape((const char *)records.data()[i].ssid, ssid, sizeof(ssid));
             html_append(html, html_len,
                         "<button type='button' class='wifi' data-ssid=\"%s\" onclick=\"pick(this.dataset.ssid)\"><span>%s</span><b>%d dBm</b></button>",
@@ -396,11 +409,11 @@ void stop_http_server()
 
 esp_err_t root_get_handler(httpd_req_t *req)
 {
-    char safe_ssid[80] = {};
-    char safe_weather_city[80] = {};
+    char safe_ssid[kPortalEscapedSsidSize] = {};
+    char safe_weather_city[kPortalEscapedCitySize] = {};
     html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
     html_escape(g_manual_weather_city, safe_weather_city, sizeof(safe_weather_city));
-    const size_t html_len = 12288;
+    const size_t html_len = kPortalRootHtmlSize;
     PortalHtmlBuffer html(html_len);
     if (html.data() == nullptr) {
         httpd_resp_set_status(req, "500 Internal Server Error");
@@ -447,8 +460,8 @@ static ManualWeatherCityValidationResult validate_saved_manual_weather_city()
     if (!g_has_manual_weather_city || g_manual_weather_city[0] == '\0') {
         return kManualWeatherCityValidationOk;
     }
-    char city_id[24] = {};
-    char city_name[32] = {};
+    char city_id[kPortalWeatherCityIdSize] = {};
+    char city_name[kPortalWeatherCityNameSize] = {};
     QweatherCityLookupStatus status = qweather_lookup_city_status(g_manual_weather_city,
                                                                   city_id,
                                                                   sizeof(city_id),
@@ -469,13 +482,13 @@ static ManualWeatherCityValidationResult validate_saved_manual_weather_city()
 
 esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected, const char *extra_message)
 {
-    char safe_ssid[80] = {};
-    char safe_city[80] = {};
-    char safe_extra[220] = {};
+    char safe_ssid[kPortalEscapedSsidSize] = {};
+    char safe_city[kPortalEscapedCitySize] = {};
+    char safe_extra[kPortalSaveExtraTextSize] = {};
     html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
     html_escape(g_has_manual_weather_city ? g_manual_weather_city : "Auto", safe_city, sizeof(safe_city));
     html_escape(extra_message ? extra_message : "", safe_extra, sizeof(safe_extra));
-    char html[1700] = {};
+    char html[kPortalSaveResultHtmlSize] = {};
     const char *title = saved ? (connected ? "Connected" : "Saved, still connecting") : "Missing setup data";
     const char *body = saved ? (connected ? "The clock has joined your Wi-Fi network." : "The clock saved your settings but did not get an IP yet. Check the password or router signal, then try again.")
                              : "Enter Wi-Fi and QWeather API Key, or set date and time for offline mode.";
@@ -504,7 +517,7 @@ esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected, co
 
 esp_err_t send_offline_result_page(httpd_req_t *req, bool saved)
 {
-    char html[1200] = {};
+    char html[kPortalOfflineResultHtmlSize] = {};
     html_append(html, sizeof(html),
                 "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>WeatherClock Offline</title><style>"
@@ -523,7 +536,7 @@ esp_err_t send_offline_result_page(httpd_req_t *req, bool saved)
 
 static esp_err_t handle_setup_save(httpd_req_t *req, const char *body)
 {
-    char ssid[33] = {};
+    char ssid[kPortalSubmitSsidFieldSize] = {};
     form_value(body, "ssid", ssid, sizeof(ssid));
     trim_ascii(ssid);
     if (ssid[0] == '\0') {
@@ -539,7 +552,7 @@ static esp_err_t handle_setup_save(httpd_req_t *req, const char *body)
         return err;
     }
     bool saved = save_credentials_from_body(body);
-    bool connected = saved && wait_for_wifi_connected(12000);
+    bool connected = saved && wait_for_wifi_connected(kPortalSaveWifiConnectWaitMs);
     const char *extra_message = nullptr;
     if (connected && g_has_manual_weather_city) {
         ManualWeatherCityValidationResult city_result = validate_saved_manual_weather_city();
@@ -558,7 +571,7 @@ static esp_err_t handle_setup_save(httpd_req_t *req, const char *body)
 
 esp_err_t save_post_handler(httpd_req_t *req)
 {
-    char body[640] = {};
+    char body[kPortalRequestBufferSize] = {};
     int total = 0;
     while (total < req->content_len && total < (int)sizeof(body) - 1) {
         int ret = httpd_req_recv(req, body + total, sizeof(body) - 1 - total);
@@ -580,7 +593,7 @@ esp_err_t save_post_handler(httpd_req_t *req)
 
 esp_err_t save_get_handler(httpd_req_t *req)
 {
-    char query[640] = {};
+    char query[kPortalRequestBufferSize] = {};
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
         httpd_resp_set_status(req, "400 Bad Request");
         return httpd_resp_sendstr(req, "Missing query.");
@@ -651,8 +664,8 @@ bool start_http_server()
         return true;
     }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = 80;
-    config.stack_size = 8192;
+    config.server_port = kSetupHttpServerPort;
+    config.stack_size = kSetupHttpServerStackSize;
     config.lru_purge_enable = true;
     config.uri_match_fn = httpd_uri_match_wildcard;
     esp_err_t err = httpd_start(&g_http_server, &config);
