@@ -21,7 +21,7 @@ LV_FONT_DECLARE(zh_font_16);
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v1.4.40";
+static const char *APP_VERSION = "v1.4.41";
 static constexpr int kTimeCanvasW = 292;
 static constexpr int kTimeCanvasH = 92;
 static constexpr int kSecondCanvasW = 60;
@@ -1294,9 +1294,56 @@ static void build_flip_clock_preview_ui()
         lv_canvas_set_buffer(card, g_flip_card_pixels[i].data(), kFlipCardW, kFlipCardH, LV_IMG_CF_TRUE_COLOR);
         draw_preview_flip_card(card, values[i]);
     }
-    lv_obj_t *sensor = make_label(screen, 18, 232, 364, 28, "温度 25.6C  湿度 46%");
-    lv_obj_set_style_text_align(sensor, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_text_font(sensor, &zh_font_16, LV_PART_MAIN);
+    lv_obj_t *sensor_panel = make_bar(screen, 18, 226, 364, 44);
+    set_obj_black(sensor_panel, true);
+    lv_obj_t *temp = make_label_with_font(screen, 32, 234, 158, 28, "25.6C", &lv_font_montserrat_24);
+    lv_obj_set_style_text_align(temp, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(temp, lv_color_white(), LV_PART_MAIN);
+    lv_obj_t *humi = make_label_with_font(screen, 210, 234, 158, 28, "46%", &lv_font_montserrat_24);
+    lv_obj_set_style_text_align(humi, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(humi, lv_color_white(), LV_PART_MAIN);
+}
+
+static void build_info_preview_ui()
+{
+    lv_obj_t *screen = lv_scr_act();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = make_label_with_font(screen, 24, 18, 352, 26, "SYSTEM INFO", &lv_font_montserrat_16);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    lv_obj_t *top_line = make_bar(screen, 24, 50, 352, 3);
+    set_obj_black(top_line, true);
+
+    static const char *const info_lines[] = {
+        "Last NTP: 2026-07-01 09:30",
+        "WiFi: HomeWiFi",
+        "Last Weather: 2026-07-01 10:00",
+        "Battery: 76%  4.05V",
+        "Version: v1.4.40 / 2026-07-01",
+        "Source: github.com/wickenzh/ESP32-S3-RLCD-4.2",
+    };
+    static const int info_y[] = {70, 104, 138, 172, 206, 276};
+    for (size_t i = 0; i < sizeof(info_lines) / sizeof(info_lines[0]); ++i) {
+        const bool source_line = i == (sizeof(info_lines) / sizeof(info_lines[0])) - 1;
+        lv_obj_t *label = make_label_with_font(screen,
+                                               source_line ? 0 : 30,
+                                               info_y[i],
+                                               source_line ? 400 : 340,
+                                               source_line ? 18 : 24,
+                                               info_lines[i],
+                                               source_line ? &lv_font_montserrat_12 : &lv_font_montserrat_14);
+        if (source_line) {
+            lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        }
+    }
+
+    lv_obj_t *bottom_line = make_bar(screen, 24, 238, 352, 3);
+    set_obj_black(bottom_line, true);
+    lv_obj_t *return_label = make_label_with_font(screen, 24, 252, 352, 22, "Hold KEY to return", &lv_font_montserrat_14);
+    lv_obj_set_style_text_align(return_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 }
 
 static uint32_t weather_icon_codepoint(const char *code)
@@ -1800,6 +1847,7 @@ int main(int, char **)
     bool flip_clock_preview = preview_mode && strcmp(preview_mode, "flip_clock") == 0;
     bool calendar_preview = preview_mode && strcmp(preview_mode, "calendar") == 0;
     bool weather_board_preview = preview_mode && strcmp(preview_mode, "weather_board") == 0;
+    bool info_preview = preview_mode && strcmp(preview_mode, "info") == 0;
     if (history_preview) {
         build_history_preview_ui();
     } else if (gallery_preview) {
@@ -1810,6 +1858,8 @@ int main(int, char **)
         build_calendar_preview_ui();
     } else if (weather_board_preview) {
         build_weather_board_preview_ui();
+    } else if (info_preview) {
+        build_info_preview_ui();
     } else {
         build_clock_ui();
         set_label_text_if_changed(g_temp_label, "24.6℃");
@@ -1823,7 +1873,7 @@ int main(int, char **)
     }
 
     if (screenshot_path && screenshot_path[0]) {
-        if (history_preview || gallery_preview || flip_clock_preview || calendar_preview || weather_board_preview) {
+        if (history_preview || gallery_preview || flip_clock_preview || calendar_preview || weather_board_preview || info_preview) {
             // Alternate work pages are already built above.
         } else if (preview_mode && strcmp(preview_mode, "settings") == 0) {
             build_settings_page();
@@ -1842,6 +1892,7 @@ int main(int, char **)
         struct tm local;
         localtime_r(&now, &local);
         if (!history_preview && !gallery_preview && !flip_clock_preview && !calendar_preview && !weather_board_preview &&
+            !info_preview &&
             !(preview_mode && strcmp(preview_mode, "settings") == 0)) {
             update_time_ui(local);
             if (preview_mode && strcmp(preview_mode, "low") == 0) {

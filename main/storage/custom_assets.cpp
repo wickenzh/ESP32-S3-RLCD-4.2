@@ -7,6 +7,34 @@
 
 #include "esp_partition.h"
 
+#define CUSTOM_ASSETS_PARTITION_RANGE_INVALID_LOG_FORMAT "custom assets partition range invalid offset=0x%08lx length=%u partition=%lu"
+#define CUSTOM_ASSETS_PARTITION_READ_FAILED_LOG_FORMAT "read assets partition failed: %s"
+#define CUSTOM_ASSETS_READ_FAILED_LOG_FORMAT "read custom asset failed: %s"
+#define CUSTOM_ASSETS_ENTRY_BEFORE_PAYLOAD_LOG_FORMAT "custom asset entry before payload type=%u index=%u"
+#define CUSTOM_ASSETS_ENTRY_OFFSET_INVALID_LOG_FORMAT "custom asset entry offset invalid type=%u index=%u"
+#define CUSTOM_ASSETS_ENTRY_LENGTH_INVALID_LOG_FORMAT "custom asset entry length invalid type=%u index=%u"
+#define CUSTOM_ASSETS_ENTRY_SHAPE_INVALID_LOG_FORMAT "custom asset entry shape invalid type=%u index=%u size=%ux%u frames=%u row=%u length=%lu"
+#define CUSTOM_ASSETS_ENTRY_CRC_MISMATCH_LOG_FORMAT "custom asset entry crc mismatch type=%u index=%u"
+#define CUSTOM_ASSETS_HEADER_CRC_ALLOC_FAILED_LOG_FORMAT "custom assets header crc alloc failed"
+#define CUSTOM_ASSETS_HEADER_CRC_MISMATCH_LOG_FORMAT "custom assets header crc mismatch"
+#define CUSTOM_ASSETS_PAYLOAD_RANGE_INVALID_LOG_FORMAT "custom assets payload range invalid header=%u total=%lu"
+#define CUSTOM_ASSETS_PAYLOAD_CRC_MISMATCH_LOG_FORMAT "custom assets payload crc mismatch"
+#define CUSTOM_ASSETS_DIAG_GIF_FRAME_READ_FAILED_LOG_FORMAT "custom assets diag: gif frame %d read failed"
+#define CUSTOM_ASSETS_DIAG_GIF_FRAME_DENSITY_LOG_FORMAT "custom assets diag: gif frame %d black_bits=%d/%d"
+#define CUSTOM_ASSETS_DIAG_INIT_ENTER_LOG_FORMAT "custom assets diag: init enter"
+#define CUSTOM_ASSETS_DIAG_PARTITION_NOT_FOUND_LOG_FORMAT "custom assets diag: partition not found"
+#define CUSTOM_ASSETS_DIAG_PARTITION_FOUND_LOG_FORMAT "custom assets diag: partition found address=0x%08lx size=%lu"
+#define CUSTOM_ASSETS_DIAG_HEADER_READ_FAILED_LOG_FORMAT "custom assets diag: header read failed"
+#define CUSTOM_ASSETS_DIAG_HEADER_LOG_FORMAT "custom assets diag: header magic=0x%08lx version=%u header=%u entries=%u total=%lu header_crc=0x%08lx payload_crc=0x%08lx"
+#define CUSTOM_ASSETS_DIAG_NO_VALID_PACKAGE_LOG_FORMAT "custom assets diag: no valid package"
+#define CUSTOM_ASSETS_HEADER_SIZE_INVALID_LOG_FORMAT "custom assets header size invalid"
+#define CUSTOM_ASSETS_DIAG_ENTRIES_READ_FAILED_LOG_FORMAT "custom assets diag: entries read failed"
+#define CUSTOM_ASSETS_DIAG_ENTRY_LOG_FORMAT "custom assets diag: entry[%d] type=%u index=%u size=%ux%u frames=%u row=%u offset=0x%08lx length=%lu crc=0x%08lx"
+#define CUSTOM_ASSETS_DIAG_ENTRY_REJECTED_LOG_FORMAT "custom assets diag: entry[%d] rejected"
+#define CUSTOM_ASSETS_DIAG_DUPLICATE_MAIN_GIF_LOG_FORMAT "custom assets diag: duplicate main gif entry"
+#define CUSTOM_ASSETS_DIAG_DUPLICATE_GALLERY_LOG_FORMAT "custom assets diag: duplicate gallery entry index=%u"
+#define CUSTOM_ASSETS_DIAG_READY_LOG_FORMAT "custom assets diag: ready main_gif=%d gallery=%d"
+
 static const esp_partition_t *s_assets_partition = nullptr;
 static CustomAssetsHeader s_assets_header = {};
 static CustomAssetEntry s_entries[kCustomAssetMaxEntries] = {};
@@ -26,7 +54,8 @@ static constexpr int kCustomAssetDiagGifFrames[] = {0, 1, 30, 59};
 class CustomAssetTempBuffer {
 public:
     explicit CustomAssetTempBuffer(size_t size)
-        : data_((uint8_t *)malloc(size))
+        : data_((uint8_t *)malloc(size)),
+          size_(size)
     {
     }
 
@@ -43,8 +72,14 @@ public:
         return data_;
     }
 
+    size_t size() const
+    {
+        return size_;
+    }
+
 private:
     uint8_t *data_ = nullptr;
+    size_t size_ = 0;
 };
 
 static uint32_t crc32_update_raw(uint32_t crc, const uint8_t *data, size_t len)
@@ -77,7 +112,7 @@ static bool partition_range_valid(uint32_t offset, size_t length)
     }
     if (offset > s_assets_partition->size || length > s_assets_partition->size - offset) {
         ESP_LOGW(TAG,
-                 "custom assets partition range invalid offset=0x%08lx length=%u partition=%lu",
+                 CUSTOM_ASSETS_PARTITION_RANGE_INVALID_LOG_FORMAT,
                  (unsigned long)offset,
                  (unsigned)length,
                  (unsigned long)s_assets_partition->size);
@@ -102,7 +137,7 @@ static bool partition_crc(uint32_t offset, uint32_t length, uint32_t *crc_out)
         size_t chunk = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
         esp_err_t err = esp_partition_read(s_assets_partition, cursor, buffer, chunk);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "read assets partition failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, CUSTOM_ASSETS_PARTITION_READ_FAILED_LOG_FORMAT, esp_err_to_name(err));
             return false;
         }
         crc = crc32_update_raw(crc, buffer, chunk);
@@ -123,7 +158,7 @@ static bool read_checked(uint32_t offset, void *out, size_t len)
     }
     esp_err_t err = esp_partition_read(s_assets_partition, offset, out, len);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "read custom asset failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, CUSTOM_ASSETS_READ_FAILED_LOG_FORMAT, esp_err_to_name(err));
         return false;
     }
     return true;
@@ -135,15 +170,15 @@ static bool validate_entry_bounds(const CustomAssetEntry &entry)
         return false;
     }
     if (entry.offset < s_assets_header.header_size) {
-        ESP_LOGW(TAG, "custom asset entry before payload type=%u index=%u", entry.type, entry.index);
+        ESP_LOGW(TAG, CUSTOM_ASSETS_ENTRY_BEFORE_PAYLOAD_LOG_FORMAT, entry.type, entry.index);
         return false;
     }
     if (entry.length == 0 || entry.offset > s_assets_header.total_size) {
-        ESP_LOGW(TAG, "custom asset entry offset invalid type=%u index=%u", entry.type, entry.index);
+        ESP_LOGW(TAG, CUSTOM_ASSETS_ENTRY_OFFSET_INVALID_LOG_FORMAT, entry.type, entry.index);
         return false;
     }
     if (entry.length > s_assets_header.total_size - entry.offset) {
-        ESP_LOGW(TAG, "custom asset entry length invalid type=%u index=%u", entry.type, entry.index);
+        ESP_LOGW(TAG, CUSTOM_ASSETS_ENTRY_LENGTH_INVALID_LOG_FORMAT, entry.type, entry.index);
         return false;
     }
     if (s_assets_header.total_size > s_assets_partition->size) {
@@ -195,7 +230,7 @@ static bool validate_entry_shape(const CustomAssetEntry &entry)
     }
     if (!valid) {
         ESP_LOGW(TAG,
-                 "custom asset entry shape invalid type=%u index=%u size=%ux%u frames=%u row=%u length=%lu",
+                 CUSTOM_ASSETS_ENTRY_SHAPE_INVALID_LOG_FORMAT,
                  (unsigned)entry.type,
                  (unsigned)entry.index,
                  (unsigned)entry.width,
@@ -214,7 +249,7 @@ static bool validate_entry_crc(const CustomAssetEntry &entry)
         return false;
     }
     if (crc != entry.crc32) {
-        ESP_LOGW(TAG, "custom asset entry crc mismatch type=%u index=%u", entry.type, entry.index);
+        ESP_LOGW(TAG, CUSTOM_ASSETS_ENTRY_CRC_MISMATCH_LOG_FORMAT, entry.type, entry.index);
         return false;
     }
     return true;
@@ -225,16 +260,16 @@ static bool validate_header_crc()
     size_t header_bytes = custom_asset_header_bytes();
     CustomAssetTempBuffer buffer(header_bytes);
     if (!buffer.data()) {
-        ESP_LOGW(TAG, "custom assets header crc alloc failed");
+        ESP_LOGW(TAG, CUSTOM_ASSETS_HEADER_CRC_ALLOC_FAILED_LOG_FORMAT);
         return false;
     }
     memcpy(buffer.data(), &s_assets_header, sizeof(CustomAssetsHeader));
     memcpy(buffer.data() + sizeof(CustomAssetsHeader), s_entries, custom_asset_entry_table_bytes());
     CustomAssetsHeader *header = (CustomAssetsHeader *)buffer.data();
     header->header_crc = 0;
-    uint32_t crc = crc32_bytes(buffer.data(), header_bytes);
+    uint32_t crc = crc32_bytes(buffer.data(), buffer.size());
     if (crc != s_assets_header.header_crc) {
-        ESP_LOGW(TAG, "custom assets header crc mismatch");
+        ESP_LOGW(TAG, CUSTOM_ASSETS_HEADER_CRC_MISMATCH_LOG_FORMAT);
         return false;
     }
     return true;
@@ -244,7 +279,7 @@ static bool validate_payload_crc()
 {
     if (s_assets_header.header_size > s_assets_header.total_size) {
         ESP_LOGW(TAG,
-                 "custom assets payload range invalid header=%u total=%lu",
+                 CUSTOM_ASSETS_PAYLOAD_RANGE_INVALID_LOG_FORMAT,
                  (unsigned)s_assets_header.header_size,
                  (unsigned long)s_assets_header.total_size);
         return false;
@@ -256,7 +291,7 @@ static bool validate_payload_crc()
         return false;
     }
     if (crc != s_assets_header.payload_crc) {
-        ESP_LOGW(TAG, "custom assets payload crc mismatch");
+        ESP_LOGW(TAG, CUSTOM_ASSETS_PAYLOAD_CRC_MISMATCH_LOG_FORMAT);
         return false;
     }
     return true;
@@ -297,11 +332,11 @@ static void log_custom_gif_frame_density(int frame)
     uint8_t buffer[STATUS_GIF_BYTES_PER_FRAME];
     uint32_t offset = s_main_gif_entry->offset + (uint32_t)frame * STATUS_GIF_BYTES_PER_FRAME;
     if (!read_checked(offset, buffer, sizeof(buffer))) {
-        ESP_LOGW(TAG, "custom assets diag: gif frame %d read failed", frame);
+        ESP_LOGW(TAG, CUSTOM_ASSETS_DIAG_GIF_FRAME_READ_FAILED_LOG_FORMAT, frame);
         return;
     }
     ESP_LOGI(TAG,
-             "custom assets diag: gif frame %d black_bits=%d/%d",
+             CUSTOM_ASSETS_DIAG_GIF_FRAME_DENSITY_LOG_FORMAT,
              frame,
              count_black_bits(buffer, sizeof(buffer)),
              STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT);
@@ -309,25 +344,25 @@ static void log_custom_gif_frame_density(int frame)
 
 void custom_assets_init()
 {
-    ESP_LOGI(TAG, "custom assets diag: init enter");
+    ESP_LOGI(TAG, CUSTOM_ASSETS_DIAG_INIT_ENTER_LOG_FORMAT);
     reset_custom_assets();
     s_assets_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
                                                   ESP_PARTITION_SUBTYPE_ANY,
                                                   kCustomAssetsPartitionLabel);
     if (!s_assets_partition) {
-        ESP_LOGI(TAG, "custom assets diag: partition not found");
+        ESP_LOGI(TAG, CUSTOM_ASSETS_DIAG_PARTITION_NOT_FOUND_LOG_FORMAT);
         return;
     }
     ESP_LOGI(TAG,
-             "custom assets diag: partition found address=0x%08lx size=%lu",
+             CUSTOM_ASSETS_DIAG_PARTITION_FOUND_LOG_FORMAT,
              (unsigned long)s_assets_partition->address,
              (unsigned long)s_assets_partition->size);
     if (!read_checked(0, &s_assets_header, sizeof(s_assets_header))) {
-        ESP_LOGW(TAG, "custom assets diag: header read failed");
+        ESP_LOGW(TAG, CUSTOM_ASSETS_DIAG_HEADER_READ_FAILED_LOG_FORMAT);
         return;
     }
     ESP_LOGI(TAG,
-             "custom assets diag: header magic=0x%08lx version=%u header=%u entries=%u total=%lu header_crc=0x%08lx payload_crc=0x%08lx",
+             CUSTOM_ASSETS_DIAG_HEADER_LOG_FORMAT,
              (unsigned long)s_assets_header.magic,
              (unsigned)s_assets_header.version,
              (unsigned)s_assets_header.header_size,
@@ -339,7 +374,7 @@ void custom_assets_init()
         s_assets_header.version != kCustomAssetsVersion ||
         s_assets_header.entry_count == 0 ||
         s_assets_header.entry_count > kCustomAssetMaxEntries) {
-        ESP_LOGI(TAG, "custom assets diag: no valid package");
+        ESP_LOGI(TAG, CUSTOM_ASSETS_DIAG_NO_VALID_PACKAGE_LOG_FORMAT);
         return;
     }
     s_entry_count = s_assets_header.entry_count;
@@ -347,12 +382,12 @@ void custom_assets_init()
     if (s_assets_header.header_size != min_header_size ||
         s_assets_header.total_size <= s_assets_header.header_size ||
         s_assets_header.total_size > s_assets_partition->size) {
-        ESP_LOGW(TAG, "custom assets header size invalid");
+        ESP_LOGW(TAG, CUSTOM_ASSETS_HEADER_SIZE_INVALID_LOG_FORMAT);
         reset_custom_assets();
         return;
     }
     if (!read_checked(sizeof(CustomAssetsHeader), s_entries, custom_asset_entry_table_bytes())) {
-        ESP_LOGW(TAG, "custom assets diag: entries read failed");
+        ESP_LOGW(TAG, CUSTOM_ASSETS_DIAG_ENTRIES_READ_FAILED_LOG_FORMAT);
         reset_custom_assets();
         return;
     }
@@ -364,7 +399,7 @@ void custom_assets_init()
     for (int i = 0; i < s_entry_count; ++i) {
         CustomAssetEntry &entry = s_entries[i];
         ESP_LOGI(TAG,
-                 "custom assets diag: entry[%d] type=%u index=%u size=%ux%u frames=%u row=%u offset=0x%08lx length=%lu crc=0x%08lx",
+                 CUSTOM_ASSETS_DIAG_ENTRY_LOG_FORMAT,
                  i,
                  (unsigned)entry.type,
                  (unsigned)entry.index,
@@ -378,13 +413,13 @@ void custom_assets_init()
         if (!validate_entry_bounds(entry) ||
             !validate_entry_shape(entry) ||
             !validate_entry_crc(entry)) {
-            ESP_LOGW(TAG, "custom assets diag: entry[%d] rejected", i);
+            ESP_LOGW(TAG, CUSTOM_ASSETS_DIAG_ENTRY_REJECTED_LOG_FORMAT, i);
             reset_custom_assets();
             return;
         }
         if (entry.type == kCustomAssetTypeMainGif) {
             if (s_main_gif_entry) {
-                ESP_LOGW(TAG, "custom assets diag: duplicate main gif entry");
+                ESP_LOGW(TAG, CUSTOM_ASSETS_DIAG_DUPLICATE_MAIN_GIF_LOG_FORMAT);
                 reset_custom_assets();
                 return;
             }
@@ -392,7 +427,7 @@ void custom_assets_init()
         } else if (entry.type == kCustomAssetTypeGalleryImage && s_gallery_count < kCustomAssetMaxEntries) {
             for (int j = 0; j < s_gallery_count; ++j) {
                 if (s_gallery_entries[j] && s_gallery_entries[j]->index == entry.index) {
-                    ESP_LOGW(TAG, "custom assets diag: duplicate gallery entry index=%u", entry.index);
+                    ESP_LOGW(TAG, CUSTOM_ASSETS_DIAG_DUPLICATE_GALLERY_LOG_FORMAT, entry.index);
                     reset_custom_assets();
                     return;
                 }
@@ -410,7 +445,7 @@ void custom_assets_init()
         }
     }
     s_assets_ready = s_main_gif_entry || s_gallery_count > 0;
-    ESP_LOGI(TAG, "custom assets diag: ready main_gif=%d gallery=%d", s_main_gif_entry ? 1 : 0, s_gallery_count);
+    ESP_LOGI(TAG, CUSTOM_ASSETS_DIAG_READY_LOG_FORMAT, s_main_gif_entry ? 1 : 0, s_gallery_count);
     if (s_main_gif_entry) {
         for (int frame : kCustomAssetDiagGifFrames) {
             log_custom_gif_frame_density(frame);

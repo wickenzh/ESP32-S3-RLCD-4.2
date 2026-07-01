@@ -23,9 +23,20 @@ static constexpr int kSecondsPerDay = kHoursPerDay * kSecondsPerHour;
 static constexpr int kDigitScaleNumerator = 3;
 static constexpr int kDigitScaleDenominator = 4;
 static constexpr int kDigitBaselineY = 84;
-static constexpr size_t kFlipSensorTextSize = 48;
-static constexpr const char *kFlipSensorPlaceholder = "温度 --.-C  湿度 --%";
-static constexpr const char *kFlipSensorFormat = "温度 %.1fC  湿度 %.0f%%";
+static constexpr int kFlipSensorPanelX = 18;
+static constexpr int kFlipSensorPanelY = 226;
+static constexpr int kFlipSensorPanelW = 364;
+static constexpr int kFlipSensorPanelH = 44;
+static constexpr int kFlipSensorTextY = 234;
+static constexpr int kFlipSensorTextH = 28;
+static constexpr int kFlipSensorTextPadX = 14;
+static constexpr int kFlipSensorTextW = 158;
+static constexpr int kFlipHumiTextX = kFlipSensorPanelX + kFlipSensorPanelW - kFlipSensorTextPadX - kFlipSensorTextW;
+static constexpr size_t kFlipSensorTextSize = 16;
+static constexpr const char *kFlipTempPlaceholder = "--.-C";
+static constexpr const char *kFlipHumiPlaceholder = "--%";
+static constexpr const char *kFlipTempFormat = "%.1fC";
+static constexpr const char *kFlipHumiFormat = "%.0f%%";
 
 void apply_card_rounding(lv_obj_t *canvas)
 {
@@ -140,16 +151,22 @@ void draw_flip_card(int card_index, int value)
 
 bool update_flip_sensor_text()
 {
-    if (!g_flip_clock_sensor_label) {
+    if (!g_flip_clock_sensor_label && !g_flip_clock_humidity_label) {
         return false;
     }
-    char text[kFlipSensorTextSize];
+    char temp_text[kFlipSensorTextSize];
+    char humi_text[kFlipSensorTextSize];
     if (g_sensor_ok) {
-        snprintf(text, sizeof(text), kFlipSensorFormat, g_temperature, g_humidity);
+        snprintf(temp_text, sizeof(temp_text), kFlipTempFormat, g_temperature);
+        snprintf(humi_text, sizeof(humi_text), kFlipHumiFormat, g_humidity);
     } else {
-        strlcpy(text, kFlipSensorPlaceholder, sizeof(text));
+        strlcpy(temp_text, kFlipTempPlaceholder, sizeof(temp_text));
+        strlcpy(humi_text, kFlipHumiPlaceholder, sizeof(humi_text));
     }
-    return set_label_text_if_changed(g_flip_clock_sensor_label, text);
+    bool changed = false;
+    changed |= set_label_text_if_changed(g_flip_clock_sensor_label, temp_text);
+    changed |= set_label_text_if_changed(g_flip_clock_humidity_label, humi_text);
+    return changed;
 }
 
 } // namespace
@@ -202,12 +219,39 @@ void build_flip_clock_page()
         }
     }
 
-    g_flip_clock_sensor_label = make_label(screen, 18, 232, 364, 28, kFlipSensorPlaceholder);
+    lv_obj_t *sensor_panel = make_bar(screen,
+                                      kFlipSensorPanelX,
+                                      kFlipSensorPanelY,
+                                      kFlipSensorPanelW,
+                                      kFlipSensorPanelH);
+    set_obj_black(sensor_panel, true);
+
+    g_flip_clock_sensor_label = make_label_with_font(screen,
+                                                     kFlipSensorPanelX + kFlipSensorTextPadX,
+                                                     kFlipSensorTextY,
+                                                     kFlipSensorTextW,
+                                                     kFlipSensorTextH,
+                                                     kFlipTempPlaceholder,
+                                                     &lv_font_montserrat_24);
     if (g_flip_clock_sensor_label) {
-        lv_obj_set_style_text_align(g_flip_clock_sensor_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        lv_obj_set_style_text_font(g_flip_clock_sensor_label, &zh_font_16, LV_PART_MAIN);
+        lv_obj_set_style_text_align(g_flip_clock_sensor_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        lv_obj_set_style_text_color(g_flip_clock_sensor_label, lv_color_white(), LV_PART_MAIN);
     } else {
-        ESP_LOGW(TAG, "flip clock sensor label create failed");
+        ESP_LOGW(TAG, "flip clock temp label create failed");
+    }
+
+    g_flip_clock_humidity_label = make_label_with_font(screen,
+                                                       kFlipHumiTextX,
+                                                       kFlipSensorTextY,
+                                                       kFlipSensorTextW,
+                                                       kFlipSensorTextH,
+                                                       kFlipHumiPlaceholder,
+                                                       &lv_font_montserrat_24);
+    if (g_flip_clock_humidity_label) {
+        lv_obj_set_style_text_align(g_flip_clock_humidity_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+        lv_obj_set_style_text_color(g_flip_clock_humidity_label, lv_color_white(), LV_PART_MAIN);
+    } else {
+        ESP_LOGW(TAG, "flip clock humidity label create failed");
     }
 
     update_battery_segments(g_flip_clock_battery_segments, g_battery_percent);

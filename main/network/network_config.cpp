@@ -6,6 +6,8 @@
 
 #include <errno.h>
 
+#define FORM_VALUE_TRUNCATED_LOG_FORMAT "form value truncated for key=%s len=%u cap=%u"
+
 namespace {
 constexpr const char *kWifiNvsNamespace = "wifi";
 constexpr const char *kWifiSsidKey = "ssid";
@@ -29,6 +31,7 @@ constexpr size_t kManualTimeFieldSize = 32;
 constexpr size_t kSetupSsidFieldSize = 33;
 constexpr size_t kSetupPasswordFieldSize = 65;
 constexpr size_t kSetupApiKeyFieldSize = 96;
+constexpr size_t kSetupWeatherCityFieldSize = kManualWeatherCityLen;
 constexpr uint8_t kNvsUnsetU8 = 0xFF;
 constexpr uint8_t kDefaultChimeVolumePercent = 80;
 constexpr uint8_t kValidChimeVolumePercent[] = {20, 40, 60, 80, 100};
@@ -61,7 +64,26 @@ constexpr const char *kConfigEventReasonNetworkRequestReset = "network request r
 constexpr const char *kConfigEventReasonFactoryReset = "factory reset";
 constexpr const char *kConfigEventReasonOfflineManualTime = "offline manual time";
 constexpr const char *kConfigEventReasonProvisioningSave = "provisioning save";
+constexpr const char *kNvsActionLoadingConfig = "loading config";
+constexpr const char *kNvsActionSavingOfflineMode = "saving offline mode";
+constexpr const char *kNvsActionSavingConfig = "saving config";
+constexpr const char *kNvsActionSavingWeatherCity = "saving weather city";
+constexpr const char *kNvsActionClearingWeatherCity = "clearing weather city";
+constexpr const char *kNvsActionSavingHourlyReminder = "saving hourly reminder";
+constexpr const char *kNvsActionSavingPageSettings = "saving page settings";
+constexpr const char *kNvsActionSavingPageOrder = "saving page order";
+constexpr const char *kNvsActionClearingConfig = "clearing config";
 constexpr const char *kInvalidWeatherCitySaveLog = "skip saving invalid weather city";
+#define NVS_SAVE_OFFLINE_MODE_FAILED_FORMAT "nvs save offline mode failed: %s"
+#define NVS_ERASE_LEGACY_API_HOST_FAILED_FORMAT "nvs erase legacy api host failed while saving config: %s"
+#define NVS_SAVE_CONFIG_FAILED_FORMAT "nvs save config failed: %s"
+#define NVS_SAVE_WEATHER_CITY_FAILED_FORMAT "nvs save weather city failed: %s"
+#define NVS_CLEAR_WEATHER_CITY_FAILED_FORMAT "nvs clear weather city failed: %s"
+#define NVS_SAVE_HOURLY_REMINDER_FAILED_FORMAT "nvs save hourly reminder failed: %s"
+#define NVS_SAVE_PAGE_SETTINGS_FAILED_FORMAT "nvs save page settings failed: %s"
+#define NVS_SAVE_PAGE_ORDER_FAILED_FORMAT "nvs save page order failed: %s"
+#define NVS_ERASE_KEY_CLEARING_CONFIG_FAILED_FORMAT "nvs erase key %s failed while clearing config: %s"
+#define NVS_CLEAR_CONFIG_FAILED_FORMAT "nvs clear config failed: %s"
 constexpr const char *kFormManualTimeKey = "manual_time";
 constexpr const char *kFormManualTimeFallbackKey = "datetime";
 constexpr const char *kFormSsidKey = "ssid";
@@ -194,6 +216,59 @@ esp_err_t erase_nvs_key_if_present(nvs_handle_t nvs, const char *key, bool *eras
     return err == ESP_ERR_NVS_NOT_FOUND ? ESP_OK : err;
 }
 
+esp_err_t open_wifi_nvs(nvs_open_mode_t mode, nvs_handle_t *nvs, const char *action, bool log_not_found = true)
+{
+    if (!nvs) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = nvs_open(kWifiNvsNamespace, mode, nvs);
+    if (err != ESP_OK && (log_not_found || err != ESP_ERR_NVS_NOT_FOUND)) {
+        ESP_LOGW(TAG, "nvs open failed while %s: %s", action ? action : "accessing config", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t commit_nvs_if_ok(nvs_handle_t nvs, esp_err_t err)
+{
+    return err == ESP_OK ? nvs_commit(nvs) : err;
+}
+
+esp_err_t set_nvs_str_if_ok(nvs_handle_t nvs, esp_err_t err, const char *key, const char *value)
+{
+    return err == ESP_OK ? nvs_set_str(nvs, key, value) : err;
+}
+
+esp_err_t set_nvs_u8_if_ok(nvs_handle_t nvs, esp_err_t err, const char *key, uint8_t value)
+{
+    return err == ESP_OK ? nvs_set_u8(nvs, key, value) : err;
+}
+
+esp_err_t write_manual_weather_city_key(nvs_handle_t nvs, const char *city)
+{
+    return city && city[0] != '\0'
+               ? nvs_set_str(nvs, kManualWeatherCityKey, city)
+               : erase_nvs_key_if_present(nvs, kManualWeatherCityKey, nullptr);
+}
+
+uint8_t read_nvs_u8_or_default(nvs_handle_t nvs, const char *key, uint8_t default_value)
+{
+    uint8_t value = default_value;
+    (void)nvs_get_u8(nvs, key, &value);
+    return value;
+}
+
+esp_err_t read_nvs_string(nvs_handle_t nvs, const char *key, char *out, size_t out_len)
+{
+    size_t len = out_len;
+    return nvs_get_str(nvs, key, out, &len);
+}
+
+bool nvs_u8_matches(nvs_handle_t nvs, const char *key, uint8_t expected)
+{
+    uint8_t value = kNvsUnsetU8;
+    return nvs_get_u8(nvs, key, &value) == ESP_OK && value == expected;
+}
+
 void append_work_page_for_migration(uint8_t *order, int *count, uint8_t page)
 {
     if (!order || !count || *count >= kWorkPageCount) {
@@ -221,33 +296,21 @@ int migrate_order_with_flip_clock(const uint8_t *source, size_t source_count, ui
 bool load_saved_config()
 {
     nvs_handle_t nvs;
-    esp_err_t open_err = nvs_open(kWifiNvsNamespace, NVS_READONLY, &nvs);
+    esp_err_t open_err = open_wifi_nvs(NVS_READONLY, &nvs, kNvsActionLoadingConfig, false);
     if (open_err != ESP_OK) {
-        if (open_err != ESP_ERR_NVS_NOT_FOUND) {
-            ESP_LOGW(TAG, "nvs open failed while loading config: %s", esp_err_to_name(open_err));
-        }
         return false;
     }
-    size_t ssid_len = sizeof(g_wifi_ssid);
-    size_t pass_len = sizeof(g_wifi_pass);
-    size_t key_len = sizeof(g_weather_api_key);
-    size_t city_len = sizeof(g_manual_weather_city);
-    esp_err_t ssid_err = nvs_get_str(nvs, kWifiSsidKey, g_wifi_ssid, &ssid_len);
-    esp_err_t pass_err = nvs_get_str(nvs, kWifiPassKey, g_wifi_pass, &pass_len);
-    esp_err_t key_err = nvs_get_str(nvs, kWeatherApiKeyKey, g_weather_api_key, &key_len);
-    esp_err_t city_err = nvs_get_str(nvs, kManualWeatherCityKey, g_manual_weather_city, &city_len);
-    uint8_t chime = 0;
-    uint8_t all_day = 0;
-    uint8_t volume = kDefaultChimeVolumePercent;
-    uint8_t sound = 0;
+    esp_err_t ssid_err = read_nvs_string(nvs, kWifiSsidKey, g_wifi_ssid, sizeof(g_wifi_ssid));
+    esp_err_t pass_err = read_nvs_string(nvs, kWifiPassKey, g_wifi_pass, sizeof(g_wifi_pass));
+    esp_err_t key_err = read_nvs_string(nvs, kWeatherApiKeyKey, g_weather_api_key, sizeof(g_weather_api_key));
+    esp_err_t city_err = read_nvs_string(nvs, kManualWeatherCityKey, g_manual_weather_city, sizeof(g_manual_weather_city));
     uint8_t page_mask = kPageMaskV3KnownBits;
-    uint8_t offline = 0;
     uint8_t page_order[kWorkPageCount] = {};
     size_t page_order_len = sizeof(page_order);
-    (void)nvs_get_u8(nvs, kHourlyChimeKey, &chime);
-    (void)nvs_get_u8(nvs, kHourlyAllDayKey, &all_day);
-    (void)nvs_get_u8(nvs, kChimeVolumeKey, &volume);
-    (void)nvs_get_u8(nvs, kChimeSoundKey, &sound);
+    uint8_t chime = read_nvs_u8_or_default(nvs, kHourlyChimeKey, 0);
+    uint8_t all_day = read_nvs_u8_or_default(nvs, kHourlyAllDayKey, 0);
+    uint8_t volume = read_nvs_u8_or_default(nvs, kChimeVolumeKey, kDefaultChimeVolumePercent);
+    uint8_t sound = read_nvs_u8_or_default(nvs, kChimeSoundKey, 0);
     if (nvs_get_u8(nvs, kPageMaskV3Key, &page_mask) != ESP_OK) {
         uint8_t v2_page_mask = kPageMaskV2KnownBits;
         if (nvs_get_u8(nvs, kPageMaskV2Key, &v2_page_mask) == ESP_OK) {
@@ -260,7 +323,7 @@ bool load_saved_config()
             }
         }
     }
-    (void)nvs_get_u8(nvs, kOfflineModeKey, &offline);
+    uint8_t offline = read_nvs_u8_or_default(nvs, kOfflineModeKey, 0);
     esp_err_t order_err = nvs_get_blob(nvs, kPageOrderV3Key, page_order, &page_order_len);
     if (order_err != ESP_OK || page_order_len != sizeof(page_order)) {
         uint8_t v2_order[kPageOrderV2Count] = {};
@@ -323,23 +386,19 @@ void clear_network_request_bits()
 bool set_offline_mode_enabled(bool enabled)
 {
     nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionSavingOfflineMode);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs open failed while saving offline mode: %s", esp_err_to_name(err));
         return false;
     }
-    uint8_t old_value = kNvsUnsetU8;
     uint8_t next_value = enabled ? 1 : 0;
-    bool unchanged = nvs_get_u8(nvs, kOfflineModeKey, &old_value) == ESP_OK && old_value == next_value;
+    bool unchanged = nvs_u8_matches(nvs, kOfflineModeKey, next_value);
     if (!unchanged) {
         err = nvs_set_u8(nvs, kOfflineModeKey, next_value);
-        if (err == ESP_OK) {
-            err = nvs_commit(nvs);
-        }
+        err = commit_nvs_if_ok(nvs, err);
     }
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs save offline mode failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, NVS_SAVE_OFFLINE_MODE_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
     g_offline_mode_ui_enabled = enabled;
@@ -392,6 +451,12 @@ void copy_trimmed_weather_city(char *out, size_t out_len, const char *city)
     trim_ascii(out);
 }
 
+void set_manual_weather_city_state(const char *city)
+{
+    strlcpy(g_manual_weather_city, city ? city : "", sizeof(g_manual_weather_city));
+    g_has_manual_weather_city = g_manual_weather_city[0] != '\0';
+}
+
 bool save_config(const char *ssid, const char *pass, const char *api_key, const char *weather_city)
 {
     if (!ssid || ssid[0] == '\0') {
@@ -411,45 +476,33 @@ bool save_config(const char *ssid, const char *pass, const char *api_key, const 
         return false;
     }
     nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionSavingConfig);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs open failed while saving config: %s", esp_err_to_name(err));
         return false;
     }
-    err = nvs_set_str(nvs, kWifiSsidKey, ssid);
+    err = set_nvs_str_if_ok(nvs, err, kWifiSsidKey, ssid);
+    err = set_nvs_str_if_ok(nvs, err, kWifiPassKey, pass);
+    err = set_nvs_str_if_ok(nvs, err, kWeatherApiKeyKey, api_key);
     if (err == ESP_OK) {
-        err = nvs_set_str(nvs, kWifiPassKey, pass);
-    }
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs, kWeatherApiKeyKey, api_key);
-    }
-    if (err == ESP_OK) {
-        if (city[0] != '\0') {
-            err = nvs_set_str(nvs, kManualWeatherCityKey, city);
-        } else {
-            err = erase_nvs_key_if_present(nvs, kManualWeatherCityKey, nullptr);
-        }
+        err = write_manual_weather_city_key(nvs, city);
     }
     esp_err_t legacy_erase_err = erase_nvs_key_if_present(nvs, kLegacyApiHostKey, nullptr);
     if (legacy_erase_err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs erase legacy api host failed while saving config: %s",
+        ESP_LOGW(TAG, NVS_ERASE_LEGACY_API_HOST_FAILED_FORMAT,
                  esp_err_to_name(legacy_erase_err));
     }
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs);
-    }
+    err = commit_nvs_if_ok(nvs, err);
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs save config failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, NVS_SAVE_CONFIG_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
     strlcpy(g_wifi_ssid, ssid, sizeof(g_wifi_ssid));
     strlcpy(g_wifi_pass, pass, sizeof(g_wifi_pass));
     strlcpy(g_weather_api_key, api_key, sizeof(g_weather_api_key));
-    strlcpy(g_manual_weather_city, city, sizeof(g_manual_weather_city));
+    set_manual_weather_city_state(city);
     g_have_wifi_creds = true;
     g_have_weather_key = g_weather_api_key[0] != '\0';
-    g_has_manual_weather_city = g_manual_weather_city[0] != '\0';
     (void)set_offline_mode_enabled(false);
     return true;
 }
@@ -466,9 +519,8 @@ bool save_manual_weather_city(const char *city)
         return false;
     }
     nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionSavingWeatherCity);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs open failed while saving weather city: %s", esp_err_to_name(err));
         return false;
     }
     char old_city[kManualWeatherCityLen] = {};
@@ -476,53 +528,46 @@ bool save_manual_weather_city(const char *city)
     if (nvs_get_str(nvs, kManualWeatherCityKey, old_city, &old_city_len) == ESP_OK &&
         strcmp(old_city, next) == 0) {
         nvs_close(nvs);
-        strlcpy(g_manual_weather_city, next, sizeof(g_manual_weather_city));
-        g_has_manual_weather_city = true;
+        set_manual_weather_city_state(next);
         return true;
     }
     err = nvs_set_str(nvs, kManualWeatherCityKey, next);
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs);
-    }
+    err = commit_nvs_if_ok(nvs, err);
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs save weather city failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, NVS_SAVE_WEATHER_CITY_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
-    strlcpy(g_manual_weather_city, next, sizeof(g_manual_weather_city));
-    g_has_manual_weather_city = true;
+    set_manual_weather_city_state(next);
     return true;
 }
 
 bool clear_manual_weather_city()
 {
     nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionClearingWeatherCity);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs open failed while clearing weather city: %s", esp_err_to_name(err));
         return false;
     }
     bool erased = false;
     err = erase_nvs_key_if_present(nvs, kManualWeatherCityKey, &erased);
     if (err == ESP_OK && erased) {
-        err = nvs_commit(nvs);
+        err = commit_nvs_if_ok(nvs, err);
     }
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs clear weather city failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, NVS_CLEAR_WEATHER_CITY_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
-    g_manual_weather_city[0] = '\0';
-    g_has_manual_weather_city = false;
+    set_manual_weather_city_state("");
     return true;
 }
 
 bool save_hourly_chime_setting()
 {
     nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionSavingHourlyReminder);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs open failed while saving hourly reminder: %s", esp_err_to_name(err));
         return false;
     }
     uint8_t next_chime = g_hourly_chime_enabled ? 1 : 0;
@@ -545,22 +590,14 @@ bool save_hourly_chime_setting()
         nvs_close(nvs);
         return true;
     }
-    err = nvs_set_u8(nvs, kHourlyChimeKey, next_chime);
-    if (err == ESP_OK) {
-        err = nvs_set_u8(nvs, kHourlyAllDayKey, next_all_day);
-    }
-    if (err == ESP_OK) {
-        err = nvs_set_u8(nvs, kChimeVolumeKey, next_volume);
-    }
-    if (err == ESP_OK) {
-        err = nvs_set_u8(nvs, kChimeSoundKey, next_sound);
-    }
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs);
-    }
+    err = set_nvs_u8_if_ok(nvs, err, kHourlyChimeKey, next_chime);
+    err = set_nvs_u8_if_ok(nvs, err, kHourlyAllDayKey, next_all_day);
+    err = set_nvs_u8_if_ok(nvs, err, kChimeVolumeKey, next_volume);
+    err = set_nvs_u8_if_ok(nvs, err, kChimeSoundKey, next_sound);
+    err = commit_nvs_if_ok(nvs, err);
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs save hourly reminder failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, NVS_SAVE_HOURLY_REMINDER_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
     return true;
@@ -569,25 +606,21 @@ bool save_hourly_chime_setting()
 bool save_work_page_settings()
 {
     nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionSavingPageSettings);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs open failed while saving page settings: %s", esp_err_to_name(err));
         return false;
     }
     uint8_t mask = (g_work_page_enabled_mask | kWeatherClockPageMask) & kPageMaskV3KnownBits;
-    uint8_t old_mask = 0;
-    if (nvs_get_u8(nvs, kPageMaskV3Key, &old_mask) == ESP_OK && old_mask == mask) {
+    if (nvs_u8_matches(nvs, kPageMaskV3Key, mask)) {
         nvs_close(nvs);
         g_work_page_enabled_mask = mask;
         return true;
     }
     err = nvs_set_u8(nvs, kPageMaskV3Key, mask);
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs);
-    }
+    err = commit_nvs_if_ok(nvs, err);
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs save page settings failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, NVS_SAVE_PAGE_SETTINGS_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
     g_work_page_enabled_mask = mask;
@@ -598,9 +631,8 @@ bool save_work_page_order()
 {
     normalize_work_page_order();
     nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionSavingPageOrder);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs open failed while saving page order: %s", esp_err_to_name(err));
         return false;
     }
     uint8_t old_order[kWorkPageCount] = {};
@@ -612,12 +644,10 @@ bool save_work_page_order()
         return true;
     }
     err = nvs_set_blob(nvs, kPageOrderV3Key, g_work_page_order, sizeof(g_work_page_order));
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs);
-    }
+    err = commit_nvs_if_ok(nvs, err);
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "nvs save page order failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, NVS_SAVE_PAGE_ORDER_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
     return true;
@@ -626,7 +656,7 @@ bool save_work_page_order()
 bool clear_saved_config()
 {
     nvs_handle_t nvs;
-    esp_err_t open_err = nvs_open(kWifiNvsNamespace, NVS_READWRITE, &nvs);
+    esp_err_t open_err = open_wifi_nvs(NVS_READWRITE, &nvs, kNvsActionClearingConfig);
     if (open_err == ESP_OK) {
         bool erased = false;
         esp_err_t err = ESP_OK;
@@ -634,31 +664,29 @@ bool clear_saved_config()
             bool key_erased = false;
             err = erase_nvs_key_if_present(nvs, key, &key_erased);
             if (err != ESP_OK) {
-                ESP_LOGW(TAG, "nvs erase key %s failed while clearing config: %s", key, esp_err_to_name(err));
+                ESP_LOGW(TAG, NVS_ERASE_KEY_CLEARING_CONFIG_FAILED_FORMAT, key, esp_err_to_name(err));
                 break;
             }
             erased = erased || key_erased;
         }
         if (err == ESP_OK && erased) {
-            err = nvs_commit(nvs);
+            err = commit_nvs_if_ok(nvs, err);
         }
         nvs_close(nvs);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "nvs clear config failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, NVS_CLEAR_CONFIG_FAILED_FORMAT, esp_err_to_name(err));
             return false;
         }
     } else {
-        ESP_LOGW(TAG, "nvs open failed while clearing config: %s", esp_err_to_name(open_err));
         return false;
     }
     g_wifi_ssid[0] = '\0';
     g_wifi_pass[0] = '\0';
     g_weather_api_key[0] = '\0';
-    g_manual_weather_city[0] = '\0';
+    set_manual_weather_city_state("");
     g_sta_ip[0] = '\0';
     g_have_wifi_creds = false;
     g_have_weather_key = false;
-    g_has_manual_weather_city = false;
     g_offline_mode_ui_enabled = false;
     clear_app_event_bits(kWifiConnectedBit | kWeatherReadyBit, kConfigEventReasonFactoryReset);
     clear_network_request_bits();
@@ -706,7 +734,7 @@ void form_value(const char *body, const char *key, char *out, size_t out_len)
     }
     char encoded[kFormEncodedBufferSize] = {};
     if (len >= sizeof(encoded)) {
-        ESP_LOGW(TAG, "form value truncated for key=%s len=%u cap=%u",
+        ESP_LOGW(TAG, FORM_VALUE_TRUNCATED_LOG_FORMAT,
                  key,
                  (unsigned)len,
                  (unsigned)sizeof(encoded));
@@ -834,7 +862,7 @@ bool save_credentials_from_body(const char *body)
     char ssid[kSetupSsidFieldSize] = {};
     char pass[kSetupPasswordFieldSize] = {};
     char api_key[kSetupApiKeyFieldSize] = {};
-    char weather_city[kManualWeatherCityLen] = {};
+    char weather_city[kSetupWeatherCityFieldSize] = {};
     form_value(body, kFormSsidKey, ssid, sizeof(ssid));
     form_value_fallback(body, kFormPasswordKey, kFormPasswordFallbackKey, pass, sizeof(pass));
     form_value_fallback(body, kFormApiKeyKey, kFormApiKeyFallbackKey, api_key, sizeof(api_key));

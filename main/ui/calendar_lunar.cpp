@@ -48,6 +48,8 @@ static constexpr int kTmYearOffset = 1900;
 static constexpr int kTmMonthOffset = 1;
 static constexpr int kSolarTermBaseYear = 1900;
 static constexpr double kMsPerMinute = 60000.0;
+static constexpr const char *kCalendarLunarPlaceholder = "--";
+static constexpr const char *kLunarMonthDisplayFormat = "%s%s";
 
 static const int kSolarTermMinutes[] = {
     0, 21208, 42467, 63836, 85337, 107014,
@@ -251,7 +253,7 @@ bool calendar_day_info(const struct tm &local, CalendarDayInfo *info)
     info->month = local.tm_mon + kTmMonthOffset;
     info->day = local.tm_mday;
     if (info->year < kMinValidYear || info->year > kMaxValidYear) {
-        strlcpy(info->subtext, "--", sizeof(info->subtext));
+        strlcpy(info->subtext, kCalendarLunarPlaceholder, sizeof(info->subtext));
         return false;
     }
 
@@ -265,7 +267,7 @@ bool calendar_day_info(const struct tm &local, CalendarDayInfo *info)
     }
     if (!text && lunar_ok) {
         if (info->lunar_day == 1 && info->lunar_month >= 1 && info->lunar_month <= 12) {
-            snprintf(info->subtext, sizeof(info->subtext), "%s%s",
+            snprintf(info->subtext, sizeof(info->subtext), kLunarMonthDisplayFormat,
                      info->lunar_leap ? "闰" : "",
                      kLunarMonthNames[info->lunar_month]);
             return true;
@@ -274,6 +276,6 @@ bool calendar_day_info(const struct tm &local, CalendarDayInfo *info)
             text = kLunarDayNames[info->lunar_day];
         }
     }
-    strlcpy(info->subtext, text ? text : "--", sizeof(info->subtext));
+    strlcpy(info->subtext, text ? text : kCalendarLunarPlaceholder, sizeof(info->subtext));
     return lunar_ok;
 }

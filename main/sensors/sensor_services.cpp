@@ -17,6 +17,14 @@ TickType_t next_housekeeping_wake_tick(bool low_battery, TickType_t next_sensor,
     }
     return next_sensor < next_battery ? next_sensor : next_battery;
 }
+
+TickType_t next_battery_wake_after_sample(TickType_t sampled_tick)
+{
+    if (g_battery_charging) {
+        return sampled_tick + pdMS_TO_TICKS(kBatteryChargingSampleMs);
+    }
+    return next_battery_sample_tick(sampled_tick);
+}
 } // namespace
 
 void housekeeping_task(void *)
@@ -55,9 +63,7 @@ void housekeeping_task(void *)
             if (was_low_battery && !g_low_battery_mode) {
                 next_sensor = next_sensor_sample_tick(after_battery);
             }
-            next_battery = g_battery_charging
-                               ? after_battery + pdMS_TO_TICKS(kBatteryChargingSampleMs)
-                               : next_battery_sample_tick(after_battery);
+            next_battery = next_battery_wake_after_sample(after_battery);
         }
         TickType_t next_wake = next_housekeeping_wake_tick(g_low_battery_mode, next_sensor, next_battery);
         TickType_t delay_now = xTaskGetTickCount();

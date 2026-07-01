@@ -5,6 +5,10 @@
 #include "ota_services.h"
 #include "ui_views.h"
 
+#define BUTTON_GPIO_CONFIG_FAILED_LOG_FORMAT "button gpio config failed: %s"
+#define BUTTON_SWITCH_WORK_PAGE_LOG_FORMAT "switch work page: %d"
+#define BUTTON_SHOW_SETTINGS_LOG_FORMAT "key button clicked, showing settings page"
+
 namespace {
 constexpr int kButtonDebounceMs = 40;
 constexpr int kButtonLongPressMs = 1200;
@@ -43,7 +47,7 @@ void button_task(void *)
     button.pull_up_en = GPIO_PULLUP_ENABLE;
     esp_err_t err = gpio_config(&button);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "button gpio config failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, BUTTON_GPIO_CONFIG_FAILED_LOG_FORMAT, esp_err_to_name(err));
         return;
     }
 
@@ -80,7 +84,7 @@ void button_task(void *)
                 TickType_t held = now - boot_pressed_since;
                 if (held >= pdMS_TO_TICKS(kButtonDebounceMs) && held < pdMS_TO_TICKS(kButtonLongPressMs)) {
                     g_active_work_page = next_enabled_work_page(g_active_work_page);
-                    ESP_LOGI(TAG, "switch work page: %d", g_active_work_page + 1);
+                    ESP_LOGI(TAG, BUTTON_SWITCH_WORK_PAGE_LOG_FORMAT, g_active_work_page + 1);
                     notify_ui_task();
                 }
             }
@@ -96,7 +100,7 @@ void button_task(void *)
                     g_settings_last_activity_tick = now;
                 }
                 if (!g_settings_requested && !g_boot_info_requested && !g_network_diag_page_requested) {
-                    ESP_LOGI(TAG, "key button clicked, showing settings page");
+                    ESP_LOGI(TAG, BUTTON_SHOW_SETTINGS_LOG_FORMAT);
                     g_boot_info_requested = false;
                     g_settings_requested = true;
                     g_settings_focus_secondary = false;

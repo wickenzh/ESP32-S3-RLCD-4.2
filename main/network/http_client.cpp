@@ -32,6 +32,21 @@ constexpr const char *kHttpAcceptEncodingHeader = "identity";
 constexpr const char *kQweatherApiKeyHeader = "X-QW-Api-Key";
 constexpr const char *kQweatherGeoHost = "://geoapi.qweather.com/";
 constexpr const char *kQweatherDevHost = "://devapi.qweather.com/";
+constexpr const char *kHttpPreviewDefaultStage = "http";
+constexpr const char *kHttpDecodeInvalidArgLog = "decode http body invalid arg";
+constexpr const char *kHttpGetInvalidArgLog = "http get invalid arg";
+constexpr const char *kHttpBootBudgetExhaustedLog = "http get skipped: boot sync time budget exhausted";
+constexpr const char *kHttpClientInitFailedLog = "http client init failed";
+#define HTTP_TEMP_BUFFER_ALLOC_FAILED_FORMAT "http temp buffer alloc failed len=%u"
+#define HTTP_GZIP_HEADER_INVALID_FORMAT "gzip response header invalid len=%u"
+#define HTTP_GZIP_DECOMPRESS_FAILED_FORMAT "gzip response decompress failed payload_len=%u"
+#define HTTP_GZIP_DECOMPRESSED_FORMAT "gzip response decompressed len=%u"
+#define HTTP_PARSE_EMPTY_RESPONSE_FORMAT "%s parse failed: empty response pointer"
+#define HTTP_PARSE_FAILED_FORMAT "%s parse failed len=%u head=%02x %02x %02x %02x body=%s"
+#define HTTP_GET_FAILED_WITH_BODY_FORMAT "http get failed status=%d err=%s body=%s"
+#define HTTP_GET_FAILED_FORMAT "http get failed status=%d err=%s"
+#define HTTP_RESPONSE_TRUNCATED_FORMAT "http response may be truncated status=%d content_len=%lld buffer=%u"
+#define HTTP_GET_OK_FORMAT "http get ok status=%d len=%u gzip=%d"
 
 bool is_qweather_url(const char *url)
 {
@@ -50,6 +65,13 @@ bool has_gzip_magic_prefix(const char *data, size_t len)
 bool http_status_ok(int status)
 {
     return status >= kHttpStatusOkMin && status < kHttpStatusOkMax;
+}
+
+bool http_response_may_be_truncated(int64_t content_length, size_t received_len, size_t out_len)
+{
+    bool content_length_fills_buffer = content_length >= 0 && (uint64_t)content_length >= out_len;
+    bool received_fills_buffer = received_len + kCStringTerminatorSize >= out_len;
+    return content_length_fills_buffer || received_fills_buffer;
 }
 
 bool http_ascii_space(char ch)
@@ -97,10 +119,11 @@ void copy_log_preview(char *out, size_t out_len, const char *text)
 class HttpByteBuffer {
 public:
     explicit HttpByteBuffer(size_t len)
-        : data_((uint8_t *)malloc(len))
+        : data_((uint8_t *)malloc(len)),
+          size_(len)
     {
         if (!data_) {
-            ESP_LOGW(TAG, "http temp buffer alloc failed len=%u", (unsigned)len);
+            ESP_LOGW(TAG, HTTP_TEMP_BUFFER_ALLOC_FAILED_FORMAT, (unsigned)len);
         }
     }
 
@@ -117,6 +140,11 @@ public:
         return data_;
     }
 
+    size_t size() const
+    {
+        return size_;
+    }
+
     explicit operator bool() const
     {
         return data_ != nullptr;
@@ -124,6 +152,7 @@ public:
 
 private:
     uint8_t *data_;
+    size_t size_;
 };
 } // namespace
 
@@ -196,7 +225,7 @@ bool gzip_payload_range(const uint8_t *data, size_t len, size_t *payload_offset,
 esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
 {
     if (!out || out_len == 0 || !body_len) {
-        ESP_LOGW(TAG, "decode http body invalid arg");
+        ESP_LOGW(TAG, "%s", kHttpDecodeInvalidArgLog);
         return ESP_ERR_INVALID_ARG;
     }
     if (*body_len < kGzipHeaderProbeSize || !has_gzip_magic_prefix(out, *body_len)) {
@@ -206,7 +235,7 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
     size_t payload_offset = 0;
     size_t payload_len = 0;
     if (!gzip_payload_range((const uint8_t *)out, *body_len, &payload_offset, &payload_len)) {
-        ESP_LOGW(TAG, "gzip response header invalid len=%u", (unsigned)*body_len);
+        ESP_LOGW(TAG, HTTP_GZIP_HEADER_INVALID_FORMAT, (unsigned)*body_len);
         return ESP_FAIL;
     }
 
@@ -214,7 +243,7 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
     if (!compressed) {
         return ESP_ERR_NO_MEM;
     }
-    memcpy(compressed.get(), out, *body_len);
+    memcpy(compressed.get(), out, compressed.size());
 
     size_t written = tinfl_decompress_mem_to_mem(out,
                                                  out_len - kCStringTerminatorSize,
@@ -224,20 +253,20 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
     if (written == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED) {
         out[0] = '\0';
         *body_len = 0;
-        ESP_LOGW(TAG, "gzip response decompress failed payload_len=%u", (unsigned)payload_len);
+        ESP_LOGW(TAG, HTTP_GZIP_DECOMPRESS_FAILED_FORMAT, (unsigned)payload_len);
         return ESP_FAIL;
     }
 
     out[written] = '\0';
     *body_len = written;
-    ESP_LOGI(TAG, "gzip response decompressed len=%u", (unsigned)written);
+    ESP_LOGI(TAG, HTTP_GZIP_DECOMPRESSED_FORMAT, (unsigned)written);
     return ESP_OK;
 }
 
 esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *api_key)
 {
     if (!url || url[0] == '\0' || !out || out_len == 0) {
-        ESP_LOGW(TAG, "http get invalid arg");
+        ESP_LOGW(TAG, "%s", kHttpGetInvalidArgLog);
         return ESP_ERR_INVALID_ARG;
     }
     out[0] = '\0';
@@ -249,7 +278,7 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
     int timeout_ms = g_http_timeout_ms;
     int remaining_ms = boot_sync_remaining_ms();
     if (remaining_ms <= 0) {
-        ESP_LOGW(TAG, "http get skipped: boot sync time budget exhausted");
+        ESP_LOGW(TAG, "%s", kHttpBootBudgetExhaustedLog);
         return ESP_ERR_TIMEOUT;
     }
     if (remaining_ms != INT32_MAX && timeout_ms > remaining_ms) {
@@ -263,7 +292,7 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
     }
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
-        ESP_LOGW(TAG, "http client init failed");
+        ESP_LOGW(TAG, "%s", kHttpClientInitFailedLog);
         return ESP_FAIL;
     }
     esp_http_client_set_header(client, kHttpAcceptHeaderName, kHttpAcceptHeader);
@@ -279,20 +308,19 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
         if (buffer.len > 0) {
             char preview[kHttpPreviewBufferSize] = {};
             copy_log_preview(preview, sizeof(preview), out);
-            ESP_LOGW(TAG, "http get failed status=%d err=%s body=%s", status, esp_err_to_name(err), preview);
+            ESP_LOGW(TAG, HTTP_GET_FAILED_WITH_BODY_FORMAT, status, esp_err_to_name(err), preview);
         } else {
-            ESP_LOGW(TAG, "http get failed status=%d err=%s", status, esp_err_to_name(err));
+            ESP_LOGW(TAG, HTTP_GET_FAILED_FORMAT, status, esp_err_to_name(err));
         }
         return err == ESP_OK ? ESP_FAIL : err;
     }
-    if ((content_length >= 0 && (uint64_t)content_length >= out_len) || buffer.len + kCStringTerminatorSize >= out_len) {
-        ESP_LOGW(TAG,
-                 "http response may be truncated status=%d content_len=%lld buffer=%u",
+    if (http_response_may_be_truncated(content_length, buffer.len, out_len)) {
+        ESP_LOGW(TAG, HTTP_RESPONSE_TRUNCATED_FORMAT,
                  status,
                  (long long)content_length,
                  (unsigned)out_len);
     }
-    ESP_LOGI(TAG, "http get ok status=%d len=%u gzip=%d",
+    ESP_LOGI(TAG, HTTP_GET_OK_FORMAT,
              status,
              (unsigned)buffer.len,
              has_gzip_magic_prefix(out, buffer.len));
@@ -364,16 +392,16 @@ bool url_encode_component(const char *in, char *out, size_t out_len)
 
 void log_response_preview(const char *stage, const char *response)
 {
-    const char *label = stage ? stage : "http";
+    const char *label = stage ? stage : kHttpPreviewDefaultStage;
     if (!response) {
-        ESP_LOGW(TAG, "%s parse failed: empty response pointer", label);
+        ESP_LOGW(TAG, HTTP_PARSE_EMPTY_RESPONSE_FORMAT, label);
         return;
     }
     char preview[kHttpPreviewBufferSize] = {};
     copy_log_preview(preview, sizeof(preview), response);
     size_t response_len = strlen(response);
     const unsigned char *bytes = (const unsigned char *)response;
-    ESP_LOGW(TAG, "%s parse failed len=%u head=%02x %02x %02x %02x body=%s",
+    ESP_LOGW(TAG, HTTP_PARSE_FAILED_FORMAT,
              label,
              (unsigned)response_len,
              response_len > 0 ? bytes[0] : 0,

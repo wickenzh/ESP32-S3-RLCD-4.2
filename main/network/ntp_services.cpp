@@ -7,6 +7,7 @@
 
 #define NTP_SYNCED_LOG_FORMAT "ntp synced: %04d-%02d-%02d %02d:%02d:%02d"
 #define NTP_TIMEOUT_LOG_FORMAT "ntp sync timeout retries=%d poll_ms=%lu"
+#define NTP_INVALID_RETRY_COUNT_LOG_FORMAT "ntp sync invalid retry count: %d"
 
 namespace {
 constexpr const char *const kNtpServers[] = {
@@ -39,11 +40,12 @@ constexpr size_t min_size(size_t a, size_t b)
 }
 
 constexpr size_t kActiveNtpServerCount = min_size(kNtpServerCount, kConfiguredNtpServerSlots);
+constexpr const char *kNtpTimeSyncedEventUnavailableLog = "skip time synced event bit: app events unavailable";
 
 void set_time_synced_event_bit()
 {
     if (!g_app_events) {
-        ESP_LOGW(TAG, "skip time synced event bit: app events unavailable");
+        ESP_LOGW(TAG, "%s", kNtpTimeSyncedEventUnavailableLog);
         return;
     }
     xEventGroupSetBits(g_app_events, kTimeSyncedBit);
@@ -74,7 +76,7 @@ bool ntp_synced_time_available(struct tm *local)
 bool perform_ntp_sync(int max_retries)
 {
     if (max_retries <= 0) {
-        ESP_LOGW(TAG, "ntp sync invalid retry count: %d", max_retries);
+        ESP_LOGW(TAG, NTP_INVALID_RETRY_COUNT_LOG_FORMAT, max_retries);
         return false;
     }
     esp_sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);

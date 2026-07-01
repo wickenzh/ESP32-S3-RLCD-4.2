@@ -23,6 +23,16 @@ constexpr const char *kNetworkDiagStatusChecking = "检测中";
 constexpr const char *kNetworkDiagStatusFailed = "超时/失败";
 constexpr const char *kNetworkDiagStatusOk = "OK";
 constexpr const char *kNetworkDiagPlaceholder = "--";
+constexpr const char *kNetworkDiagLocalIpFormat = "本地IP: %s";
+constexpr const char *kNetworkDiagPublicIpFormat = "公网IP: %s";
+constexpr const char *kNetworkDiagIpLocationFormat = "IP定位: %s";
+constexpr const char *kNetworkDiagIpLocationCityFormat = "IP定位: %s %s";
+constexpr const char *kNetworkDiagDnsFormat = "DNS: %s";
+constexpr const char *kNetworkDiagWeatherFormat = "天气: %s";
+constexpr const char *kNetworkDiagNtpFormat = "NTP: %s";
+constexpr const char *kNetworkDiagSayingFormat = "一言: %s";
+constexpr const char *kNetworkDiagInternetFormat = "公网: %s";
+constexpr const char *kNetworkDiagOtaFormat = "OTA源: %s";
 constexpr int kNetworkDiagLocalIpLine = 0;
 constexpr int kNetworkDiagPublicIpLine = 1;
 constexpr int kNetworkDiagIpLocationLine = 2;
@@ -266,15 +276,15 @@ void network_diag_begin()
     g_network_diag_step = 0;
     g_network_diag_passed = 0;
     g_network_diag_total = 0;
-    network_diag_set_line(kNetworkDiagLocalIpLine, "本地IP: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagPublicIpLine, "公网IP: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagIpLocationLine, "IP定位: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagDnsLine, "DNS: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagWeatherLine, "天气: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagNtpLine, "NTP: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagSayingLine, "一言: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagInternetLine, "公网: %s", kNetworkDiagStatusWaiting);
-    network_diag_set_line(kNetworkDiagOtaLine, "OTA源: %s", kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagLocalIpLine, kNetworkDiagLocalIpFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagPublicIpLine, kNetworkDiagPublicIpFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagIpLocationLine, kNetworkDiagIpLocationFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagDnsLine, kNetworkDiagDnsFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagWeatherLine, kNetworkDiagWeatherFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagNtpLine, kNetworkDiagNtpFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagSayingLine, kNetworkDiagSayingFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagInternetLine, kNetworkDiagInternetFormat, kNetworkDiagStatusWaiting);
+    network_diag_set_line(kNetworkDiagOtaLine, kNetworkDiagOtaFormat, kNetworkDiagStatusWaiting);
 }
 
 void network_diag_finish()
@@ -318,52 +328,54 @@ void run_network_diagnostics()
     char public_ip[kNetworkDiagPublicIpTextSize] = {};
     bool local_ip_ok = g_sta_ip[0] != '\0';
     diag_count(local_ip_ok);
-    network_diag_set_line(kNetworkDiagLocalIpLine, "本地IP: %s", local_ip_ok ? g_sta_ip : kNetworkDiagPlaceholder);
+    network_diag_set_line(kNetworkDiagLocalIpLine,
+                          kNetworkDiagLocalIpFormat,
+                          local_ip_ok ? g_sta_ip : kNetworkDiagPlaceholder);
 
-    network_diag_set_line(kNetworkDiagPublicIpLine, "公网IP: %s", kNetworkDiagStatusChecking);
+    network_diag_set_line(kNetworkDiagPublicIpLine, kNetworkDiagPublicIpFormat, kNetworkDiagStatusChecking);
     bool public_ip_ok = lookup_public_ip(public_ip, sizeof(public_ip));
     diag_count(public_ip_ok);
     network_diag_set_line(kNetworkDiagPublicIpLine,
-                          "公网IP: %s",
+                          kNetworkDiagPublicIpFormat,
                           public_ip_ok ? public_ip : kNetworkDiagStatusFailed);
 
-    network_diag_set_line(kNetworkDiagDnsLine, "DNS: %s", kNetworkDiagStatusChecking);
+    network_diag_set_line(kNetworkDiagDnsLine, kNetworkDiagDnsFormat, kNetworkDiagStatusChecking);
     bool dns_ok = dns_lookup_ok(kNetworkDiagQweatherDnsHost) && dns_lookup_ok(kNetworkDiagGithubDnsHost);
-    network_diag_set_line(kNetworkDiagIpLocationLine, "IP定位: %s", kNetworkDiagStatusChecking);
+    network_diag_set_line(kNetworkDiagIpLocationLine, kNetworkDiagIpLocationFormat, kNetworkDiagStatusChecking);
     bool ip_ok = ip_geolocation_lookup(location, sizeof(location), city, sizeof(city));
     diag_count(ip_ok);
-    network_diag_set_line(kNetworkDiagIpLocationLine, "IP定位: %s %s",
+    network_diag_set_line(kNetworkDiagIpLocationLine, kNetworkDiagIpLocationCityFormat,
                           diag_result_text(ip_ok),
                           city[0] ? city : kNetworkDiagPlaceholder);
 
     diag_count(dns_ok);
-    network_diag_set_line(kNetworkDiagDnsLine, "DNS: %s", diag_result_text(dns_ok));
+    network_diag_set_line(kNetworkDiagDnsLine, kNetworkDiagDnsFormat, diag_result_text(dns_ok));
 
     bool weather_ok = false;
     if (g_have_weather_key && !g_low_battery_mode) {
-        network_diag_set_line(kNetworkDiagWeatherLine, "天气: %s", kNetworkDiagStatusChecking);
+        network_diag_set_line(kNetworkDiagWeatherLine, kNetworkDiagWeatherFormat, kNetworkDiagStatusChecking);
         weather_ok = perform_weather_update();
     }
-    network_diag_set_line(kNetworkDiagNtpLine, "NTP: %s", kNetworkDiagStatusChecking);
+    network_diag_set_line(kNetworkDiagNtpLine, kNetworkDiagNtpFormat, kNetworkDiagStatusChecking);
     bool ntp_ok = perform_ntp_sync(kNetworkDiagNtpMaxRetries);
     diag_count(weather_ok);
     diag_count(ntp_ok);
-    network_diag_set_line(kNetworkDiagWeatherLine, "天气: %s", diag_result_text(weather_ok));
-    network_diag_set_line(kNetworkDiagNtpLine, "NTP: %s", diag_result_text(ntp_ok));
+    network_diag_set_line(kNetworkDiagWeatherLine, kNetworkDiagWeatherFormat, diag_result_text(weather_ok));
+    network_diag_set_line(kNetworkDiagNtpLine, kNetworkDiagNtpFormat, diag_result_text(ntp_ok));
 
-    network_diag_set_line(kNetworkDiagSayingLine, "一言: %s", kNetworkDiagStatusChecking);
+    network_diag_set_line(kNetworkDiagSayingLine, kNetworkDiagSayingFormat, kNetworkDiagStatusChecking);
     bool saying_ok = !g_low_battery_mode && perform_daily_saying_update();
-    network_diag_set_line(kNetworkDiagInternetLine, "公网: %s", kNetworkDiagStatusChecking);
+    network_diag_set_line(kNetworkDiagInternetLine, kNetworkDiagInternetFormat, kNetworkDiagStatusChecking);
     bool internet_ok = public_ip_ok || http_probe_ok(kNetworkDiagPublicIpUrl, kNetworkDiagWideProbeBufferSize);
     diag_count(saying_ok);
     diag_count(internet_ok);
-    network_diag_set_line(kNetworkDiagSayingLine, "一言: %s", diag_result_text(saying_ok));
-    network_diag_set_line(kNetworkDiagInternetLine, "公网: %s", diag_result_text(internet_ok));
+    network_diag_set_line(kNetworkDiagSayingLine, kNetworkDiagSayingFormat, diag_result_text(saying_ok));
+    network_diag_set_line(kNetworkDiagInternetLine, kNetworkDiagInternetFormat, diag_result_text(internet_ok));
 
-    network_diag_set_line(kNetworkDiagOtaLine, "OTA源: %s", kNetworkDiagStatusChecking);
+    network_diag_set_line(kNetworkDiagOtaLine, kNetworkDiagOtaFormat, kNetworkDiagStatusChecking);
     bool ota_ok = http_probe_ok(kOtaManifestUrl, kNetworkDiagWideProbeBufferSize);
     diag_count(ota_ok);
-    network_diag_set_line(kNetworkDiagOtaLine, "OTA源: %s", diag_result_text(ota_ok));
+    network_diag_set_line(kNetworkDiagOtaLine, kNetworkDiagOtaFormat, diag_result_text(ota_ok));
 
     network_diag_finish();
 }

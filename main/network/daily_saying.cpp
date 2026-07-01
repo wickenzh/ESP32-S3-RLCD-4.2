@@ -3,6 +3,13 @@
 
 #include "ui_views.h"
 
+#define DAILY_SAYING_RESPONSE_ALLOC_FAILED_LOG_FORMAT "daily saying response alloc failed"
+#define DAILY_SAYING_HTTP_FAILED_LOG_FORMAT "daily saying http failed err=%s"
+#define DAILY_SAYING_PARSE_FAILED_LOG_FORMAT "daily saying parse failed"
+#define DAILY_SAYING_TOO_LONG_LOG_FORMAT "daily saying too long chars=%d attempt=%d"
+#define DAILY_SAYING_UPDATE_FAILED_LOG_FORMAT "daily saying update failed attempts=%d http=%d parse=%d long=%d"
+#define DAILY_SAYING_UPDATED_LOG_FORMAT "daily saying updated"
+
 namespace {
 constexpr size_t kDailySayingResponseBufferSize = 768;
 constexpr int kMaxSayingChars = 22;
@@ -29,7 +36,7 @@ public:
           size_(kDailySayingResponseBufferSize)
     {
         if (!data_) {
-            ESP_LOGW(TAG, "daily saying response alloc failed");
+            ESP_LOGW(TAG, DAILY_SAYING_RESPONSE_ALLOC_FAILED_LOG_FORMAT);
         }
     }
 
@@ -51,6 +58,11 @@ public:
         if (data_) {
             memset(data_, 0, size_);
         }
+    }
+
+    size_t size() const
+    {
+        return size_;
     }
 
     explicit operator bool() const
@@ -201,16 +213,16 @@ bool perform_daily_saying_update()
     int long_responses = 0;
     for (int attempt = 1; attempt <= kMaxSayingAttempts; ++attempt) {
         response.clear();
-        esp_err_t err = http_get_text(kDailySayingUrl, response.get(), kDailySayingResponseBufferSize, nullptr);
+        esp_err_t err = http_get_text(kDailySayingUrl, response.get(), response.size(), nullptr);
         if (err != ESP_OK) {
             ++http_failures;
-            ESP_LOGW(TAG, "daily saying http failed err=%s", esp_err_to_name(err));
+            ESP_LOGW(TAG, DAILY_SAYING_HTTP_FAILED_LOG_FORMAT, esp_err_to_name(err));
             continue;
         }
         bool ok = extract_daily_saying(response.get(), next, sizeof(next));
         if (!ok) {
             ++parse_failures;
-            ESP_LOGW(TAG, "daily saying parse failed");
+            ESP_LOGW(TAG, DAILY_SAYING_PARSE_FAILED_LOG_FORMAT);
             continue;
         }
         int chars = 0;
@@ -218,12 +230,12 @@ bool perform_daily_saying_update()
             break;
         }
         ++long_responses;
-        ESP_LOGW(TAG, "daily saying too long chars=%d attempt=%d", chars, attempt);
+        ESP_LOGW(TAG, DAILY_SAYING_TOO_LONG_LOG_FORMAT, chars, attempt);
         next[0] = '\0';
     }
     if (next[0] == '\0') {
         ESP_LOGW(TAG,
-                 "daily saying update failed attempts=%d http=%d parse=%d long=%d",
+                 DAILY_SAYING_UPDATE_FAILED_LOG_FORMAT,
                  kMaxSayingAttempts,
                  http_failures,
                  parse_failures,
@@ -233,6 +245,6 @@ bool perform_daily_saying_update()
     strlcpy(g_daily_saying, next, sizeof(g_daily_saying));
     time(&g_last_saying_sync_time);
     notify_ui_task();
-    ESP_LOGI(TAG, "daily saying updated");
+    ESP_LOGI(TAG, DAILY_SAYING_UPDATED_LOG_FORMAT);
     return true;
 }

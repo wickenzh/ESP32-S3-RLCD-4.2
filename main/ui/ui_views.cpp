@@ -27,6 +27,12 @@ constexpr int kUiNextSecondDelayMaxMs = kUiMsPerSecond + kUiBoundaryWakeSlackMs;
 constexpr size_t kUiSensorValueTextSize = 32;
 constexpr size_t kUiWeatherCityTextSize = 48;
 constexpr size_t kUiWeatherValueTextSize = 24;
+constexpr const char *kUiSensorTempFormat = "%.1f℃";
+constexpr const char *kUiSensorHumidityFormat = "%.1f%%";
+constexpr const char *kUiSensorTempPlaceholder = "--.-℃";
+constexpr const char *kUiSensorHumidityPlaceholder = "--.-%%";
+constexpr const char *kUiWeatherTempFormat = "%s℃";
+constexpr const char *kUiWeatherHumidityFormat = "%s%%";
 } // namespace
 
 void ui_task(void *)
@@ -607,11 +613,11 @@ void ui_task(void *)
                 char temp[kUiSensorValueTextSize];
                 char humi[kUiSensorValueTextSize];
                 if (g_sensor_ok) {
-                    snprintf(temp, sizeof(temp), "%.1f℃", g_temperature);
-                    snprintf(humi, sizeof(humi), "%.1f%%", g_humidity);
+                    snprintf(temp, sizeof(temp), kUiSensorTempFormat, g_temperature);
+                    snprintf(humi, sizeof(humi), kUiSensorHumidityFormat, g_humidity);
                 } else {
-                    snprintf(temp, sizeof(temp), "--.-℃");
-                    snprintf(humi, sizeof(humi), "--.-%%");
+                    snprintf(temp, sizeof(temp), kUiSensorTempPlaceholder);
+                    snprintf(humi, sizeof(humi), kUiSensorHumidityPlaceholder);
                 }
 
                 if (!setup_active && !g_low_battery_mode && clock_page_active) {
@@ -626,8 +632,8 @@ void ui_task(void *)
                         char weather_temp[kUiWeatherValueTextSize];
                         char weather_humi[kUiWeatherValueTextSize];
                         strlcpy(city, weather.city, sizeof(city));
-                        snprintf(weather_temp, sizeof(weather_temp), "%s℃", weather.temp);
-                        snprintf(weather_humi, sizeof(weather_humi), "%s%%", weather.humidity);
+                        snprintf(weather_temp, sizeof(weather_temp), kUiWeatherTempFormat, weather.temp);
+                        snprintf(weather_humi, sizeof(weather_humi), kUiWeatherHumidityFormat, weather.humidity);
                         content_changed |= set_label_text_if_changed(g_weather_city_label, city);
                         content_changed |= set_label_text_if_changed(g_weather_info_label, weather.text);
                         content_changed |= set_label_text_if_changed(g_weather_temp_label, weather_temp);
@@ -647,31 +653,32 @@ void ui_task(void *)
                         EventBits_t sync_bits = xEventGroupGetBits(g_app_events);
                         bool sync_in_flight = (sync_bits & (kManualWeatherSyncBit | kProvisioningSyncBit)) != 0;
                         request_weather_sync_if_needed(tick_now, sync_in_flight, "missing");
-                        content_changed |= set_label_text_if_changed(g_weather_city_label, "--");
-                        content_changed |= set_label_text_if_changed(g_weather_info_label, (bits & kWifiConnectedBit) ? "天气同步中" : "等待数据");
-                        content_changed |= set_label_text_if_changed(g_weather_temp_label, "--℃");
-                        content_changed |= set_label_text_if_changed(g_weather_humi_label, "--%");
-                        content_changed |= set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                        const char *weather_info_text = (bits & kWifiConnectedBit) ? kClockWeatherInfoSyncingText : kClockWeatherInfoWaitingText;
+                        content_changed |= set_label_text_if_changed(g_weather_city_label, kClockWeatherCityPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_info_label, weather_info_text);
+                        content_changed |= set_label_text_if_changed(g_weather_temp_label, kClockWeatherTempPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_humi_label, kClockWeatherHumidityPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_icon_label, weather_icon_text(kClockWeatherUnknownIconCode));
                     } else if (g_offline_mode_ui_enabled) {
                         clock_weather_sync_requested = false;
                         clock_weather_sync_request_tick = 0;
                         clock_weather_sync_attempts = 0;
                         clock_weather_sync_backoff_until_tick = 0;
-                        content_changed |= set_label_text_if_changed(g_weather_city_label, "--");
-                        content_changed |= set_label_text_if_changed(g_weather_info_label, "等待数据");
-                        content_changed |= set_label_text_if_changed(g_weather_temp_label, "--℃");
-                        content_changed |= set_label_text_if_changed(g_weather_humi_label, "--%");
-                        content_changed |= set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                        content_changed |= set_label_text_if_changed(g_weather_city_label, kClockWeatherCityPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_info_label, kClockWeatherInfoWaitingText);
+                        content_changed |= set_label_text_if_changed(g_weather_temp_label, kClockWeatherTempPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_humi_label, kClockWeatherHumidityPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_icon_label, weather_icon_text(kClockWeatherUnknownIconCode));
                     } else {
                         clock_weather_sync_requested = false;
                         clock_weather_sync_request_tick = 0;
                         clock_weather_sync_attempts = 0;
                         clock_weather_sync_backoff_until_tick = 0;
-                        content_changed |= set_label_text_if_changed(g_weather_city_label, "--");
-                        content_changed |= set_label_text_if_changed(g_weather_info_label, "设置 API Key");
-                        content_changed |= set_label_text_if_changed(g_weather_temp_label, "--℃");
-                        content_changed |= set_label_text_if_changed(g_weather_humi_label, "--%");
-                        content_changed |= set_label_text_if_changed(g_weather_icon_label, weather_icon_text("999"));
+                        content_changed |= set_label_text_if_changed(g_weather_city_label, kClockWeatherCityPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_info_label, kClockWeatherInfoMissingApiKeyText);
+                        content_changed |= set_label_text_if_changed(g_weather_temp_label, kClockWeatherTempPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_humi_label, kClockWeatherHumidityPlaceholder);
+                        content_changed |= set_label_text_if_changed(g_weather_icon_label, weather_icon_text(kClockWeatherUnknownIconCode));
                     }
                 }
                 if (battery_due || battery_blink_due) {
@@ -718,38 +725,20 @@ void ui_task(void *)
                         !g_boot_info_requested &&
                         !g_network_diag_page_requested &&
                         is_tm_plausible(local);
-        bool gallery_idle = g_active_work_page == kWorkPageGallery &&
-                            !g_low_battery_mode &&
-                            !g_battery_charging &&
-                            !g_setup_portal_active &&
-                            !g_settings_requested &&
-                            !g_boot_info_requested &&
-                            !g_network_diag_page_requested &&
-                            is_tm_plausible(local);
-        bool history_idle = g_active_work_page == kWorkPageHistory &&
-                            !g_low_battery_mode &&
-                            !g_battery_charging &&
-                            !g_setup_portal_active &&
-                            !g_settings_requested &&
-                            !g_boot_info_requested &&
-                            !g_network_diag_page_requested &&
-                            is_tm_plausible(local);
-        bool calendar_idle = g_active_work_page == kWorkPageCalendar &&
-                             !g_low_battery_mode &&
-                             !g_battery_charging &&
-                             !g_setup_portal_active &&
-                             !g_settings_requested &&
-                             !g_boot_info_requested &&
-                             !g_network_diag_page_requested &&
-                             is_tm_plausible(local);
-        bool weather_board_idle = g_active_work_page == kWorkPageWeatherBoard &&
-                                  !g_low_battery_mode &&
-                                  !g_battery_charging &&
-                                  !g_setup_portal_active &&
-                                  !g_settings_requested &&
-                                  !g_boot_info_requested &&
-                                  !g_network_diag_page_requested &&
-                                  is_tm_plausible(local);
+        auto low_refresh_work_page_idle = [&](int page) {
+            return g_active_work_page == page &&
+                   !g_low_battery_mode &&
+                   !g_battery_charging &&
+                   !g_setup_portal_active &&
+                   !g_settings_requested &&
+                   !g_boot_info_requested &&
+                   !g_network_diag_page_requested &&
+                   is_tm_plausible(local);
+        };
+        bool gallery_idle = low_refresh_work_page_idle(kWorkPageGallery);
+        bool history_idle = low_refresh_work_page_idle(kWorkPageHistory);
+        bool calendar_idle = low_refresh_work_page_idle(kWorkPageCalendar);
+        bool weather_board_idle = low_refresh_work_page_idle(kWorkPageWeatherBoard);
         TickType_t delay_ticks = (low_idle || gallery_idle || history_idle || calendar_idle || weather_board_idle)
                                      ? delay_to_next_minute(local)
                                      : delay_to_next_second();
@@ -785,6 +774,14 @@ void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color
     static int last_diag_page = -1;
     constexpr uint32_t kFullReasonSingleWide = 1U << 0;
     constexpr uint32_t kFullReasonTooManyRanges = 1U << 1;
+
+    if (g_ota_reboot_pending) {
+        range_count = 0;
+        force_full_refresh = false;
+        full_reason_mask = 0;
+        lv_disp_flush_ready(drv);
+        return;
+    }
 
     int clipped_x1 = area->x1 < 0 ? 0 : area->x1;
     int clipped_x2 = area->x2 >= kDisplayWidth ? kDisplayWidth - 1 : area->x2;
@@ -867,7 +864,7 @@ void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color
         bool diag_due = last_diag_tick == 0 ||
                         now_tick - last_diag_tick >= pdMS_TO_TICKS(kDisplayFlushDiagIntervalMs) ||
                         page_changed;
-        if (diag_due && g_ota_state != kOtaUpdating) {
+        if (diag_due && g_ota_state != kOtaUpdating && !g_ota_reboot_pending) {
             ESP_LOGI(TAG,
                      "display flush diag: page=%d partial=%lu ranges=%lu full=%lu reason_single=%lu reason_covered=%lu reason_ranges=%lu",
                      g_active_work_page,

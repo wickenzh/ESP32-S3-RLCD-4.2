@@ -10,6 +10,19 @@
 
 #include <new>
 
+#define MAIN_INVALID_TASK_CREATE_LOG_FORMAT "%s: invalid task create request"
+#define MAIN_TASK_CREATE_FAILED_LOG_FORMAT "%s task create failed"
+#define MAIN_NVS_INIT_REQUIRES_ERASE_LOG_FORMAT "nvs init requires erase: %s"
+#define MAIN_NVS_ERASE_FAILED_LOG_FORMAT "nvs erase failed: %s"
+#define MAIN_NVS_REINIT_FAILED_LOG_FORMAT "nvs re-init failed: %s"
+#define MAIN_NVS_INIT_FAILED_LOG_FORMAT "nvs init failed: %s"
+#define MAIN_EVENT_GROUP_CREATE_FAILED_LOG_FORMAT "app event group create failed"
+#define MAIN_NETIF_INIT_FAILED_LOG_FORMAT "netif init failed: %s"
+#define MAIN_EVENT_LOOP_INIT_FAILED_LOG_FORMAT "event loop init failed: %s"
+#define MAIN_INVALID_BOOT_TASK_LOG_FORMAT "%s: invalid boot task request"
+#define MAIN_BOOT_TASK_CREATE_FAILED_LOG_FORMAT "%s"
+#define MAIN_SHTC3_ALLOCATION_FAILED_LOG_FORMAT "shtc3 allocation failed"
+
 namespace {
 constexpr uint32_t kBootAnimTaskStack = 6144;
 constexpr uint32_t kBootSyncTaskStack = 20480;
@@ -53,11 +66,11 @@ static void create_app_task(TaskFunction_t task,
         *handle = nullptr;
     }
     if (!task || stack_depth == 0) {
-        ESP_LOGE(TAG, "%s: invalid task create request", task_name);
+        ESP_LOGE(TAG, MAIN_INVALID_TASK_CREATE_LOG_FORMAT, task_name);
         return;
     }
     if (xTaskCreatePinnedToCore(task, task_name, stack_depth, nullptr, priority, handle, core_id) != pdPASS) {
-        ESP_LOGE(TAG, "%s task create failed", task_name);
+        ESP_LOGE(TAG, MAIN_TASK_CREATE_FAILED_LOG_FORMAT, task_name);
     }
 }
 
@@ -65,19 +78,19 @@ static bool init_nvs_storage()
 {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGW(TAG, "nvs init requires erase: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, MAIN_NVS_INIT_REQUIRES_ERASE_LOG_FORMAT, esp_err_to_name(ret));
         ret = nvs_flash_erase();
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "nvs erase failed: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, MAIN_NVS_ERASE_FAILED_LOG_FORMAT, esp_err_to_name(ret));
             return false;
         }
         ret = nvs_flash_init();
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "nvs re-init failed: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, MAIN_NVS_REINIT_FAILED_LOG_FORMAT, esp_err_to_name(ret));
             return false;
         }
     } else if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "nvs init failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, MAIN_NVS_INIT_FAILED_LOG_FORMAT, esp_err_to_name(ret));
         return false;
     }
     return true;
@@ -87,17 +100,17 @@ static bool init_system_event_services()
 {
     g_app_events = xEventGroupCreate();
     if (!g_app_events) {
-        ESP_LOGE(TAG, "app event group create failed");
+        ESP_LOGE(TAG, MAIN_EVENT_GROUP_CREATE_FAILED_LOG_FORMAT);
         return false;
     }
     esp_err_t ret = esp_netif_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "netif init failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, MAIN_NETIF_INIT_FAILED_LOG_FORMAT, esp_err_to_name(ret));
         return false;
     }
     ret = esp_event_loop_create_default();
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "event loop init failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, MAIN_EVENT_LOOP_INIT_FAILED_LOG_FORMAT, esp_err_to_name(ret));
         return false;
     }
     return true;
@@ -116,7 +129,7 @@ static void create_boot_task_or_signal(TaskFunction_t task,
         *handle = nullptr;
     }
     if (!task || stack_depth == 0) {
-        ESP_LOGW(TAG, "%s: invalid boot task request", failure_log ? failure_log : task_name);
+        ESP_LOGW(TAG, MAIN_INVALID_BOOT_TASK_LOG_FORMAT, failure_log ? failure_log : task_name);
         xEventGroupSetBits(g_app_events, done_bit);
         return;
     }
@@ -127,7 +140,7 @@ static void create_boot_task_or_signal(TaskFunction_t task,
                                 kHighServiceTaskPriority,
                                 handle,
                                 core_id) != pdPASS) {
-        ESP_LOGW(TAG, "%s", failure_log);
+        ESP_LOGW(TAG, MAIN_BOOT_TASK_CREATE_FAILED_LOG_FORMAT, failure_log);
         xEventGroupSetBits(g_app_events, done_bit);
     }
 }
@@ -154,7 +167,7 @@ extern "C" void app_main(void)
     restore_system_time_from_rtc();
     g_shtc3 = new (std::nothrow) Shtc3Port(g_i2c);
     if (!g_shtc3) {
-        ESP_LOGW(TAG, "shtc3 allocation failed");
+        ESP_LOGW(TAG, MAIN_SHTC3_ALLOCATION_FAILED_LOG_FORMAT);
     }
     sample_battery();
     init_wifi();

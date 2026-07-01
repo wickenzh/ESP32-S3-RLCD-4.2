@@ -69,6 +69,22 @@ constexpr const char *kSettingsOtaHintChecking = "正在检查，请等待";
 constexpr const char *kSettingsOtaHintRebooting = "即将重启";
 constexpr const char *kSettingsOtaHintRetry = "BOOT重新检查";
 constexpr const char *kSettingsOtaHintCheck = "BOOT开始检查";
+
+int settings_ota_progress_fill_width(int progress)
+{
+    int clamped = progress;
+    if (clamped < 0) {
+        clamped = 0;
+    } else if (clamped > kSettingsOtaProgressMax) {
+        clamped = kSettingsOtaProgressMax;
+    }
+    int fill_w = (kSettingsOtaBarFillW * clamped) / kSettingsOtaProgressMax;
+    if (fill_w < 1) {
+        fill_w = 1;
+    }
+    return fill_w;
+}
+
 constexpr int kSettingsPrimaryX = 12;
 constexpr int kSettingsPrimaryW = 112;
 constexpr int kSettingsSecondaryX = 150;
@@ -116,6 +132,9 @@ constexpr const char *kSettingsFactoryResetConfirmText = "确认恢复";
 constexpr const char *kSettingsFactoryResetText = "恢复出厂设置";
 constexpr const char *kSettingsSystemInfoText = "关于本机";
 constexpr const char *kSettingsCheckUpdateText = "检查更新";
+constexpr uint32_t kSettingsOrderExitFeedbackMs = 2500;
+constexpr const char *kSettingsOrderExitSavedFeedback = "页面顺序已保存";
+constexpr const char *kSettingsOrderExitSaveFailedFeedback = "保存失败";
 constexpr int kBatteryFrameX = 20;
 constexpr int kBatteryFrameY = 17;
 constexpr int kBatteryFrameW = 34;
@@ -135,6 +154,9 @@ constexpr int kBatterySegmentY = 4;
 constexpr int kBatterySegmentW = 4;
 constexpr int kBatterySegmentH = 8;
 constexpr int kBatterySegmentGap = 6;
+constexpr const char *kBootTitleText = "RLCD Weather Clock";
+constexpr const char *kBootInitialStatusText = "Starting...";
+constexpr const char *kBootInitialDetailText = "Preparing system";
 constexpr size_t kSetupStatusLineSize = 96;
 constexpr const char *kSetupStatusTitle = "Setup Mode";
 constexpr const char *kSetupStatusPlaceholder = "--";
@@ -154,8 +176,18 @@ constexpr const char *kInfoBatteryFullFormat = "Battery: %d%%  %.2fV";
 constexpr const char *kInfoBatteryPercentOnlyFormat = "Battery: %d%%  --";
 constexpr const char *kInfoBatteryPlaceholder = "Battery: --  --";
 constexpr const char *kInfoVersionFormat = "Version: %s / %s";
-constexpr int kInfoLabelY[] = {70, 104, 138, 172, 206};
+constexpr const char *kInfoSourceFormat = "Source: %s";
+constexpr const char *kProjectSourceUrl = "github.com/wickenzh/ESP32-S3-RLCD-4.2";
+constexpr const char *kInfoLinePlaceholder = "--";
+constexpr const char *kInfoReturnHintText = "Hold KEY to return";
+constexpr const char *kSettingsLabelPlaceholder = "--";
+constexpr int kInfoTextX = 30;
+constexpr int kInfoTextW = 340;
+constexpr int kInfoSourceTextX = 0;
+constexpr int kInfoSourceTextW = 400;
+constexpr int kInfoLabelY[] = {70, 104, 138, 172, 206, 276};
 constexpr size_t kInfoLabelCount = array_count(kInfoLabelY);
+constexpr size_t kInfoSourceLabelIndex = kInfoLabelCount - 1;
 static_assert(kSettingsListRowCount == kSettingsSecondaryMaxCount);
 static_assert(kSettingsGridRowCount * kSettingsGridColumns >= kWorkPageCount);
 static_assert(array_count(kSettingsPrimaryItems) == kSettingsPrimaryCount);
@@ -172,6 +204,22 @@ void hide_settings_switch_slot(int index)
     }
     if (g_settings_switch_texts[index]) {
         set_obj_visible(g_settings_switch_texts[index], false);
+    }
+}
+
+bool center_align_label(lv_obj_t *label)
+{
+    if (!label) {
+        return false;
+    }
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    return true;
+}
+
+void warn_if_center_align_failed(lv_obj_t *label, const char *message)
+{
+    if (!center_align_label(label)) {
+        ESP_LOGW(TAG, "%s", message ? message : "label create failed");
     }
 }
 }
@@ -317,33 +365,17 @@ void show_boot_screen()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = make_label_with_font(screen, 28, 30, 344, 30, "RLCD Weather Clock", &lv_font_montserrat_16);
-    if (title) {
-        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "boot title create failed");
-    }
+    lv_obj_t *title = make_label_with_font(screen, 28, 30, 344, 30, kBootTitleText, &lv_font_montserrat_16);
+    warn_if_center_align_failed(title, "boot title create failed");
 
-    g_boot_status_label = make_label_with_font(screen, 28, 64, 344, 24, "Starting...", &lv_font_montserrat_16);
-    if (g_boot_status_label) {
-        lv_obj_set_style_text_align(g_boot_status_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "boot status label create failed");
-    }
+    g_boot_status_label = make_label_with_font(screen, 28, 64, 344, 24, kBootInitialStatusText, &lv_font_montserrat_16);
+    warn_if_center_align_failed(g_boot_status_label, "boot status label create failed");
 
-    g_boot_detail_label = make_label_with_font(screen, 28, 256, 344, 22, "Preparing system", &lv_font_montserrat_14);
-    if (g_boot_detail_label) {
-        lv_obj_set_style_text_align(g_boot_detail_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "boot detail label create failed");
-    }
+    g_boot_detail_label = make_label_with_font(screen, 28, 256, 344, 22, kBootInitialDetailText, &lv_font_montserrat_14);
+    warn_if_center_align_failed(g_boot_detail_label, "boot detail label create failed");
 
     lv_obj_t *version = make_label_with_font(screen, 28, 226, 344, 24, APP_VERSION, &lv_font_montserrat_16);
-    if (version) {
-        lv_obj_set_style_text_align(version, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "boot version label create failed");
-    }
+    warn_if_center_align_failed(version, "boot version label create failed");
 
     if (!g_boot_anim_canvas_buf) {
         g_boot_anim_canvas_buf = alloc_canvas_buffer(BOOT_ANIM_WIDTH, BOOT_ANIM_HEIGHT);
@@ -419,11 +451,7 @@ void build_boot_info_page()
     lv_obj_add_flag(g_info_root, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *title = make_label_with_font(screen, 24, 18, 352, 26, "SYSTEM INFO", &lv_font_montserrat_16);
-    if (title) {
-        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "system info title create failed");
-    }
+    warn_if_center_align_failed(title, "system info title create failed");
 
     lv_obj_t *top_line = make_bar(screen, 24, 50, 352, 3);
     set_obj_black(top_line, true);
@@ -431,17 +459,23 @@ void build_boot_info_page()
     static_assert(kInfoLabelCount == array_count(g_info_labels),
                   "System Info labels and row coordinates must stay in sync");
     for (size_t i = 0; i < kInfoLabelCount; ++i) {
-        g_info_labels[i] = make_label_with_font(screen, 30, kInfoLabelY[i], 340, 24, "--", &lv_font_montserrat_14);
+        const bool source_line = i == kInfoSourceLabelIndex;
+        g_info_labels[i] = make_label_with_font(screen,
+                                                source_line ? kInfoSourceTextX : kInfoTextX,
+                                                kInfoLabelY[i],
+                                                source_line ? kInfoSourceTextW : kInfoTextW,
+                                                source_line ? 18 : 24,
+                                                kInfoLinePlaceholder,
+                                                source_line ? &lv_font_montserrat_12 : &lv_font_montserrat_14);
+        if (source_line) {
+            lv_obj_set_style_text_align(g_info_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        }
     }
 
     lv_obj_t *bottom_line = make_bar(screen, 24, 238, 352, 3);
     set_obj_black(bottom_line, true);
-    g_info_ota_label = make_label_with_font(screen, 24, 252, 352, 22, "Hold KEY to return", &lv_font_montserrat_14);
-    if (g_info_ota_label) {
-        lv_obj_set_style_text_align(g_info_ota_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "system info return label create failed");
-    }
+    g_info_ota_label = make_label_with_font(screen, 24, 252, 352, 22, kInfoReturnHintText, &lv_font_montserrat_14);
+    warn_if_center_align_failed(g_info_ota_label, "system info return label create failed");
     g_info_ota_hint_label = nullptr;
     g_info_ota_bar_frame = nullptr;
     g_info_ota_bar_fill = nullptr;
@@ -476,6 +510,9 @@ void update_boot_info_page()
     snprintf(line, sizeof(line), kInfoVersionFormat, APP_VERSION, APP_BUILD_DATE);
     set_label_text_if_changed(g_info_labels[4], line);
 
+    snprintf(line, sizeof(line), kInfoSourceFormat, kProjectSourceUrl);
+    set_label_text_if_changed(g_info_labels[5], line);
+
     ota_reset_status_if_idle();
 }
 
@@ -492,21 +529,13 @@ void build_network_diag_page()
     lv_obj_add_flag(g_network_diag_root, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *title = make_label(screen, 24, 18, 352, 28, kNetworkDiagTitle);
-    if (title) {
-        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "network diag title create failed");
-    }
+    warn_if_center_align_failed(title, "network diag title create failed");
 
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
     g_network_diag_summary_label = make_label(screen, 24, 62, 352, 22, kNetworkDiagSummaryReady);
-    if (g_network_diag_summary_label) {
-        lv_obj_set_style_text_align(g_network_diag_summary_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "network diag summary label create failed");
-    }
+    warn_if_center_align_failed(g_network_diag_summary_label, "network diag summary label create failed");
 
     for (int i = 0; i < kNetworkDiagLineCount; ++i) {
         int x = kNetworkDiagWideX;
@@ -540,11 +569,7 @@ void build_network_diag_page()
     lv_obj_t *bottom_line = make_bar(screen, 24, 266, 352, 2);
     set_obj_black(bottom_line, true);
     g_network_diag_hint_label = make_label(screen, 24, 272, 352, 20, kNetworkDiagHintIdle);
-    if (g_network_diag_hint_label) {
-        lv_obj_set_style_text_align(g_network_diag_hint_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "network diag hint label create failed");
-    }
+    warn_if_center_align_failed(g_network_diag_hint_label, "network diag hint label create failed");
 }
 
 bool update_network_diag_page()
@@ -671,9 +696,9 @@ void handle_settings_key_long()
         g_settings_selection = 6;
         if (save_work_page_order()) {
             g_active_work_page = first_enabled_work_page();
-            set_settings_feedback("页面顺序已保存", 2500);
+            set_settings_feedback(kSettingsOrderExitSavedFeedback, kSettingsOrderExitFeedbackMs);
         } else {
-            set_settings_feedback("保存失败", 2500);
+            set_settings_feedback(kSettingsOrderExitSaveFailedFeedback, kSettingsOrderExitFeedbackMs);
         }
         reset_settings_confirmation();
         notify_ui_task();
@@ -716,11 +741,7 @@ void build_settings_page()
     lv_obj_add_flag(g_settings_root, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *title = make_label(screen, 24, 18, 352, 28, "设置");
-    if (title) {
-        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "settings title create failed");
-    }
+    warn_if_center_align_failed(title, "settings title create failed");
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
@@ -729,10 +750,10 @@ void build_settings_page()
 
     for (int i = 0; i < kSettingsPrimaryCount; ++i) {
         g_settings_labels[i] =
-            make_label(screen, kSettingsPrimaryX, kSettingsListRowY[i], kSettingsPrimaryW, kSettingsSecondaryH, "--");
+            make_label(screen, kSettingsPrimaryX, kSettingsListRowY[i], kSettingsPrimaryW, kSettingsSecondaryH, kSettingsLabelPlaceholder);
         if (g_settings_labels[i]) {
             lv_label_set_long_mode(g_settings_labels[i], LV_LABEL_LONG_CLIP);
-            lv_obj_set_style_text_align(g_settings_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+            center_align_label(g_settings_labels[i]);
         } else {
             ESP_LOGW(TAG, "settings primary label create failed index=%d", i);
         }
@@ -740,10 +761,10 @@ void build_settings_page()
     for (int i = 0; i < kSettingsSecondaryMaxCount; ++i) {
         int slot = kSettingsPrimaryCount + i;
         g_settings_labels[slot] =
-            make_label(screen, kSettingsSecondaryX, kSettingsListRowY[i], kSettingsSecondaryW, kSettingsSecondaryH, "--");
+            make_label(screen, kSettingsSecondaryX, kSettingsListRowY[i], kSettingsSecondaryW, kSettingsSecondaryH, kSettingsLabelPlaceholder);
         if (g_settings_labels[slot]) {
             lv_label_set_long_mode(g_settings_labels[slot], LV_LABEL_LONG_CLIP);
-            lv_obj_set_style_text_align(g_settings_labels[slot], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+            center_align_label(g_settings_labels[slot]);
         } else {
             ESP_LOGW(TAG, "settings secondary label create failed index=%d", i);
         }
@@ -767,7 +788,7 @@ void build_settings_page()
                        kSettingsSwitchTextH,
                        "");
         if (g_settings_switch_texts[i]) {
-            lv_obj_set_style_text_align(g_settings_switch_texts[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+            center_align_label(g_settings_switch_texts[i]);
             lv_obj_set_style_pad_all(g_settings_switch_texts[i], 0, LV_PART_MAIN);
             lv_label_set_long_mode(g_settings_switch_texts[i], LV_LABEL_LONG_CLIP);
             lv_obj_add_flag(g_settings_switch_texts[i], LV_OBJ_FLAG_HIDDEN);
@@ -776,11 +797,7 @@ void build_settings_page()
         }
     }
     g_settings_ota_status_label = make_label(screen, kSettingsSecondaryX, 176, kSettingsSecondaryW, 22, "");
-    if (g_settings_ota_status_label) {
-        lv_obj_set_style_text_align(g_settings_ota_status_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "settings ota status label create failed");
-    }
+    warn_if_center_align_failed(g_settings_ota_status_label, "settings ota status label create failed");
     g_settings_ota_bar_frame = lv_obj_create(screen);
     if (g_settings_ota_bar_frame) {
         lv_obj_clear_flag(g_settings_ota_bar_frame, LV_OBJ_FLAG_SCROLLABLE);
@@ -809,25 +826,13 @@ void build_settings_page()
         ESP_LOGW(TAG, "settings ota bar fill create failed");
     }
     g_settings_ota_hint_label = make_label(screen, kSettingsSecondaryX, 218, kSettingsSecondaryW, 20, "");
-    if (g_settings_ota_hint_label) {
-        lv_obj_set_style_text_align(g_settings_ota_hint_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "settings ota hint label create failed");
-    }
+    warn_if_center_align_failed(g_settings_ota_hint_label, "settings ota hint label create failed");
 
     g_settings_feedback_label = make_label(screen, 24, 246, 352, 20, "");
-    if (g_settings_feedback_label) {
-        lv_obj_set_style_text_align(g_settings_feedback_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "settings feedback label create failed");
-    }
+    warn_if_center_align_failed(g_settings_feedback_label, "settings feedback label create failed");
 
     lv_obj_t *hint = make_label(screen, 24, 270, 352, 22, "KEY选择  长按返回  BOOT确认");
-    if (hint) {
-        lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    } else {
-        ESP_LOGW(TAG, "settings hint label create failed");
-    }
+    warn_if_center_align_failed(hint, "settings hint label create failed");
 }
 
 bool update_settings_page()
@@ -1060,24 +1065,24 @@ bool update_settings_page()
                 } else {
                     snprintf(ota_line, sizeof(ota_line), kSettingsOtaUpdatingFormat, progress);
                 }
-                strlcpy(ota_hint, kSettingsOtaHintDownloading, sizeof(ota_hint));
+                copy_text(ota_hint, sizeof(ota_hint), kSettingsOtaHintDownloading);
             } else if (g_ota_state == kOtaAvailable) {
                 copy_text(ota_line, sizeof(ota_line), g_ota_status);
-                strlcpy(ota_hint, kSettingsOtaHintInstall, sizeof(ota_hint));
+                copy_text(ota_hint, sizeof(ota_hint), kSettingsOtaHintInstall);
             } else if (g_ota_state == kOtaChecking) {
                 copy_text(ota_line, sizeof(ota_line), g_ota_status);
-                strlcpy(ota_hint, kSettingsOtaHintChecking, sizeof(ota_hint));
+                copy_text(ota_hint, sizeof(ota_hint), kSettingsOtaHintChecking);
             } else if (g_ota_state == kOtaSucceeded) {
                 progress_visible = true;
                 progress = kSettingsOtaProgressMax;
                 copy_text(ota_line, sizeof(ota_line), g_ota_status);
-                strlcpy(ota_hint, kSettingsOtaHintRebooting, sizeof(ota_hint));
+                copy_text(ota_hint, sizeof(ota_hint), kSettingsOtaHintRebooting);
             } else if (g_ota_state == kOtaFailed || g_ota_state == kOtaNoUpdate) {
                 copy_text(ota_line, sizeof(ota_line), g_ota_status);
-                strlcpy(ota_hint, kSettingsOtaHintRetry, sizeof(ota_hint));
+                copy_text(ota_hint, sizeof(ota_hint), kSettingsOtaHintRetry);
             } else {
                 snprintf(ota_line, sizeof(ota_line), kSettingsOtaCurrentVersionFormat, APP_VERSION);
-                strlcpy(ota_hint, kSettingsOtaHintCheck, sizeof(ota_hint));
+                copy_text(ota_hint, sizeof(ota_hint), kSettingsOtaHintCheck);
             }
         }
         changed |= set_label_text_if_changed(g_settings_ota_status_label, ota_line);
@@ -1088,17 +1093,7 @@ bool update_settings_page()
             set_obj_visible(g_settings_ota_bar_frame, ota_panel_visible && progress_visible);
         }
         if (g_settings_ota_bar_fill) {
-            int clamped = progress;
-            if (clamped < 0) {
-                clamped = 0;
-            } else if (clamped > kSettingsOtaProgressMax) {
-                clamped = kSettingsOtaProgressMax;
-            }
-            int fill_w = (kSettingsOtaBarFillW * clamped) / kSettingsOtaProgressMax;
-            if (fill_w < 1) {
-                fill_w = 1;
-            }
-            lv_obj_set_width(g_settings_ota_bar_fill, fill_w);
+            lv_obj_set_width(g_settings_ota_bar_fill, settings_ota_progress_fill_width(progress));
             set_obj_visible(g_settings_ota_bar_fill, ota_panel_visible && progress_visible);
         }
     }

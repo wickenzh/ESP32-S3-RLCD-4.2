@@ -45,6 +45,16 @@ static constexpr const char *kNetworkSyncWeatherFailed = "天气同步失败";
 static constexpr const char *kNetworkSyncSayingFailed = "一言更新失败";
 static constexpr const char *kBootDetailStartingClock = "Starting clock";
 static constexpr const char *kBootDetailSynchronizingTime = "Synchronizing time";
+static constexpr const char *kBootSetupDetailFormat = "Setup AP: %s";
+static constexpr const char *kNetworkWifiWaitSkippedLog = "wifi wait skipped: app events unavailable";
+static constexpr const char *kNetworkCacheTimeConversionSkippedLog = "cache time conversion skipped: output is null";
+static constexpr const char *kNetworkCacheUnknownLabel = "unknown";
+#define NETWORK_CACHE_TIME_CONVERSION_FAILED_FORMAT "%s cache time conversion failed"
+#define NETWORK_BOOT_REFRESH_SCHEDULED_FORMAT "boot network refresh scheduled: weather=%d saying=%d"
+static constexpr const char *kNetworkDiagWifiOnLog = "wifi radio on for network diagnostics";
+#define NETWORK_SYNC_WIFI_ON_FORMAT "wifi radio on for sync: ntp=%d weather=%d saying=%d boot_weather=%d boot_saying=%d"
+static constexpr const char *kNetworkSyncWifiStartFailedLog = "wifi start failed during sync window";
+static constexpr const char *kNetworkSyncWifiConnectTimeoutLog = "wifi connect timeout during sync window";
 
 class NetworkDisplayDmaGuard {
 public:
@@ -69,7 +79,7 @@ private:
 bool wait_for_wifi_connected(uint32_t timeout_ms)
 {
     if (!g_app_events) {
-        ESP_LOGW(TAG, "wifi wait skipped: app events unavailable");
+        ESP_LOGW(TAG, "%s", kNetworkWifiWaitSkippedLog);
         return false;
     }
     EventBits_t bits = xEventGroupWaitBits(
@@ -95,7 +105,7 @@ void run_boot_connectivity_sync()
     }
     if (!g_have_wifi_creds) {
         char detail[kBootSetupDetailTextSize];
-        snprintf(detail, sizeof(detail), "Setup AP: %s", g_ap_ssid);
+        snprintf(detail, sizeof(detail), kBootSetupDetailFormat, g_ap_ssid);
         update_boot_screen(kBootScreenCompletePercent, "Setup mode", detail);
         vTaskDelay(pdMS_TO_TICKS(kBootScreenSetupDelayMs));
         return;
@@ -238,11 +248,11 @@ void schedule_ntp_retry(time_t *next_ntp_retry_at)
 static bool localtime_for_cache_check(time_t value, struct tm *out, const char *label)
 {
     if (!out) {
-        ESP_LOGW(TAG, "cache time conversion skipped: output is null");
+        ESP_LOGW(TAG, "%s", kNetworkCacheTimeConversionSkippedLog);
         return false;
     }
     if (!localtime_r(&value, out)) {
-        ESP_LOGW(TAG, "%s cache time conversion failed", label ? label : "unknown");
+        ESP_LOGW(TAG, NETWORK_CACHE_TIME_CONVERSION_FAILED_FORMAT, label ? label : kNetworkCacheUnknownLabel);
         return false;
     }
     return true;
@@ -317,7 +327,7 @@ void network_sync_task(void *)
     time_t boot_weather_due_at = boot_schedule_now + kBootWeatherRefreshDelaySec;
     time_t boot_saying_due_at = boot_schedule_now + kBootSayingRefreshDelaySec;
     if (boot_weather_due || boot_saying_due) {
-        ESP_LOGI(TAG, "boot network refresh scheduled: weather=%d saying=%d", boot_weather_due, boot_saying_due);
+        ESP_LOGI(TAG, NETWORK_BOOT_REFRESH_SCHEDULED_FORMAT, boot_weather_due, boot_saying_due);
     }
 
     for (;;) {
@@ -403,7 +413,7 @@ void network_sync_task(void *)
         }
 
         if (network_diag_due) {
-            ESP_LOGI(TAG, "wifi radio on for network diagnostics");
+            ESP_LOGI(TAG, "%s", kNetworkDiagWifiOnLog);
             acquire_network_awake_lock();
             network_diag_begin();
             if (!start_wifi_radio(false)) {
@@ -487,7 +497,7 @@ void network_sync_task(void *)
         }
 
         ESP_LOGI(TAG,
-                 "wifi radio on for sync: ntp=%d weather=%d saying=%d boot_weather=%d boot_saying=%d",
+                 NETWORK_SYNC_WIFI_ON_FORMAT,
                  ntp_due,
                  weather_due,
                  saying_due,
@@ -495,7 +505,7 @@ void network_sync_task(void *)
                  boot_saying_ready);
         acquire_network_awake_lock();
         if (!start_wifi_radio(false)) {
-            ESP_LOGW(TAG, "wifi start failed during sync window");
+            ESP_LOGW(TAG, "%s", kNetworkSyncWifiStartFailedLog);
             if (boot_weather_ready) {
                 boot_weather_due = false;
             }
@@ -572,7 +582,7 @@ void network_sync_task(void *)
                 notify_ui_task();
             }
         } else {
-            ESP_LOGW(TAG, "wifi connect timeout during sync window");
+            ESP_LOGW(TAG, "%s", kNetworkSyncWifiConnectTimeoutLog);
             if (boot_weather_ready) {
                 boot_weather_due = false;
             }

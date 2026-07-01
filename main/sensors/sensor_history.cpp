@@ -3,6 +3,17 @@
 
 #include "ui_views.h"
 
+#define SENSOR_INTERVAL_INVALID_LOG_FORMAT "sensor interval invalid: %d"
+#define HOURLY_SLOT_KEY_INDEX_INVALID_LOG_FORMAT "hourly sensor slot key index invalid: %d"
+#define HOURLY_SLOT_KEY_TRUNCATED_LOG_FORMAT "hourly sensor slot key truncated index=%d"
+#define SENSOR_HISTORY_NVS_OPEN_FAILED_LOG_FORMAT "open sensor history nvs failed: %s"
+#define HOURLY_SLOT_READ_FAILED_LOG_FORMAT "read hourly sensor slot %s failed: %s"
+#define HOURLY_META_READ_FAILED_LOG_FORMAT "read hourly sensor meta failed: %s"
+#define LEGACY_HOURLY_HISTORY_READ_FAILED_LOG_FORMAT "read legacy hourly sensor history failed: %s"
+#define HOURLY_SLOT_INDEX_INVALID_LOG_FORMAT "hourly sensor slot index invalid: %d"
+#define SENSOR_NVS_OPEN_FAILED_LOG_FORMAT "open sensor nvs failed: %s"
+#define HOURLY_SLOT_SAVE_FAILED_LOG_FORMAT "save hourly sensor slot failed: %s"
+
 static constexpr uint16_t kHourlyHistoryMetaVersion = 2;
 static constexpr uint16_t kLegacyHourlyHistoryVersion = 1;
 
@@ -49,7 +60,7 @@ static_assert(kHourlySlotKeyBufferSize >= sizeof("h00"), "hourly slot key buffer
 int seconds_until_next_interval(const struct tm &local, int interval_seconds)
 {
     if (interval_seconds <= 0) {
-        ESP_LOGW(TAG, "sensor interval invalid: %d", interval_seconds);
+        ESP_LOGW(TAG, SENSOR_INTERVAL_INVALID_LOG_FORMAT, interval_seconds);
         return kSecondsPerMinute;
     }
     int seconds_into_hour = local.tm_min * kSecondsPerMinute + local.tm_sec;
@@ -108,13 +119,13 @@ static bool hourly_slot_key(int index, char *out, size_t out_len)
     }
     if (!is_hourly_history_index_valid(index)) {
         out[0] = '\0';
-        ESP_LOGW(TAG, "hourly sensor slot key index invalid: %d", index);
+        ESP_LOGW(TAG, HOURLY_SLOT_KEY_INDEX_INVALID_LOG_FORMAT, index);
         return false;
     }
     int written = snprintf(out, out_len, kHourlySlotKeyFormat, index);
     if (written < 0 || (size_t)written >= out_len) {
         out[0] = '\0';
-        ESP_LOGW(TAG, "hourly sensor slot key truncated index=%d", index);
+        ESP_LOGW(TAG, HOURLY_SLOT_KEY_TRUNCATED_LOG_FORMAT, index);
         return false;
     }
     return true;
@@ -188,7 +199,7 @@ void load_hourly_sensor_history()
     esp_err_t err = nvs_open(kSensorNvsNamespace, NVS_READONLY, &nvs);
     if (err != ESP_OK) {
         if (should_log_nvs_read_error(err)) {
-            ESP_LOGW(TAG, "open sensor history nvs failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, SENSOR_HISTORY_NVS_OPEN_FAILED_LOG_FORMAT, esp_err_to_name(err));
         }
         return;
     }
@@ -213,7 +224,7 @@ void load_hourly_sensor_history()
                 }
                 ++loaded;
             } else if (should_log_nvs_read_error(slot_err)) {
-                ESP_LOGW(TAG, "read hourly sensor slot %s failed: %s", key, esp_err_to_name(slot_err));
+                ESP_LOGW(TAG, HOURLY_SLOT_READ_FAILED_LOG_FORMAT, key, esp_err_to_name(slot_err));
             }
         }
         if (loaded > 0) {
@@ -226,7 +237,7 @@ void load_hourly_sensor_history()
             return;
         }
     } else if (should_log_nvs_read_error(err)) {
-        ESP_LOGW(TAG, "read hourly sensor meta failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, HOURLY_META_READ_FAILED_LOG_FORMAT, esp_err_to_name(err));
     }
 
     LegacyHourlySensorHistoryBlob legacy = {};
@@ -235,7 +246,7 @@ void load_hourly_sensor_history()
     nvs_close(nvs);
     if (err != ESP_OK || !is_legacy_hourly_history_valid(legacy, legacy_len)) {
         if (should_log_nvs_read_error(err)) {
-            ESP_LOGW(TAG, "read legacy hourly sensor history failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, LEGACY_HOURLY_HISTORY_READ_FAILED_LOG_FORMAT, esp_err_to_name(err));
         }
         return;
     }
@@ -252,13 +263,13 @@ void load_hourly_sensor_history()
 static bool save_hourly_sensor_slot(int index)
 {
     if (!is_hourly_history_index_valid(index)) {
-        ESP_LOGW(TAG, "hourly sensor slot index invalid: %d", index);
+        ESP_LOGW(TAG, HOURLY_SLOT_INDEX_INVALID_LOG_FORMAT, index);
         return false;
     }
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(kSensorNvsNamespace, NVS_READWRITE, &nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "open sensor nvs failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, SENSOR_NVS_OPEN_FAILED_LOG_FORMAT, esp_err_to_name(err));
         return false;
     }
     HourlySensorHistoryMeta meta = {};
@@ -277,7 +288,7 @@ static bool save_hourly_sensor_slot(int index)
     }
     nvs_close(nvs);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "save hourly sensor slot failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, HOURLY_SLOT_SAVE_FAILED_LOG_FORMAT, esp_err_to_name(err));
         return false;
     }
     return true;

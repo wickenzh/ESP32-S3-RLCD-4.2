@@ -5,6 +5,11 @@
 
 #include <new>
 
+#define AUDIO_TASK_FUNCTION_UNAVAILABLE_LOG_FORMAT "failed to create %s task: task function unavailable"
+#define AUDIO_TASK_CREATE_FAILED_LOG_FORMAT "failed to create %s task"
+#define HOURLY_CHIME_PLAYED_LOG_FORMAT "hourly chime played sound=%d volume=%d"
+#define HOURLY_CHIME_SKIPPED_LOG_FORMAT "hourly chime skipped sound=%d"
+
 namespace {
 constexpr uint32_t kAudioPlaybackTaskStack = 6144;
 constexpr uint32_t kSettingsChimeRetryTaskStack = 3072;
@@ -25,6 +30,12 @@ constexpr const char *kDefaultAudioLogName = "audio playback";
 constexpr const char *kHourlyChimeLogName = "hourly chime";
 constexpr const char *kSetupPromptLogName = "setup prompt";
 constexpr const char *kSettingsChimeBusyLog = "settings confirmation chime skipped: audio busy";
+constexpr const char *kAudioCodecAllocationFailedLog = "audio codec allocation failed";
+constexpr const char *kSetupPromptPlayedLog = "setup prompt played";
+constexpr const char *kSetupPromptSkippedLog = "setup prompt skipped";
+constexpr const char *kSetupPromptPendingLog = "setup prompt pending";
+constexpr const char *kSettingsChimeRetryTaskCreateFailedLog = "failed to create settings chime retry task";
+constexpr const char *kHourlyChimeRadioSetupSkippedLog = "hourly chime skipped while radio or setup is active";
 } // namespace
 
 bool try_mark_audio_playing()
@@ -60,7 +71,7 @@ static CodecPort *ensure_audio_codec()
     if (!g_codec) {
         g_codec = new (std::nothrow) CodecPort(g_i2c, kAudioCodecBoardName);
         if (!g_codec) {
-            ESP_LOGW(TAG, "audio codec allocation failed");
+            ESP_LOGW(TAG, "%s", kAudioCodecAllocationFailedLog);
         }
     }
     return g_codec;
@@ -99,7 +110,7 @@ static bool create_audio_playback_task(TaskFunction_t task_fn,
     const char *display_name = log_name ? log_name : kDefaultAudioLogName;
     const char *rtos_name = task_name ? task_name : kDefaultAudioTaskName;
     if (!task_fn) {
-        ESP_LOGW(TAG, "failed to create %s task: task function unavailable", display_name);
+        ESP_LOGW(TAG, AUDIO_TASK_FUNCTION_UNAVAILABLE_LOG_FORMAT, display_name);
         return false;
     }
     BaseType_t ok = xTaskCreatePinnedToCore(task_fn,
@@ -110,7 +121,7 @@ static bool create_audio_playback_task(TaskFunction_t task_fn,
                                             nullptr,
                                             kAudioTaskCore);
     if (ok != pdPASS) {
-        ESP_LOGW(TAG, "failed to create %s task", display_name);
+        ESP_LOGW(TAG, AUDIO_TASK_CREATE_FAILED_LOG_FORMAT, display_name);
         return false;
     }
     return true;
@@ -122,9 +133,9 @@ void hourly_chime_task(void *arg)
     acquire_audio_awake_lock();
     CodecPort *codec = ensure_audio_codec();
     if (codec && codec->CodecPort_PlayChimeSound(sound_index, g_chime_volume_percent)) {
-        ESP_LOGI(TAG, "hourly chime played sound=%d volume=%d", sound_index, g_chime_volume_percent);
+        ESP_LOGI(TAG, HOURLY_CHIME_PLAYED_LOG_FORMAT, sound_index, g_chime_volume_percent);
     } else {
-        ESP_LOGW(TAG, "hourly chime skipped sound=%d", sound_index);
+        ESP_LOGW(TAG, HOURLY_CHIME_SKIPPED_LOG_FORMAT, sound_index);
     }
     finish_audio_playback();
     if (g_setup_prompt_pending && !g_startup_screen_active) {
@@ -139,9 +150,9 @@ void setup_prompt_task(void *)
     acquire_audio_awake_lock();
     CodecPort *codec = ensure_audio_codec();
     if (codec && codec->CodecPort_PlayWifiPrompt()) {
-        ESP_LOGI(TAG, "setup prompt played");
+        ESP_LOGI(TAG, "%s", kSetupPromptPlayedLog);
     } else {
-        ESP_LOGW(TAG, "setup prompt skipped");
+        ESP_LOGW(TAG, "%s", kSetupPromptSkippedLog);
     }
     finish_audio_playback();
     vTaskDelete(nullptr);
@@ -196,7 +207,7 @@ void request_setup_prompt_once()
 {
     if (g_startup_screen_active || is_audio_playing()) {
         g_setup_prompt_pending = true;
-        ESP_LOGI(TAG, "setup prompt pending");
+        ESP_LOGI(TAG, "%s", kSetupPromptPendingLog);
         return;
     }
     if (!start_setup_prompt_playback()) {
@@ -220,7 +231,7 @@ void request_settings_confirmation_chime()
                                             nullptr,
                                             kAudioTaskCore);
     if (ok != pdPASS) {
-        ESP_LOGW(TAG, "failed to create settings chime retry task");
+        ESP_LOGW(TAG, "%s", kSettingsChimeRetryTaskCreateFailedLog);
     }
 }
 
@@ -230,7 +241,7 @@ void play_hourly_chime(int hour, bool enforce_quiet_hours)
         return;
     }
     if (g_wifi_radio_on || g_setup_portal_active || g_ota_state == kOtaChecking) {
-        ESP_LOGI(TAG, "hourly chime skipped while radio or setup is active");
+        ESP_LOGI(TAG, "%s", kHourlyChimeRadioSetupSkippedLog);
         return;
     }
     if (enforce_quiet_hours && !g_hourly_chime_all_day && outside_hourly_chime_window(hour)) {

@@ -3,6 +3,17 @@
 
 #include "ui_views.h"
 
+#define BATTERY_ADC_CALIBRATION_RELEASE_FAILED_LOG_FORMAT "battery adc calibration release failed: %s"
+#define BATTERY_ADC_UNIT_RELEASE_FAILED_LOG_FORMAT "battery adc unit release failed: %s"
+#define BATTERY_ADC_READY_WITHOUT_HANDLE_LOG_FORMAT "battery adc marked ready without handle, resetting"
+#define BATTERY_ADC_INIT_FAILED_LOG_FORMAT "battery adc init failed: %s"
+#define BATTERY_ADC_CHANNEL_CONFIG_FAILED_LOG_FORMAT "battery adc channel config failed: %s"
+#define BATTERY_ADC_CALIBRATION_UNAVAILABLE_LOG_FORMAT "battery adc calibration unavailable: %s"
+#define BATTERY_PERCENT_OUTPUT_NULL_LOG_FORMAT "battery percent output is null"
+#define BATTERY_ADC_READ_FAILED_LOG_FORMAT "battery adc read failed: %s"
+#define BATTERY_ADC_CALIBRATION_READ_FAILED_LOG_FORMAT "battery adc calibration read failed: %s"
+#define BATTERY_ADC_SAMPLE_LOG_FORMAT "battery adc raw=%d adc_mv=%d battery=%.3fV soc=%d%%"
+
 static constexpr float kBatteryVoltageDivider = 3.0f;
 static constexpr float kBatteryMillivoltsToVolts = 0.001f;
 static constexpr float kBatteryEmptyVoltage = 3.00f;
@@ -42,7 +53,7 @@ void release_battery_gauge()
     if (g_battery_adc_cali_ready && g_battery_adc_cali) {
         esp_err_t err = adc_cali_delete_scheme_curve_fitting(g_battery_adc_cali);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "battery adc calibration release failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, BATTERY_ADC_CALIBRATION_RELEASE_FAILED_LOG_FORMAT, esp_err_to_name(err));
         }
     }
     g_battery_adc_cali = nullptr;
@@ -51,7 +62,7 @@ void release_battery_gauge()
     if (g_battery_adc) {
         esp_err_t err = adc_oneshot_del_unit(g_battery_adc);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "battery adc unit release failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, BATTERY_ADC_UNIT_RELEASE_FAILED_LOG_FORMAT, esp_err_to_name(err));
         }
     }
     g_battery_adc = nullptr;
@@ -62,7 +73,7 @@ bool init_battery_gauge()
 {
     if (g_battery_adc_ready) {
         if (!g_battery_adc) {
-            ESP_LOGW(TAG, "battery adc marked ready without handle, resetting");
+            ESP_LOGW(TAG, BATTERY_ADC_READY_WITHOUT_HANDLE_LOG_FORMAT);
             release_battery_gauge();
             return false;
         }
@@ -74,7 +85,7 @@ bool init_battery_gauge()
     esp_err_t err = adc_oneshot_new_unit(&init_config, &g_battery_adc);
     if (err != ESP_OK) {
         g_battery_adc = nullptr;
-        ESP_LOGW(TAG, "battery adc init failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, BATTERY_ADC_INIT_FAILED_LOG_FORMAT, esp_err_to_name(err));
         return false;
     }
 
@@ -83,7 +94,7 @@ bool init_battery_gauge()
     chan_config.atten = kBatteryAdcAtten;
     err = adc_oneshot_config_channel(g_battery_adc, kBatteryAdcChannel, &chan_config);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "battery adc channel config failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, BATTERY_ADC_CHANNEL_CONFIG_FAILED_LOG_FORMAT, esp_err_to_name(err));
         release_battery_gauge();
         return false;
     }
@@ -97,7 +108,7 @@ bool init_battery_gauge()
     if (err == ESP_OK) {
         g_battery_adc_cali_ready = true;
     } else {
-        ESP_LOGW(TAG, "battery adc calibration unavailable: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, BATTERY_ADC_CALIBRATION_UNAVAILABLE_LOG_FORMAT, esp_err_to_name(err));
     }
 
     g_battery_adc_ready = true;
@@ -124,7 +135,7 @@ float battery_voltage_from_adc_mv(int adc_mv)
 bool read_battery_percent(int *percent)
 {
     if (!percent) {
-        ESP_LOGW(TAG, "battery percent output is null");
+        ESP_LOGW(TAG, BATTERY_PERCENT_OUTPUT_NULL_LOG_FORMAT);
         return false;
     }
     if (!init_battery_gauge()) {
@@ -134,7 +145,7 @@ bool read_battery_percent(int *percent)
     int raw = 0;
     esp_err_t err = adc_oneshot_read(g_battery_adc, kBatteryAdcChannel, &raw);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "battery adc read failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, BATTERY_ADC_READ_FAILED_LOG_FORMAT, esp_err_to_name(err));
         release_battery_gauge();
         return false;
     }
@@ -143,13 +154,13 @@ bool read_battery_percent(int *percent)
     if (g_battery_adc_cali_ready) {
         err = adc_cali_raw_to_voltage(g_battery_adc_cali, raw, &adc_mv);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "battery adc calibration read failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, BATTERY_ADC_CALIBRATION_READ_FAILED_LOG_FORMAT, esp_err_to_name(err));
         }
     }
 
     float voltage = battery_voltage_from_adc_mv(adc_mv);
     int soc = battery_percent_from_voltage(voltage);
-    ESP_LOGI(TAG, "battery adc raw=%d adc_mv=%d battery=%.3fV soc=%d%%", raw, adc_mv, voltage, soc);
+    ESP_LOGI(TAG, BATTERY_ADC_SAMPLE_LOG_FORMAT, raw, adc_mv, voltage, soc);
     *percent = soc;
     g_battery_voltage = voltage;
     return true;

@@ -57,13 +57,24 @@ constexpr uint32_t kPortalSaveWifiConnectWaitMs = 12000;
 constexpr uint8_t kCaptiveDnsApIpOctets[kDnsIpv4AddressLength] = {192, 168, 4, 1};
 constexpr const char *kPortalSectionCloseHtml = "</div></section>";
 constexpr const char *kPortalHtmlContentType = "text/html; charset=utf-8";
+constexpr const char *kPortalHttpStatusInternalError = "500 Internal Server Error";
+constexpr const char *kPortalHttpStatusBadRequest = "400 Bad Request";
+constexpr const char *kPortalHttpStatusNoContent = "204 No Content";
+constexpr const char *kPortalHttpStatusFound = "302 Found";
+constexpr const char *kPortalHeaderLocation = "Location";
+constexpr const char *kPortalHeaderCacheControl = "Cache-Control";
+constexpr const char *kPortalCacheNoStore = "no-store";
+constexpr const char *kPortalErrorNotEnoughMemory = "Not enough memory.";
+constexpr const char *kPortalErrorMissingQuery = "Missing query.";
+constexpr const char *kSetupApSsidFormat = "WeatherClock-%02X%02X";
 constexpr const char *kPortalHtmlHeadPrefix =
     "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
 
 class WifiScanRecords {
 public:
     explicit WifiScanRecords(uint16_t count)
-        : records_((wifi_ap_record_t *)calloc(count, sizeof(wifi_ap_record_t)))
+        : records_((wifi_ap_record_t *)calloc(count, sizeof(wifi_ap_record_t))),
+          capacity_(count)
     {
     }
 
@@ -80,8 +91,25 @@ public:
         return records_;
     }
 
+    uint16_t capacity() const
+    {
+        return capacity_;
+    }
+
+    uint16_t count() const
+    {
+        return count_;
+    }
+
+    void set_count(uint16_t count)
+    {
+        count_ = count <= capacity_ ? count : capacity_;
+    }
+
 private:
     wifi_ap_record_t *records_ = nullptr;
+    uint16_t capacity_ = 0;
+    uint16_t count_ = 0;
 };
 
 class PortalHtmlBuffer {
@@ -345,6 +373,32 @@ void html_escape(const char *src, char *dst, size_t dst_len)
     dst[di] = '\0';
 }
 
+esp_err_t send_portal_html(httpd_req_t *req, const char *html)
+{
+    httpd_resp_set_type(req, kPortalHtmlContentType);
+    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t send_portal_text_status(httpd_req_t *req, const char *status, const char *text)
+{
+    httpd_resp_set_status(req, status);
+    return httpd_resp_sendstr(req, text);
+}
+
+esp_err_t send_portal_empty_status(httpd_req_t *req, const char *status)
+{
+    httpd_resp_set_status(req, status);
+    return httpd_resp_send(req, "", 0);
+}
+
+esp_err_t redirect_to_setup_portal(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, kPortalHttpStatusFound);
+    httpd_resp_set_hdr(req, kPortalHeaderLocation, kSetupPortalUrl);
+    httpd_resp_set_hdr(req, kPortalHeaderCacheControl, kPortalCacheNoStore);
+    return httpd_resp_send(req, "", 0);
+}
+
 void append_wifi_scan_list(char *html, size_t html_len)
 {
     if (!html || html_len == 0) {
@@ -378,16 +432,18 @@ void append_wifi_scan_list(char *html, size_t html_len)
             html_append(html, html_len, kPortalSectionCloseHtml);
             return;
         }
-        err = esp_wifi_scan_get_ap_records(&max_records, records.data());
+        uint16_t record_count = records.capacity();
+        err = esp_wifi_scan_get_ap_records(&record_count, records.data());
         if (err != ESP_OK) {
             html_append(html, html_len, "<p class='muted'>Scan failed, refresh this page.</p>");
             html_append(html, html_len, kPortalSectionCloseHtml);
             return;
         }
-        if (max_records == 0) {
+        records.set_count(record_count);
+        if (records.count() == 0) {
             html_append(html, html_len, "<p class='muted'>No Wi-Fi found.</p>");
         }
-        for (uint16_t i = 0; i < max_records; ++i) {
+        for (uint16_t i = 0; i < records.count(); ++i) {
             if (records.data()[i].ssid[0] == '\0') {
                 continue;
             }
@@ -442,8 +498,7 @@ esp_err_t root_get_handler(httpd_req_t *req)
     html_escape(g_manual_weather_city, safe_weather_city, sizeof(safe_weather_city));
     PortalHtmlBuffer html(kPortalRootHtmlSize);
     if (html.data() == nullptr) {
-        httpd_resp_set_status(req, "500 Internal Server Error");
-        return httpd_resp_sendstr(req, "Not enough memory.");
+        return send_portal_text_status(req, kPortalHttpStatusInternalError, kPortalErrorNotEnoughMemory);
     }
     html_append(html.data(), html.size(),
                 "%s"
@@ -471,8 +526,7 @@ esp_err_t root_get_handler(httpd_req_t *req)
                 kPortalHtmlHeadPrefix, g_ap_ssid, safe_ssid, safe_weather_city);
     append_wifi_scan_list(html.data(), html.size());
     html_append(html.data(), html.size(), "</main></body></html>");
-    httpd_resp_set_type(req, kPortalHtmlContentType);
-    return httpd_resp_send(req, html.data(), strlen(html.data()));
+    return send_portal_html(req, html.data());
 }
 
 enum ManualWeatherCityValidationResult {
@@ -538,8 +592,7 @@ esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected, co
                 safe_ssid,
                 safe_city,
                 g_last_wifi_disconnect_reason);
-    httpd_resp_set_type(req, kPortalHtmlContentType);
-    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+    return send_portal_html(req, html);
 }
 
 esp_err_t send_offline_result_page(httpd_req_t *req, bool saved)
@@ -558,8 +611,7 @@ esp_err_t send_offline_result_page(httpd_req_t *req, bool saved)
                 saved ? "OK" : "!",
                 saved ? "Offline mode enabled" : "Invalid date or time",
                 saved ? "The clock will use the RTC time and skip all network updates." : "Please enter a valid date and time, or configure Wi-Fi and API Key.");
-    httpd_resp_set_type(req, kPortalHtmlContentType);
-    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+    return send_portal_html(req, html);
 }
 
 static esp_err_t handle_setup_save(httpd_req_t *req, const char *body)
@@ -623,24 +675,28 @@ esp_err_t save_get_handler(httpd_req_t *req)
 {
     char query[kPortalRequestBufferSize] = {};
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
-        httpd_resp_set_status(req, "400 Bad Request");
-        return httpd_resp_sendstr(req, "Missing query.");
+        return send_portal_text_status(req, kPortalHttpStatusBadRequest, kPortalErrorMissingQuery);
     }
     return handle_setup_save(req, query);
 }
 
 esp_err_t empty_asset_handler(httpd_req_t *req)
 {
-    httpd_resp_set_status(req, "204 No Content");
-    return httpd_resp_send(req, "", 0);
+    return send_portal_empty_status(req, kPortalHttpStatusNoContent);
 }
 
 esp_err_t captive_portal_handler(httpd_req_t *req)
 {
-    httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", kSetupPortalUrl);
-    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    return httpd_resp_send(req, "", 0);
+    return redirect_to_setup_portal(req);
+}
+
+esp_err_t register_http_handler(httpd_handle_t server, const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *))
+{
+    httpd_uri_t route = {};
+    route.uri = uri;
+    route.method = method;
+    route.handler = handler;
+    return httpd_register_uri_handler(server, &route);
 }
 
 bool start_captive_dns_server()
@@ -704,58 +760,24 @@ bool start_http_server()
         return false;
     }
 
-    httpd_uri_t root = {};
-    root.uri = "/";
-    root.method = HTTP_GET;
-    root.handler = root_get_handler;
-    err = httpd_register_uri_handler(g_http_server, &root);
-
-    httpd_uri_t save = {};
-    save.uri = "/save";
-    save.method = HTTP_POST;
-    save.handler = save_post_handler;
+    err = register_http_handler(g_http_server, "/", HTTP_GET, root_get_handler);
     if (err == ESP_OK) {
-        err = httpd_register_uri_handler(g_http_server, &save);
+        err = register_http_handler(g_http_server, "/save", HTTP_POST, save_post_handler);
     }
-
-    httpd_uri_t save_get = {};
-    save_get.uri = "/save";
-    save_get.method = HTTP_GET;
-    save_get.handler = save_get_handler;
     if (err == ESP_OK) {
-        err = httpd_register_uri_handler(g_http_server, &save_get);
+        err = register_http_handler(g_http_server, "/save", HTTP_GET, save_get_handler);
     }
-
-    httpd_uri_t favicon = {};
-    favicon.uri = "/favicon.ico";
-    favicon.method = HTTP_GET;
-    favicon.handler = empty_asset_handler;
     if (err == ESP_OK) {
-        err = httpd_register_uri_handler(g_http_server, &favicon);
+        err = register_http_handler(g_http_server, "/favicon.ico", HTTP_GET, empty_asset_handler);
     }
-
-    httpd_uri_t apple_icon = {};
-    apple_icon.uri = "/apple-touch-icon.png";
-    apple_icon.method = HTTP_GET;
-    apple_icon.handler = empty_asset_handler;
     if (err == ESP_OK) {
-        err = httpd_register_uri_handler(g_http_server, &apple_icon);
+        err = register_http_handler(g_http_server, "/apple-touch-icon.png", HTTP_GET, empty_asset_handler);
     }
-
-    httpd_uri_t apple_icon_precomposed = {};
-    apple_icon_precomposed.uri = "/apple-touch-icon-precomposed.png";
-    apple_icon_precomposed.method = HTTP_GET;
-    apple_icon_precomposed.handler = empty_asset_handler;
     if (err == ESP_OK) {
-        err = httpd_register_uri_handler(g_http_server, &apple_icon_precomposed);
+        err = register_http_handler(g_http_server, "/apple-touch-icon-precomposed.png", HTTP_GET, empty_asset_handler);
     }
-
-    httpd_uri_t captive = {};
-    captive.uri = "/*";
-    captive.method = HTTP_GET;
-    captive.handler = captive_portal_handler;
     if (err == ESP_OK) {
-        err = httpd_register_uri_handler(g_http_server, &captive);
+        err = register_http_handler(g_http_server, "/*", HTTP_GET, captive_portal_handler);
     }
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "http uri register failed: %s", esp_err_to_name(err));
@@ -936,7 +958,7 @@ void init_wifi()
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "wifi mac read failed: %s", esp_err_to_name(err));
     }
-    snprintf(g_ap_ssid, sizeof(g_ap_ssid), "WeatherClock-%02X%02X", mac[4], mac[5]);
+    snprintf(g_ap_ssid, sizeof(g_ap_ssid), kSetupApSsidFormat, mac[4], mac[5]);
 
     if (!esp_netif_create_default_wifi_sta()) {
         ESP_LOGW(TAG, "wifi sta netif create failed");

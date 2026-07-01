@@ -5,6 +5,26 @@
 
 #include <errno.h>
 
+#define POWER_PM_LOCK_MUTEX_UNAVAILABLE_LOG_FORMAT "%s pm lock mutex unavailable"
+#define POWER_PM_LOCK_MUTEX_TIMEOUT_LOG_FORMAT "%s pm lock mutex timeout"
+#define POWER_PM_LOCK_ACQUIRE_FAILED_LOG_FORMAT "%s pm lock acquire failed: %s"
+#define POWER_PM_LOCK_RELEASE_ZERO_LOG_FORMAT "%s pm lock release skipped: depth is zero"
+#define POWER_PM_LOCK_RELEASE_FAILED_LOG_FORMAT "%s pm lock release failed: %s"
+#define POWER_SETUP_FAILED_LOG_FORMAT "power management setup failed: %s"
+#define POWER_SETUP_OK_LOG_FORMAT "power management: max=%dMHz min=%dMHz light sleep enabled"
+#define POWER_MUTEX_CREATE_FAILED_LOG_FORMAT "pm lock mutex create failed"
+#define POWER_NETWORK_LOCK_CREATE_FAILED_LOG_FORMAT "network pm lock create failed: %s"
+#define POWER_AUDIO_LOCK_CREATE_FAILED_LOG_FORMAT "audio pm lock create failed: %s"
+#define POWER_DISABLED_LOG_FORMAT "power management disabled in sdkconfig"
+#define POWER_RTC_INVALID_TIME_LOG_FORMAT "ignore invalid RTC time: %04u-%02u-%02u %02u:%02u:%02u"
+#define POWER_RTC_MKTIME_FAILED_LOG_FORMAT "ignore RTC time: mktime failed"
+#define POWER_RTC_LOCALTIME_FAILED_LOG_FORMAT "ignore RTC time: localtime normalization failed"
+#define POWER_RTC_NORMALIZED_MISMATCH_LOG_FORMAT "ignore normalized RTC time mismatch"
+#define POWER_RTC_SETTIME_FAILED_LOG_FORMAT "set system time from RTC failed errno=%d"
+#define POWER_RTC_RESTORED_LOG_FORMAT "system time restored from RTC: %04u-%02u-%02u %02u:%02u:%02u"
+#define POWER_RTC_SYNC_LOCALTIME_FAILED_LOG_FORMAT "skip RTC sync: localtime failed"
+#define POWER_RTC_SYNC_TIME_NOT_PLAUSIBLE_LOG_FORMAT "skip RTC sync: system time is not plausible"
+
 namespace {
 constexpr uint16_t kRtcMinMonth = 1;
 constexpr uint16_t kRtcMaxMonth = 12;
@@ -52,11 +72,11 @@ constexpr TickType_t kPmLockMutexTimeout = pdMS_TO_TICKS(kPmLockMutexTimeoutMs);
 bool take_pm_lock_mutex(const char *name)
 {
     if (!s_pm_lock_mutex) {
-        ESP_LOGW(TAG, "%s pm lock mutex unavailable", name);
+        ESP_LOGW(TAG, POWER_PM_LOCK_MUTEX_UNAVAILABLE_LOG_FORMAT, name);
         return false;
     }
     if (xSemaphoreTake(s_pm_lock_mutex, kPmLockMutexTimeout) != pdTRUE) {
-        ESP_LOGW(TAG, "%s pm lock mutex timeout", name);
+        ESP_LOGW(TAG, POWER_PM_LOCK_MUTEX_TIMEOUT_LOG_FORMAT, name);
         return false;
     }
     return true;
@@ -75,7 +95,7 @@ void acquire_pm_lock(esp_pm_lock_handle_t lock, int *depth, const char *name)
     if (*depth == 0) {
         esp_err_t err = esp_pm_lock_acquire(lock);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "%s pm lock acquire failed: %s", name, esp_err_to_name(err));
+            ESP_LOGW(TAG, POWER_PM_LOCK_ACQUIRE_FAILED_LOG_FORMAT, name, esp_err_to_name(err));
             give_pm_lock_mutex();
             return;
         }
@@ -90,7 +110,7 @@ void release_pm_lock(esp_pm_lock_handle_t lock, int *depth, const char *name)
         return;
     }
     if (*depth <= 0) {
-        ESP_LOGW(TAG, "%s pm lock release skipped: depth is zero", name);
+        ESP_LOGW(TAG, POWER_PM_LOCK_RELEASE_ZERO_LOG_FORMAT, name);
         give_pm_lock_mutex();
         return;
     }
@@ -99,7 +119,7 @@ void release_pm_lock(esp_pm_lock_handle_t lock, int *depth, const char *name)
         esp_err_t err = esp_pm_lock_release(lock);
         if (err != ESP_OK) {
             *depth = 1;
-            ESP_LOGW(TAG, "%s pm lock release failed: %s", name, esp_err_to_name(err));
+            ESP_LOGW(TAG, POWER_PM_LOCK_RELEASE_FAILED_LOG_FORMAT, name, esp_err_to_name(err));
         }
     }
     give_pm_lock_mutex();
@@ -117,27 +137,27 @@ void init_power_management()
 
     esp_err_t err = esp_pm_configure(&pm_config);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "power management setup failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, POWER_SETUP_FAILED_LOG_FORMAT, esp_err_to_name(err));
     } else {
-        ESP_LOGI(TAG, "power management: max=%dMHz min=%dMHz light sleep enabled",
+        ESP_LOGI(TAG, POWER_SETUP_OK_LOG_FORMAT,
                  pm_config.max_freq_mhz, pm_config.min_freq_mhz);
     }
     s_pm_lock_mutex = xSemaphoreCreateMutex();
     if (!s_pm_lock_mutex) {
-        ESP_LOGW(TAG, "pm lock mutex create failed");
+        ESP_LOGW(TAG, POWER_MUTEX_CREATE_FAILED_LOG_FORMAT);
     }
     err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, kNetworkPmLockName, &g_network_pm_lock);
     if (err != ESP_OK) {
         g_network_pm_lock = nullptr;
-        ESP_LOGW(TAG, "network pm lock create failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, POWER_NETWORK_LOCK_CREATE_FAILED_LOG_FORMAT, esp_err_to_name(err));
     }
     err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, kAudioPmLockName, &g_audio_pm_lock);
     if (err != ESP_OK) {
         g_audio_pm_lock = nullptr;
-        ESP_LOGW(TAG, "audio pm lock create failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, POWER_AUDIO_LOCK_CREATE_FAILED_LOG_FORMAT, esp_err_to_name(err));
     }
 #else
-    ESP_LOGW(TAG, "power management disabled in sdkconfig");
+    ESP_LOGW(TAG, POWER_DISABLED_LOG_FORMAT);
 #endif
 }
 
@@ -174,7 +194,7 @@ void restore_system_time_from_rtc()
     rtcTimeStruct_t rtc_time = {};
     Rtc_GetTime(&rtc_time);
     if (!rtc_time_fields_in_range(rtc_time)) {
-        ESP_LOGW(TAG, "ignore invalid RTC time: %04u-%02u-%02u %02u:%02u:%02u",
+        ESP_LOGW(TAG, POWER_RTC_INVALID_TIME_LOG_FORMAT,
                  rtc_time.year, rtc_time.month, rtc_time.day,
                  rtc_time.hour, rtc_time.minute, rtc_time.second);
         return;
@@ -188,25 +208,25 @@ void restore_system_time_from_rtc()
     tm_time.tm_sec = rtc_time.second;
     time_t epoch = mktime(&tm_time);
     if (epoch == (time_t)-1) {
-        ESP_LOGW(TAG, "ignore RTC time: mktime failed");
+        ESP_LOGW(TAG, POWER_RTC_MKTIME_FAILED_LOG_FORMAT);
         return;
     }
     struct tm normalized = {};
     if (!localtime_r(&epoch, &normalized)) {
-        ESP_LOGW(TAG, "ignore RTC time: localtime normalization failed");
+        ESP_LOGW(TAG, POWER_RTC_LOCALTIME_FAILED_LOG_FORMAT);
         return;
     }
     if (!rtc_date_matches_tm(rtc_time, normalized)) {
-        ESP_LOGW(TAG, "ignore normalized RTC time mismatch");
+        ESP_LOGW(TAG, POWER_RTC_NORMALIZED_MISMATCH_LOG_FORMAT);
         return;
     }
     struct timeval now = {};
     now.tv_sec = epoch;
     if (settimeofday(&now, nullptr) != 0) {
-        ESP_LOGW(TAG, "set system time from RTC failed errno=%d", errno);
+        ESP_LOGW(TAG, POWER_RTC_SETTIME_FAILED_LOG_FORMAT, errno);
         return;
     }
-    ESP_LOGI(TAG, "system time restored from RTC: %04u-%02u-%02u %02u:%02u:%02u",
+    ESP_LOGI(TAG, POWER_RTC_RESTORED_LOG_FORMAT,
              rtc_time.year, rtc_time.month, rtc_time.day,
              rtc_time.hour, rtc_time.minute, rtc_time.second);
 }
@@ -217,11 +237,11 @@ void sync_rtc_from_system_time()
     time(&now);
     struct tm local = {};
     if (!localtime_r(&now, &local)) {
-        ESP_LOGW(TAG, "skip RTC sync: localtime failed");
+        ESP_LOGW(TAG, POWER_RTC_SYNC_LOCALTIME_FAILED_LOG_FORMAT);
         return;
     }
     if (!is_tm_plausible(local)) {
-        ESP_LOGW(TAG, "skip RTC sync: system time is not plausible");
+        ESP_LOGW(TAG, POWER_RTC_SYNC_TIME_NOT_PLAUSIBLE_LOG_FORMAT);
         return;
     }
     Rtc_SetTime(local.tm_year + kTmYearOffset,

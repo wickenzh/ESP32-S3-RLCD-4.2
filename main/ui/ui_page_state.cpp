@@ -304,6 +304,7 @@ void clear_clock_object_refs()
     g_second_progress_canvas = nullptr;
     clear_pointer_array(g_flip_clock_card_canvas);
     g_flip_clock_sensor_label = nullptr;
+    g_flip_clock_humidity_label = nullptr;
     g_flip_clock_day_progress_canvas = nullptr;
     g_flip_clock_second_progress_canvas = nullptr;
     clear_pointer_array(g_battery_segments);
