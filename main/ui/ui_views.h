@@ -10,6 +10,7 @@ void draw_progress_segment(lv_obj_t *canvas, int index, bool filled);
 void invalidate_progress_segment(lv_obj_t *canvas, int index);
 void build_progress_canvas(lv_obj_t *parent, lv_obj_t **canvas, lv_color_t **buf, int y);
 void update_progress_canvas(lv_obj_t *canvas, int filled, int *last_filled);
+bool packed_1bit_bit_is_set(const uint8_t *bits, uint32_t bit_index);
 void draw_1bit_icon(lv_obj_t *canvas,
                     int width,
                     int height,

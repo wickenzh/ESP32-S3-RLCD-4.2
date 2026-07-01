@@ -26,6 +26,19 @@ constexpr UBaseType_t kNormalServiceTaskPriority = 3;
 constexpr UBaseType_t kInputTaskPriority = 2;
 constexpr BaseType_t kNetworkTaskCore = 0;
 constexpr BaseType_t kUiTaskCore = 1;
+constexpr const char *kFallbackAppTaskName = "app_task";
+constexpr const char *kFallbackBootTaskName = "boot_task";
+constexpr const char *kBootAnimTaskName = "boot_anim_task";
+constexpr const char *kBootSyncTaskName = "boot_sync";
+constexpr const char *kNetworkSyncTaskName = "network_sync";
+constexpr const char *kOtaTaskName = "ota_task";
+constexpr const char *kHousekeepingTaskName = "housekeeping";
+constexpr const char *kUiTaskName = "ui_task";
+constexpr const char *kButtonTaskName = "button_task";
+constexpr const char *kBootAnimTaskCreateFailed = "boot animation task create failed";
+constexpr const char *kBootConnectivityTaskCreateFailed = "boot connectivity task create failed";
+constexpr const char *kBootReadyStatus = "Ready";
+constexpr const char *kBootReadyDetail = "Starting clock";
 } // namespace
 
 static void create_app_task(TaskFunction_t task,
@@ -35,7 +48,7 @@ static void create_app_task(TaskFunction_t task,
                             TaskHandle_t *handle,
                             BaseType_t core_id)
 {
-    const char *task_name = name ? name : "app_task";
+    const char *task_name = name ? name : kFallbackAppTaskName;
     if (handle) {
         *handle = nullptr;
     }
@@ -98,7 +111,7 @@ static void create_boot_task_or_signal(TaskFunction_t task,
                                        EventBits_t done_bit,
                                        const char *failure_log)
 {
-    const char *task_name = name ? name : "boot_task";
+    const char *task_name = name ? name : kFallbackBootTaskName;
     if (handle) {
         *handle = nullptr;
     }
@@ -158,25 +171,25 @@ extern "C" void app_main(void)
     g_boot_anim_running = true;
     xEventGroupClearBits(g_app_events, kBootSyncDoneBit | kBootAnimDoneBit);
     create_boot_task_or_signal(boot_anim_task,
-                               "boot_anim_task",
+                               kBootAnimTaskName,
                                kBootAnimTaskStack,
                                &g_boot_anim_task_handle,
                                kUiTaskCore,
                                kBootAnimDoneBit,
-                               "boot animation task create failed");
+                               kBootAnimTaskCreateFailed);
     create_boot_task_or_signal(boot_connectivity_task,
-                               "boot_sync",
+                               kBootSyncTaskName,
                                kBootSyncTaskStack,
                                &g_boot_sync_task_handle,
                                kNetworkTaskCore,
                                kBootSyncDoneBit,
-                               "boot connectivity task create failed");
+                               kBootConnectivityTaskCreateFailed);
     xEventGroupWaitBits(g_app_events,
                         kBootSyncDoneBit,
                         pdFALSE,
                         pdTRUE,
                         pdMS_TO_TICKS(kBootStartupBudgetMs + kBootSyncWaitMarginMs));
-    update_boot_screen(100, "Ready", "Starting clock");
+    update_boot_screen(100, kBootReadyStatus, kBootReadyDetail);
     g_boot_anim_running = false;
     xEventGroupWaitBits(g_app_events,
                         kBootAnimDoneBit,
@@ -188,31 +201,31 @@ extern "C" void app_main(void)
     g_startup_screen_active = false;
 
     create_app_task(network_sync_task,
-                    "network_sync",
+                    kNetworkSyncTaskName,
                     kNetworkSyncTaskStack,
                     kHighServiceTaskPriority,
                     nullptr,
                     kNetworkTaskCore);
     create_app_task(ota_task,
-                    "ota_task",
+                    kOtaTaskName,
                     kOtaTaskStack,
                     kHighServiceTaskPriority,
                     nullptr,
                     kNetworkTaskCore);
     create_app_task(housekeeping_task,
-                    "housekeeping",
+                    kHousekeepingTaskName,
                     kHousekeepingTaskStack,
                     kNormalServiceTaskPriority,
                     nullptr,
                     kUiTaskCore);
     create_app_task(ui_task,
-                    "ui_task",
+                    kUiTaskName,
                     kUiTaskStack,
                     kNormalServiceTaskPriority,
                     &g_ui_task_handle,
                     kUiTaskCore);
     create_app_task(button_task,
-                    "button_task",
+                    kButtonTaskName,
                     kButtonTaskStack,
                     kInputTaskPriority,
                     nullptr,

@@ -21,6 +21,10 @@ constexpr const char *kDefaultAudioTaskName = "audio_play";
 constexpr const char *kHourlyChimeTaskName = "hourly_chime";
 constexpr const char *kSetupPromptTaskName = "setup_prompt";
 constexpr const char *kSettingsChimeRetryTaskName = "settings_chime";
+constexpr const char *kDefaultAudioLogName = "audio playback";
+constexpr const char *kHourlyChimeLogName = "hourly chime";
+constexpr const char *kSetupPromptLogName = "setup prompt";
+constexpr const char *kSettingsChimeBusyLog = "settings confirmation chime skipped: audio busy";
 } // namespace
 
 bool try_mark_audio_playing()
@@ -77,6 +81,11 @@ static void finish_audio_playback()
     clear_audio_playing();
 }
 
+static bool audio_blocked_by_system_state()
+{
+    return g_low_battery_mode || g_ota_state == kOtaUpdating;
+}
+
 static bool outside_hourly_chime_window(int hour)
 {
     return hour < kHourlyChimeQuietStartHour || hour > kHourlyChimeQuietEndHour;
@@ -87,7 +96,7 @@ static bool create_audio_playback_task(TaskFunction_t task_fn,
                                        void *task_arg,
                                        const char *log_name)
 {
-    const char *display_name = log_name ? log_name : "audio playback";
+    const char *display_name = log_name ? log_name : kDefaultAudioLogName;
     const char *rtos_name = task_name ? task_name : kDefaultAudioTaskName;
     if (!task_fn) {
         ESP_LOGW(TAG, "failed to create %s task: task function unavailable", display_name);
@@ -147,7 +156,7 @@ void settings_confirmation_chime_task(void *)
         }
         vTaskDelay(kSettingsChimeRetryDelay);
     }
-    ESP_LOGW(TAG, "settings confirmation chime skipped: audio busy");
+    ESP_LOGW(TAG, "%s", kSettingsChimeBusyLog);
     vTaskDelete(nullptr);
 }
 
@@ -159,7 +168,7 @@ bool start_chime_playback(int source_slot)
     if (!create_audio_playback_task(hourly_chime_task,
                                     kHourlyChimeTaskName,
                                     (void *)(intptr_t)source_slot,
-                                    "hourly chime")) {
+                                    kHourlyChimeLogName)) {
         clear_audio_playing();
         return false;
     }
@@ -175,7 +184,7 @@ bool start_setup_prompt_playback()
     if (!create_audio_playback_task(setup_prompt_task,
                                     kSetupPromptTaskName,
                                     nullptr,
-                                    "setup prompt")) {
+                                    kSetupPromptLogName)) {
         clear_audio_playing();
         g_setup_prompt_pending = true;
         return false;
@@ -197,7 +206,7 @@ void request_setup_prompt_once()
 
 void request_settings_confirmation_chime()
 {
-    if (g_low_battery_mode || g_ota_state == kOtaUpdating) {
+    if (audio_blocked_by_system_state()) {
         return;
     }
     if (start_chime_playback(g_chime_sound_index)) {
@@ -217,7 +226,7 @@ void request_settings_confirmation_chime()
 
 void play_hourly_chime(int hour, bool enforce_quiet_hours)
 {
-    if (g_low_battery_mode || g_ota_state == kOtaUpdating) {
+    if (audio_blocked_by_system_state()) {
         return;
     }
     if (g_wifi_radio_on || g_setup_portal_active || g_ota_state == kOtaChecking) {

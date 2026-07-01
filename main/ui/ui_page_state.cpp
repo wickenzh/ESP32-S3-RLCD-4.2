@@ -4,11 +4,12 @@
 #include "network_services.h"
 
 namespace {
+constexpr int kFirstWorkPage = kWorkPageWeatherClock;
 constexpr int kFallbackWorkPage = kWorkPageWeatherClock;
 
 bool is_work_page_index(int page)
 {
-    return page >= 0 && page < kWorkPageCount;
+    return page >= kFirstWorkPage && page < kWorkPageCount;
 }
 
 template <typename T, size_t N>

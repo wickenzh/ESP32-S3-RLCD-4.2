@@ -3,6 +3,8 @@
 
 #include "ui_views.h"
 
+#include <errno.h>
+
 namespace {
 constexpr uint16_t kRtcMinMonth = 1;
 constexpr uint16_t kRtcMaxMonth = 12;
@@ -185,8 +187,15 @@ void restore_system_time_from_rtc()
     tm_time.tm_min = rtc_time.minute;
     tm_time.tm_sec = rtc_time.second;
     time_t epoch = mktime(&tm_time);
+    if (epoch == (time_t)-1) {
+        ESP_LOGW(TAG, "ignore RTC time: mktime failed");
+        return;
+    }
     struct tm normalized = {};
-    localtime_r(&epoch, &normalized);
+    if (!localtime_r(&epoch, &normalized)) {
+        ESP_LOGW(TAG, "ignore RTC time: localtime normalization failed");
+        return;
+    }
     if (!rtc_date_matches_tm(rtc_time, normalized)) {
         ESP_LOGW(TAG, "ignore normalized RTC time mismatch");
         return;
@@ -194,7 +203,7 @@ void restore_system_time_from_rtc()
     struct timeval now = {};
     now.tv_sec = epoch;
     if (settimeofday(&now, nullptr) != 0) {
-        ESP_LOGW(TAG, "set system time from RTC failed");
+        ESP_LOGW(TAG, "set system time from RTC failed errno=%d", errno);
         return;
     }
     ESP_LOGI(TAG, "system time restored from RTC: %04u-%02u-%02u %02u:%02u:%02u",
@@ -207,7 +216,10 @@ void sync_rtc_from_system_time()
     time_t now;
     time(&now);
     struct tm local = {};
-    localtime_r(&now, &local);
+    if (!localtime_r(&now, &local)) {
+        ESP_LOGW(TAG, "skip RTC sync: localtime failed");
+        return;
+    }
     if (!is_tm_plausible(local)) {
         ESP_LOGW(TAG, "skip RTC sync: system time is not plausible");
         return;

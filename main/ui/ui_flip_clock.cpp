@@ -11,6 +11,9 @@ static constexpr int kCardH = 112;
 static constexpr int kCardY = 66;
 static constexpr int kCardRadius = 8;
 static constexpr int kCardX[kCardCount] = {18, 144, 270};
+static constexpr int kHourCardIndex = 0;
+static constexpr int kMinuteCardIndex = 1;
+static constexpr int kSecondCardIndex = 2;
 static constexpr int kSecondsPerMinute = 60;
 static constexpr int kMinutesPerHour = 60;
 static constexpr int kHoursPerDay = 24;
@@ -22,6 +25,7 @@ static constexpr int kDigitScaleDenominator = 4;
 static constexpr int kDigitBaselineY = 84;
 static constexpr size_t kFlipSensorTextSize = 48;
 static constexpr const char *kFlipSensorPlaceholder = "温度 --.-C  湿度 --%";
+static constexpr const char *kFlipSensorFormat = "温度 %.1fC  湿度 %.0f%%";
 
 void apply_card_rounding(lv_obj_t *canvas)
 {
@@ -47,8 +51,7 @@ void apply_card_rounding(lv_obj_t *canvas)
 bool dseg_pixel_on(const DsegFont &font, const DsegGlyph *glyph, int x, int y)
 {
     uint32_t bit = (uint32_t)y * glyph->width + x;
-    uint8_t byte = font.bitmap[glyph->bitmap_offset + bit / 8];
-    return (byte & (0x80 >> (bit & 7))) != 0;
+    return packed_1bit_bit_is_set(font.bitmap + glyph->bitmap_offset, bit);
 }
 
 void draw_scaled_dseg_digit(lv_obj_t *canvas,
@@ -142,9 +145,9 @@ bool update_flip_sensor_text()
     }
     char text[kFlipSensorTextSize];
     if (g_sensor_ok) {
-        snprintf(text, sizeof(text), "温度 %.1fC  湿度 %.0f%%", g_temperature, g_humidity);
+        snprintf(text, sizeof(text), kFlipSensorFormat, g_temperature, g_humidity);
     } else {
-        snprintf(text, sizeof(text), "%s", kFlipSensorPlaceholder);
+        strlcpy(text, kFlipSensorPlaceholder, sizeof(text));
     }
     return set_label_text_if_changed(g_flip_clock_sensor_label, text);
 }
@@ -165,7 +168,7 @@ void build_flip_clock_page()
 
     build_battery_icon(screen, g_flip_clock_battery_segments);
     build_work_page_status_bar(screen,
-                               5,
+                               kWorkPageFlipClock,
                                &g_flip_clock_date_label,
                                nullptr,
                                &g_flip_clock_status_time_label,
@@ -228,17 +231,17 @@ bool update_flip_clock_page(const struct tm &local)
     int second = local.tm_sec;
     if (hour != g_last_flip_clock_hour) {
         g_last_flip_clock_hour = hour;
-        draw_flip_card(0, hour);
+        draw_flip_card(kHourCardIndex, hour);
         changed = true;
     }
     if (minute != g_last_flip_clock_minute) {
         g_last_flip_clock_minute = minute;
-        draw_flip_card(1, minute);
+        draw_flip_card(kMinuteCardIndex, minute);
         changed = true;
     }
     if (second != g_last_flip_clock_second) {
         g_last_flip_clock_second = second;
-        draw_flip_card(2, second);
+        draw_flip_card(kSecondCardIndex, second);
         changed = true;
     }
 

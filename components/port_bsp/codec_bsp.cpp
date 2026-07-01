@@ -7,6 +7,9 @@
 #include "i2c_bsp.h"
 
 static const char *TAG = "CodecPort";
+static constexpr const char *kCodecNameEs8311 = "es8311";
+static constexpr const char *kCodecNameEs7210 = "es7210";
+static constexpr const char *kCodecNamePlaybackAndRecord = "es8311 & es7210";
 
 extern const uint8_t hourly_chime_pcm_start[] asm("_binary_hourly_chime_pcm_start");
 extern const uint8_t hourly_chime_pcm_end[] asm("_binary_hourly_chime_pcm_end");
@@ -28,7 +31,7 @@ void CodecPort::CodecPort_MusicTask(void *arg) {
 		size_t bytes_write = 0;
   	  	size_t bytes_sizt = hourly_chime_pcm_end - hourly_chime_pcm_start;
   	  	uint8_t *data_ptr = (uint8_t *)hourly_chime_pcm_start;
-		codec->CodecPort_SetInfo("es8311",1,24000,4,16);
+		codec->CodecPort_SetInfo(kCodecNameEs8311,1,24000,4,16);
 		do
 		{
 			codec->CodecPort_PlayWrite(data_ptr, 256);
@@ -43,7 +46,7 @@ void CodecPort::CodecPort_EchoTask(void *arg) {
 	codec->CodecPort_SetSpeakerVol(60);
 	codec->CodecPort_SetMicGain(25);
 	uint8_t *data_ptr = (uint8_t *)heap_caps_malloc(1024 * sizeof(uint8_t), MALLOC_CAP_SPIRAM);
-	codec->CodecPort_SetInfo("es8311 & es7210",1,44100,2,16);
+	codec->CodecPort_SetInfo(kCodecNamePlaybackAndRecord,1,44100,2,16);
 	for(;;)
   	{
   	  	if(ESP_CODEC_DEV_OK == codec->CodecPort_EchoRead(data_ptr, 1024))
@@ -79,13 +82,13 @@ i2cbus_(i2cbus)
     dev_cfg.scl_speed_hz    = 400000;
     err = i2c_master_bus_add_device(I2cMasterBus, &dev_cfg, &I2c_DevEs8311);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "es8311 i2c add failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "%s i2c add failed: %s", kCodecNameEs8311, esp_err_to_name(err));
     }
 
     dev_cfg.device_address  = Es7210Address;
     err = i2c_master_bus_add_device(I2cMasterBus, &dev_cfg, &I2c_DevEs7210);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "es7210 i2c add failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "%s i2c add failed: %s", kCodecNameEs7210, esp_err_to_name(err));
     }
 }
 
@@ -96,14 +99,14 @@ CodecPort::~CodecPort() {
     if (I2c_DevEs8311) {
         esp_err_t err = i2c_master_bus_rm_device(I2c_DevEs8311);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "es8311 i2c remove failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "%s i2c remove failed: %s", kCodecNameEs8311, esp_err_to_name(err));
         }
         I2c_DevEs8311 = nullptr;
     }
     if (I2c_DevEs7210) {
         esp_err_t err = i2c_master_bus_rm_device(I2c_DevEs7210);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "es7210 i2c remove failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "%s i2c remove failed: %s", kCodecNameEs7210, esp_err_to_name(err));
         }
         I2c_DevEs7210 = nullptr;
     }
@@ -113,17 +116,17 @@ CodecPort::~CodecPort() {
 }
 
 void CodecPort::Codec_SetCodecReg(const char *str, uint8_t reg, uint8_t data) {
-    if (!strcmp(str, "es8311"))
+    if (!strcmp(str, kCodecNameEs8311))
         i2cbus_.i2c_write_buff(I2c_DevEs8311, reg, &data, 1);
-    if (!strcmp(str, "es7210"))
+    if (!strcmp(str, kCodecNameEs7210))
         i2cbus_.i2c_write_buff(I2c_DevEs7210, reg, &data, 1);
 }
 
 uint8_t CodecPort::Codec_GetCodecReg(const char *str, uint8_t reg) {
     uint8_t data = 0x00;
-    if (!strcmp(str, "es8311"))
+    if (!strcmp(str, kCodecNameEs8311))
         i2cbus_.i2c_read_buff(I2c_DevEs8311, reg, &data, 1);
-    if (!strcmp(str, "es7210"))
+    if (!strcmp(str, kCodecNameEs7210))
         i2cbus_.i2c_read_buff(I2c_DevEs7210, reg, &data, 1);
     return data;
 }
@@ -178,10 +181,10 @@ bool CodecPort::CodecPort_SetInfo(const char *strName,int open_en,int sample_rat
 	if(open_en) {
         if (!initialized) return false;
         int ret = ESP_CODEC_DEV_OK;
-		if(!strcmp(strName,"es8311")) {
+		if(!strcmp(strName,kCodecNameEs8311)) {
 			ret = esp_codec_dev_open(playback, &fs);
             speaker_open = ret == ESP_CODEC_DEV_OK;
-		} else if(!strcmp(strName,"es7210")) {
+		} else if(!strcmp(strName,kCodecNameEs7210)) {
 			ret = esp_codec_dev_open(record, &fs);
             mic_open = ret == ESP_CODEC_DEV_OK;
 		} else {
@@ -232,7 +235,7 @@ static bool play_pcm_to_slot0(CodecPort *codec, const uint8_t *pcm_start, const 
         ESP_LOGW(TAG, "invalid pcm range");
         return false;
     }
-    if (!codec->CodecPort_SetInfo("es8311", 1, 24000, 4, 16)) {
+    if (!codec->CodecPort_SetInfo(kCodecNameEs8311, 1, 24000, 4, 16)) {
         return false;
     }
     codec->CodecPort_SetSpeakerVol(0);

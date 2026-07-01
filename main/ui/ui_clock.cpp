@@ -8,13 +8,21 @@
 
 namespace {
 constexpr int kChimeVolumeLevels[] = {20, 40, 60, 80, 100};
-constexpr int kChimeVolumeLevelCount = sizeof(kChimeVolumeLevels) / sizeof(kChimeVolumeLevels[0]);
+template <typename T, size_t N>
+constexpr size_t array_count(const T (&)[N])
+{
+    return N;
+}
+
+constexpr int kChimeVolumeLevelCount = static_cast<int>(array_count(kChimeVolumeLevels));
 constexpr int kDefaultChimeVolumePercent = kChimeVolumeLevels[0];
 constexpr int kSettingsFeedbackDefaultMs = 2500;
 constexpr int kSettingsFeedbackBusyMs = 2000;
 constexpr int kSettingsFeedbackSavedMs = 1800;
 constexpr int kSettingsFeedbackInstructionMs = 3500;
+constexpr const char *kSettingsOfflineEnabledFeedback = "离线模式已开启";
 constexpr size_t kSettingsFeedbackTextSize = 32;
+constexpr size_t kClockDateTextSize = 48;
 constexpr int kTmYearOffset = 1900;
 constexpr int kTmMonthOffset = 1;
 constexpr int kSecondsPerMinute = 60;
@@ -338,10 +346,10 @@ void build_clock_ui()
         "STA SSID: --",
         "STA IP: --",
     };
-    constexpr size_t kSetupStatusLabelCount = sizeof(setup_y) / sizeof(setup_y[0]);
-    static_assert(kSetupStatusLabelCount == sizeof(setup_text) / sizeof(setup_text[0]),
+    constexpr size_t kSetupStatusLabelCount = array_count(setup_y);
+    static_assert(kSetupStatusLabelCount == array_count(setup_text),
                   "setup status coordinates and text must stay in sync");
-    static_assert(kSetupStatusLabelCount == sizeof(g_setup_status_labels) / sizeof(g_setup_status_labels[0]),
+    static_assert(kSetupStatusLabelCount == array_count(g_setup_status_labels),
                   "setup status label storage must match the rendered row count");
     for (size_t i = 0; i < kSetupStatusLabelCount; ++i) {
         g_setup_status_labels[i] = make_label_with_font(screen,
@@ -386,7 +394,7 @@ bool update_time_ui(const struct tm &local, bool clock_page_active, int active_w
                         : active_work_page;
     if (date_key != g_last_ui_date_key || date_page != g_last_ui_date_page) {
         static const char *week_days[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
-        char date[48];
+        char date[kClockDateTextSize];
         snprintf(date, sizeof(date), "%04d/%02d/%02d / %s",
                  local.tm_year + kTmYearOffset,
                  local.tm_mon + kTmMonthOffset,
@@ -498,7 +506,7 @@ void handle_settings_action()
             return;
         }
         if (g_offline_mode_ui_enabled) {
-            set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
+            set_settings_feedback(kSettingsOfflineEnabledFeedback, kSettingsFeedbackDefaultMs);
             return;
         }
         if (selected == kNetworkSettingsNtpItem) {
@@ -615,7 +623,7 @@ void handle_settings_action()
                     return;
                 }
                 g_offline_disable_confirm_pending = false;
-                set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
+                set_settings_feedback(kSettingsOfflineEnabledFeedback, kSettingsFeedbackDefaultMs);
                 return;
             }
             if (can_leave_offline_mode_without_setup()) {
@@ -640,7 +648,7 @@ void handle_settings_action()
             set_settings_feedback("请完成配网后关闭", kSettingsFeedbackInstructionMs);
         } else if (selected == kSystemSettingsNetworkDiagItem) {
             if (g_offline_mode_ui_enabled) {
-                set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
+                set_settings_feedback(kSettingsOfflineEnabledFeedback, kSettingsFeedbackDefaultMs);
                 return;
             }
             begin_settings_sync(kSettingsSyncNetworkDiag, "正在网络检测...");
@@ -682,7 +690,7 @@ void handle_settings_action()
             ESP_LOGI(TAG, "system info requested from settings");
         } else if (selected == kSystemSettingsOtaItem) {
             if (g_offline_mode_ui_enabled) {
-                set_settings_feedback("离线模式已开启", kSettingsFeedbackDefaultMs);
+                set_settings_feedback(kSettingsOfflineEnabledFeedback, kSettingsFeedbackDefaultMs);
                 return;
             }
             ota_handle_info_key();

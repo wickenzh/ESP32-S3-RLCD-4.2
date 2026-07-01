@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <time.h>
 
+constexpr size_t kCalendarLunarSubtextSize = 16;
+
 struct CalendarDayInfo {
     int year = 0;
     int month = 0;
@@ -12,7 +14,7 @@ struct CalendarDayInfo {
     int lunar_month = 0;
     int lunar_day = 0;
     bool lunar_leap = false;
-    char subtext[16] = {};
+    char subtext[kCalendarLunarSubtextSize] = {};
 };
 
 bool calendar_day_info(const struct tm &local, CalendarDayInfo *info);

@@ -157,6 +157,21 @@ static uint16_t packed_1bit_bytes_per_row(uint16_t width)
     return (width + kBitsPerByte - 1) / kBitsPerByte;
 }
 
+static size_t custom_asset_entry_table_bytes()
+{
+    return (size_t)s_entry_count * sizeof(CustomAssetEntry);
+}
+
+static size_t custom_asset_header_bytes()
+{
+    return sizeof(CustomAssetsHeader) + custom_asset_entry_table_bytes();
+}
+
+static size_t custom_asset_gallery_image_bytes()
+{
+    return (size_t)CLOCK_GALLERY_IMAGE_BYTES_PER_ROW * CLOCK_GALLERY_IMAGE_HEIGHT;
+}
+
 static bool validate_entry_shape(const CustomAssetEntry &entry)
 {
     bool valid = false;
@@ -170,7 +185,7 @@ static bool validate_entry_shape(const CustomAssetEntry &entry)
                 row_ok &&
                 entry.length == expected;
     } else if (entry.type == kCustomAssetTypeGalleryImage) {
-        size_t expected = (size_t)CLOCK_GALLERY_IMAGE_BYTES_PER_ROW * CLOCK_GALLERY_IMAGE_HEIGHT;
+        size_t expected = custom_asset_gallery_image_bytes();
         valid = entry.index < kCustomAssetMaxGalleryImages &&
                 entry.width == CLOCK_GALLERY_IMAGE_WIDTH &&
                 entry.height == CLOCK_GALLERY_IMAGE_HEIGHT &&
@@ -207,14 +222,14 @@ static bool validate_entry_crc(const CustomAssetEntry &entry)
 
 static bool validate_header_crc()
 {
-    size_t header_bytes = sizeof(CustomAssetsHeader) + (size_t)s_entry_count * sizeof(CustomAssetEntry);
+    size_t header_bytes = custom_asset_header_bytes();
     CustomAssetTempBuffer buffer(header_bytes);
     if (!buffer.data()) {
         ESP_LOGW(TAG, "custom assets header crc alloc failed");
         return false;
     }
     memcpy(buffer.data(), &s_assets_header, sizeof(CustomAssetsHeader));
-    memcpy(buffer.data() + sizeof(CustomAssetsHeader), s_entries, (size_t)s_entry_count * sizeof(CustomAssetEntry));
+    memcpy(buffer.data() + sizeof(CustomAssetsHeader), s_entries, custom_asset_entry_table_bytes());
     CustomAssetsHeader *header = (CustomAssetsHeader *)buffer.data();
     header->header_crc = 0;
     uint32_t crc = crc32_bytes(buffer.data(), header_bytes);
@@ -328,7 +343,7 @@ void custom_assets_init()
         return;
     }
     s_entry_count = s_assets_header.entry_count;
-    size_t min_header_size = sizeof(CustomAssetsHeader) + (size_t)s_entry_count * sizeof(CustomAssetEntry);
+    size_t min_header_size = custom_asset_header_bytes();
     if (s_assets_header.header_size != min_header_size ||
         s_assets_header.total_size <= s_assets_header.header_size ||
         s_assets_header.total_size > s_assets_partition->size) {
@@ -336,7 +351,7 @@ void custom_assets_init()
         reset_custom_assets();
         return;
     }
-    if (!read_checked(sizeof(CustomAssetsHeader), s_entries, (size_t)s_entry_count * sizeof(CustomAssetEntry))) {
+    if (!read_checked(sizeof(CustomAssetsHeader), s_entries, custom_asset_entry_table_bytes())) {
         ESP_LOGW(TAG, "custom assets diag: entries read failed");
         reset_custom_assets();
         return;
@@ -437,7 +452,7 @@ bool custom_assets_read_gallery_image(int index, uint8_t *out, size_t out_len)
     if (s_gallery_count <= 0 || !out) {
         return false;
     }
-    size_t expected = (size_t)CLOCK_GALLERY_IMAGE_BYTES_PER_ROW * CLOCK_GALLERY_IMAGE_HEIGHT;
+    size_t expected = custom_asset_gallery_image_bytes();
     if (out_len < expected) {
         return false;
     }

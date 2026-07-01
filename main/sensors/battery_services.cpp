@@ -21,6 +21,22 @@ static constexpr int kBatteryPercentMin = 0;
 static constexpr int kBatteryPercentMax = 100;
 static constexpr int kBatteryPercentUnknown = -1;
 
+static int clamp_battery_percent(int percent)
+{
+    if (percent < kBatteryPercentMin) {
+        return kBatteryPercentMin;
+    }
+    if (percent > kBatteryPercentMax) {
+        return kBatteryPercentMax;
+    }
+    return percent;
+}
+
+static bool previous_battery_voltage_valid(float voltage)
+{
+    return voltage >= kBatteryValidPreviousVoltageMin;
+}
+
 void release_battery_gauge()
 {
     if (g_battery_adc_cali_ready && g_battery_adc_cali) {
@@ -92,9 +108,7 @@ int battery_percent_from_voltage(float voltage)
 {
     int percent = (int)(((voltage - kBatteryEmptyVoltage) * kBatteryPercentScale /
                          kBatteryVoltageRange) + kBatteryPercentRoundOffset);
-    if (percent < kBatteryPercentMin) return kBatteryPercentMin;
-    if (percent > kBatteryPercentMax) return kBatteryPercentMax;
-    return percent;
+    return clamp_battery_percent(percent);
 }
 
 int battery_adc_raw_to_mv(int raw)
@@ -149,7 +163,7 @@ void sample_battery()
     float previous_voltage = g_battery_voltage;
     if (read_battery_percent(&percent)) {
         g_battery_percent = percent;
-        if (previous_voltage >= kBatteryValidPreviousVoltageMin) {
+        if (previous_battery_voltage_valid(previous_voltage)) {
             float delta = g_battery_voltage - previous_voltage;
             if (delta >= kBatteryChargingRiseVoltage) {
                 if (charging_rise_samples < kBatteryChargingRiseSamples) {

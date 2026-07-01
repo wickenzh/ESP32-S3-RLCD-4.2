@@ -5,13 +5,22 @@
 
 #include "sdkconfig.h"
 
+#define NTP_SYNCED_LOG_FORMAT "ntp synced: %04d-%02d-%02d %02d:%02d:%02d"
+#define NTP_TIMEOUT_LOG_FORMAT "ntp sync timeout retries=%d poll_ms=%lu"
+
 namespace {
 constexpr const char *const kNtpServers[] = {
     "pool.ntp.org",
     "ntp.aliyun.com",
     "time.windows.com",
 };
-constexpr size_t kNtpServerCount = sizeof(kNtpServers) / sizeof(kNtpServers[0]);
+template <typename T, size_t N>
+constexpr size_t array_count(const T (&)[N])
+{
+    return N;
+}
+
+constexpr size_t kNtpServerCount = array_count(kNtpServers);
 constexpr size_t kDefaultConfiguredNtpServerSlots = 1;
 #ifdef CONFIG_LWIP_SNTP_MAX_SERVERS
 constexpr size_t kConfiguredNtpServerSlots = CONFIG_LWIP_SNTP_MAX_SERVERS;
@@ -49,7 +58,7 @@ void configure_ntp_servers()
 
 void log_ntp_synced_time(const struct tm &local)
 {
-    ESP_LOGI(TAG, "ntp synced: %04d-%02d-%02d %02d:%02d:%02d",
+    ESP_LOGI(TAG, NTP_SYNCED_LOG_FORMAT,
              local.tm_year + kTmYearOffset, local.tm_mon + kTmMonthOffset, local.tm_mday,
              local.tm_hour, local.tm_min, local.tm_sec);
 }
@@ -89,7 +98,7 @@ bool perform_ntp_sync(int max_retries)
         }
         vTaskDelay(pdMS_TO_TICKS(kNtpPollDelayMs));
     }
-    ESP_LOGW(TAG, "ntp sync timeout retries=%d poll_ms=%lu",
+    ESP_LOGW(TAG, NTP_TIMEOUT_LOG_FORMAT,
              max_retries,
              (unsigned long)kNtpPollDelayMs);
     return false;

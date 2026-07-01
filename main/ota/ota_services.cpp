@@ -46,12 +46,30 @@ static constexpr int kSemverComponentCount = 3;
 static constexpr size_t kSha256ByteCount = 32;
 static constexpr size_t kSha256HexLen = kSha256ByteCount * 2;
 static constexpr size_t kOtaDownloadStatusTextLen = 48;
+static constexpr int64_t kOtaUsPerMs = 1000;
+static constexpr int64_t kOtaUsPerSecond = 1000000;
+static constexpr int kOtaBytesPerKiB = 1024;
 static constexpr uint32_t kOtaFailureHoldMs = 5000;
 static constexpr uint32_t kOtaSuccessHoldMs = 6000;
 static constexpr uint32_t kOtaOfflineHoldMs = 3500;
 static constexpr uint32_t kOtaRebootNoticeDelayMs = 3500;
 static constexpr uint32_t kOtaWifiConnectTimeoutMs = 45000;
 static constexpr TickType_t kOtaReadRetryDelay = pdMS_TO_TICKS(100);
+static constexpr const char *kOtaStatusCheckFailed = "Check failed";
+static constexpr const char *kOtaStatusCheckingUpdate = "Checking update";
+static constexpr const char *kOtaStatusAlreadyLatest = "Already latest";
+static constexpr const char *kOtaStatusDownloadFailed = "Download failed";
+static constexpr const char *kOtaStatusVerifyFailed = "Verify failed";
+static constexpr const char *kOtaStatusUpdateFailed = "Update failed";
+static constexpr const char *kOtaStatusUpdateDoneRebooting = "Update done. Rebooting...";
+static constexpr const char *kOtaStatusNoWifi = "No WiFi";
+static constexpr const char *kOtaStatusLowBattery = "Low battery";
+static constexpr const char *kOtaStatusWifiFailed = "WiFi failed";
+static constexpr const char *kOtaStatusNoOtaSlot = "No OTA slot";
+static constexpr const char *kOtaStatusNoMemory = "No memory";
+static constexpr const char *kOtaStatusOfflineMode = "Offline mode";
+static constexpr const char *kOtaStatusInstallingUpdate = "Installing update 0%";
+static constexpr const char *kOtaStatusInstallingBackup = "Installing backup 0%";
 
 static void log_ota_heap(const char *stage, int downloaded, int progress)
 {
@@ -212,6 +230,27 @@ static void ota_set_status(int state, const char *text, int progress = -1, uint3
     notify_ui_task();
 }
 
+static void load_cached_manifest(OtaManifest *manifest)
+{
+    if (!manifest) {
+        return;
+    }
+    strlcpy(manifest->version, g_ota_version, sizeof(manifest->version));
+    strlcpy(manifest->url, g_ota_url, sizeof(manifest->url));
+    strlcpy(manifest->sha256, g_ota_sha256, sizeof(manifest->sha256));
+    strlcpy(manifest->notes, g_ota_notes, sizeof(manifest->notes));
+    manifest->size = g_ota_size;
+}
+
+static void store_cached_manifest(const OtaManifest &manifest)
+{
+    strlcpy(g_ota_version, manifest.version, sizeof(g_ota_version));
+    strlcpy(g_ota_url, manifest.url, sizeof(g_ota_url));
+    strlcpy(g_ota_sha256, manifest.sha256, sizeof(g_ota_sha256));
+    strlcpy(g_ota_notes, manifest.notes, sizeof(g_ota_notes));
+    g_ota_size = manifest.size;
+}
+
 static void cleanup_ota_http_client(esp_http_client_handle_t *client)
 {
     if (!client || !*client) {
@@ -310,7 +349,7 @@ void ota_handle_info_key()
     ota_reset_status_if_idle();
     if (g_offline_mode_ui_enabled) {
         keep_ota_settings_panel_visible();
-        ota_set_status(kOtaFailed, "Offline mode", -1, kOtaOfflineHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusOfflineMode, -1, kOtaOfflineHoldMs);
         return;
     }
     if (g_ota_state == kOtaChecking || g_ota_state == kOtaUpdating) {
@@ -322,14 +361,14 @@ void ota_handle_info_key()
             return;
         }
         g_ota_speed_kbps = -1;
-        ota_set_status(kOtaUpdating, "Installing update 0%", 0);
+        ota_set_status(kOtaUpdating, kOtaStatusInstallingUpdate, 0);
         g_info_page_until_tick = 0;
         return;
     }
     if (!set_ota_event_bit(kOtaCheckBit, "check")) {
         return;
     }
-    ota_set_status(kOtaChecking, "Checking update");
+    ota_set_status(kOtaChecking, kOtaStatusCheckingUpdate);
     g_info_page_until_tick = 0;
 }
 
@@ -474,7 +513,7 @@ static bool ota_manifest_source_valid(const OtaManifestSource &source)
 static bool fetch_ota_manifest_from_source(const OtaManifestSource &source, OtaManifest *manifest)
 {
     if (!manifest) {
-        ota_set_status(kOtaFailed, "Check failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusCheckFailed, -1, kOtaFailureHoldMs);
         return false;
     }
     if (!ota_manifest_source_valid(source)) {
@@ -484,7 +523,7 @@ static bool fetch_ota_manifest_from_source(const OtaManifestSource &source, OtaM
     OtaManifestResponseBuffer response(kOtaManifestResponseBufferSize);
     if (!response.data()) {
         ESP_LOGW(TAG, "OTA manifest response alloc failed");
-        ota_set_status(kOtaFailed, "Check failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusCheckFailed, -1, kOtaFailureHoldMs);
         return false;
     }
     esp_err_t err = http_get_text(source.url, response.data(), kOtaManifestResponseBufferSize);
@@ -510,7 +549,7 @@ static bool fetch_ota_manifest(OtaManifest *manifest, char *source_name = nullpt
             return true;
         }
     }
-    ota_set_status(kOtaFailed, "Check failed", -1, kOtaFailureHoldMs);
+    ota_set_status(kOtaFailed, kOtaStatusCheckFailed, -1, kOtaFailureHoldMs);
     return false;
 }
 
@@ -541,13 +580,13 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
 {
     if (manifest.url[0] == '\0' || !valid_sha256_string(manifest.sha256)) {
         ESP_LOGW(TAG, "OTA manifest invalid for install");
-        ota_set_status(kOtaFailed, "Download failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusDownloadFailed, -1, kOtaFailureHoldMs);
         return false;
     }
     ota_note_phase(1, 0, 0);
     const esp_partition_t *update_partition = esp_ota_get_next_update_partition(nullptr);
     if (!update_partition) {
-        ota_set_status(kOtaFailed, "No OTA slot", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusNoOtaSlot, -1, kOtaFailureHoldMs);
         return false;
     }
 
@@ -588,7 +627,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
 
         client = esp_http_client_init(&config);
         if (!client) {
-            ota_set_status(kOtaFailed, "Download failed", -1, kOtaFailureHoldMs);
+            ota_set_status(kOtaFailed, kOtaStatusDownloadFailed, -1, kOtaFailureHoldMs);
             return false;
         }
         esp_http_client_set_header(client, "Accept", "application/octet-stream,*/*");
@@ -596,7 +635,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "OTA http open failed: %s", esp_err_to_name(err));
             cleanup_ota_http_client(&client);
-            ota_set_status(kOtaFailed, "Download failed", -1, kOtaFailureHoldMs);
+            ota_set_status(kOtaFailed, kOtaStatusDownloadFailed, -1, kOtaFailureHoldMs);
             return false;
         }
         content_len = esp_http_client_fetch_headers(client);
@@ -605,7 +644,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
             ESP_LOGI(TAG, "OTA redirect status=%d location=%s", status, redirect_url[0] ? redirect_url : "--");
             close_ota_http_client(&client);
             if (redirect_url[0] == '\0' || strlen(redirect_url) >= sizeof(current_url)) {
-                ota_set_status(kOtaFailed, "Download failed", -1, kOtaFailureHoldMs);
+                ota_set_status(kOtaFailed, kOtaStatusDownloadFailed, -1, kOtaFailureHoldMs);
                 return false;
             }
             strlcpy(current_url, redirect_url, sizeof(current_url));
@@ -614,14 +653,14 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
         if (status < 200 || status >= 300) {
             ESP_LOGW(TAG, "OTA http status=%d content_len=%d", status, content_len);
             close_ota_http_client(&client);
-            ota_set_status(kOtaFailed, "Download failed", -1, kOtaFailureHoldMs);
+            ota_set_status(kOtaFailed, kOtaStatusDownloadFailed, -1, kOtaFailureHoldMs);
             return false;
         }
         break;
     }
     if (!client) {
         ESP_LOGW(TAG, "OTA redirect limit reached");
-        ota_set_status(kOtaFailed, "Download failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusDownloadFailed, -1, kOtaFailureHoldMs);
         return false;
     }
 
@@ -631,7 +670,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "OTA begin failed: %s", esp_err_to_name(err));
         close_ota_http_client(&client);
-        ota_set_status(kOtaFailed, "Update failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusUpdateFailed, -1, kOtaFailureHoldMs);
         return false;
     }
 
@@ -639,7 +678,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
     if (!buffer.data()) {
         esp_ota_abort(ota_handle);
         close_ota_http_client(&client);
-        ota_set_status(kOtaFailed, "No memory", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusNoMemory, -1, kOtaFailureHoldMs);
         return false;
     }
 
@@ -660,7 +699,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
     for (;;) {
         wdt.reset();
         int64_t now_us = esp_timer_get_time();
-        if (now_us - started_us > (int64_t)kOtaMaxDownloadMs * 1000) {
+        if (now_us - started_us > (int64_t)kOtaMaxDownloadMs * kOtaUsPerMs) {
             ESP_LOGW(TAG, "OTA download timed out total=%d", total);
             ok = false;
             break;
@@ -668,7 +707,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
         int read = esp_http_client_read(client, (char *)buffer.data(), kOtaDownloadBufferSize);
         wdt.reset();
         if (read < 0) {
-            if (esp_timer_get_time() - last_progress_us > (int64_t)kOtaNoProgressTimeoutMs * 1000) {
+            if (esp_timer_get_time() - last_progress_us > (int64_t)kOtaNoProgressTimeoutMs * kOtaUsPerMs) {
                 ESP_LOGW(TAG, "OTA read failed with no progress total=%d", total);
                 ok = false;
                 break;
@@ -680,7 +719,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
             if (esp_http_client_is_complete_data_received(client)) {
                 break;
             }
-            if (esp_timer_get_time() - last_progress_us > (int64_t)kOtaNoProgressTimeoutMs * 1000) {
+            if (esp_timer_get_time() - last_progress_us > (int64_t)kOtaNoProgressTimeoutMs * kOtaUsPerMs) {
                 ESP_LOGW(TAG, "OTA stalled total=%d", total);
                 ok = false;
                 break;
@@ -713,12 +752,12 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
             int64_t now_us = esp_timer_get_time();
             int speed_kbps = 0;
             if (elapsed_us > 0) {
-                speed_kbps = (int)((int64_t)total * 1000000 / elapsed_us / 1024);
+                speed_kbps = (int)((int64_t)total * kOtaUsPerSecond / elapsed_us / kOtaBytesPerKiB);
             }
             bool progress_step = progress != last_progress;
             bool speed_step = last_speed_kbps < 0 || abs(speed_kbps - last_speed_kbps) >= 8;
             bool status_due = last_status_us == 0 ||
-                              now_us - last_status_us >= (int64_t)kOtaStatusMinIntervalMs * 1000 ||
+                              now_us - last_status_us >= (int64_t)kOtaStatusMinIntervalMs * kOtaUsPerMs ||
                               progress >= 100;
             if (progress_step && status_due) {
                 char status_text[kOtaDownloadStatusTextLen];
@@ -745,7 +784,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
 
     if (!ok || !complete) {
         esp_ota_abort(ota_handle);
-        ota_set_status(kOtaFailed, "Download failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusDownloadFailed, -1, kOtaFailureHoldMs);
         return false;
     }
 
@@ -755,7 +794,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
     if (strcasecmp(actual_sha, manifest.sha256) != 0) {
         ESP_LOGW(TAG, "OTA sha mismatch expected=%s actual=%s", manifest.sha256, actual_sha);
         esp_ota_abort(ota_handle);
-        ota_set_status(kOtaFailed, "Verify failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusVerifyFailed, -1, kOtaFailureHoldMs);
         return false;
     }
 
@@ -764,14 +803,14 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
     err = esp_ota_end(ota_handle);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "OTA end failed: %s", esp_err_to_name(err));
-        ota_set_status(kOtaFailed, "Update failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusUpdateFailed, -1, kOtaFailureHoldMs);
         return false;
     }
     esp_app_desc_t app_desc = {};
     err = esp_ota_get_partition_description(update_partition, &app_desc);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "OTA app description failed: %s", esp_err_to_name(err));
-        ota_set_status(kOtaFailed, "Verify failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusVerifyFailed, -1, kOtaFailureHoldMs);
         return false;
     }
     ESP_LOGI(TAG, "OTA image ready: version=%s project=%s", app_desc.version, app_desc.project_name);
@@ -780,11 +819,11 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
     err = esp_ota_set_boot_partition(update_partition);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "OTA boot partition failed: %s", esp_err_to_name(err));
-        ota_set_status(kOtaFailed, "Update failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusUpdateFailed, -1, kOtaFailureHoldMs);
         return false;
     }
 
-    ota_set_status(kOtaSucceeded, "Update done. Rebooting...", 100, kOtaSuccessHoldMs);
+    ota_set_status(kOtaSucceeded, kOtaStatusUpdateDoneRebooting, 100, kOtaSuccessHoldMs);
     s_ota_breadcrumb.magic = 0;
     return true;
 }
@@ -792,23 +831,23 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
 static bool prepare_ota_wifi()
 {
     if (!g_have_wifi_creds) {
-        ota_set_status(kOtaFailed, "No WiFi", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusNoWifi, -1, kOtaFailureHoldMs);
         return false;
     }
     if (g_low_battery_mode || (g_battery_percent >= 0 && g_battery_percent < kLowBatteryEnterPercent)) {
-        ota_set_status(kOtaFailed, "Low battery", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusLowBattery, -1, kOtaFailureHoldMs);
         return false;
     }
     acquire_network_awake_lock();
     if (!start_wifi_radio(false)) {
         release_network_awake_lock();
-        ota_set_status(kOtaFailed, "WiFi failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusWifiFailed, -1, kOtaFailureHoldMs);
         return false;
     }
     if (!wait_for_wifi_connected(kOtaWifiConnectTimeoutMs)) {
         stop_wifi_radio();
         release_network_awake_lock();
-        ota_set_status(kOtaFailed, "WiFi failed", -1, kOtaFailureHoldMs);
+        ota_set_status(kOtaFailed, kOtaStatusWifiFailed, -1, kOtaFailureHoldMs);
         return false;
     }
     return true;
@@ -846,13 +885,9 @@ void ota_task(void *)
 
         OtaManifest manifest;
         if (install) {
-            strlcpy(manifest.version, g_ota_version, sizeof(manifest.version));
-            strlcpy(manifest.url, g_ota_url, sizeof(manifest.url));
-            strlcpy(manifest.sha256, g_ota_sha256, sizeof(manifest.sha256));
-            strlcpy(manifest.notes, g_ota_notes, sizeof(manifest.notes));
-            manifest.size = g_ota_size;
+            load_cached_manifest(&manifest);
         } else {
-            ota_set_status(kOtaChecking, "Checking update");
+            ota_set_status(kOtaChecking, kOtaStatusCheckingUpdate);
             char manifest_source[kOtaManifestSourceNameLen] = {};
             if (!fetch_ota_manifest(&manifest, manifest_source, sizeof(manifest_source))) {
                 finish_ota_wifi();
@@ -865,16 +900,12 @@ void ota_task(void *)
                      manifest.version,
                      APP_VERSION);
             if (compare_versions(manifest.version, APP_VERSION) <= 0) {
-                ota_set_status(kOtaNoUpdate, "Already latest", -1, kOtaFailureHoldMs);
+                ota_set_status(kOtaNoUpdate, kOtaStatusAlreadyLatest, -1, kOtaFailureHoldMs);
                 finish_ota_wifi();
                 g_info_page_until_tick = xTaskGetTickCount() + pdMS_TO_TICKS(kOtaFailureHoldMs);
                 continue;
             }
-            strlcpy(g_ota_version, manifest.version, sizeof(g_ota_version));
-            strlcpy(g_ota_url, manifest.url, sizeof(g_ota_url));
-            strlcpy(g_ota_sha256, manifest.sha256, sizeof(g_ota_sha256));
-            strlcpy(g_ota_notes, manifest.notes, sizeof(g_ota_notes));
-            g_ota_size = manifest.size;
+            store_cached_manifest(manifest);
             char status_text[kOtaStatusLen];
             snprintf(status_text, sizeof(status_text), "New version %s", manifest.version);
             ota_set_status(kOtaAvailable, status_text, -1, kOtaAvailableConfirmTimeoutMs);
@@ -888,14 +919,14 @@ void ota_task(void *)
             if (fetch_backup_manifest_for_install(manifest, &backup_manifest) &&
                 strcmp(backup_manifest.url, manifest.url) != 0) {
                 ESP_LOGW(TAG, "OTA primary download failed, retrying GitHub backup");
-                ota_set_status(kOtaUpdating, "Installing backup 0%", 0);
+                ota_set_status(kOtaUpdating, kOtaStatusInstallingBackup, 0);
                 ok = download_and_apply_ota(backup_manifest);
             }
         }
         finish_ota_wifi();
         if (ok) {
             keep_ota_settings_panel_visible();
-            ota_set_status(kOtaSucceeded, "Update done. Rebooting...", 100, kOtaSuccessHoldMs);
+            ota_set_status(kOtaSucceeded, kOtaStatusUpdateDoneRebooting, 100, kOtaSuccessHoldMs);
             vTaskDelay(pdMS_TO_TICKS(kOtaRebootNoticeDelayMs));
             esp_restart();
         } else {

@@ -30,6 +30,8 @@ struct ForecastCardUi {
 ForecastCardUi s_cards[kWeatherForecastDays];
 constexpr int kTmYearOffset = 1900;
 constexpr int kTmMonthOffset = 1;
+constexpr const char *kForecastDateFormat = "%d-%d-%d";
+constexpr int kForecastDateFieldCount = 3;
 constexpr const char *kWeatherBoardDash = "--";
 constexpr const char *kWeatherBoardShortDatePlaceholder = "--/--";
 constexpr const char *kWeatherBoardUnknownIcon = "999";
@@ -43,8 +45,31 @@ constexpr const char *kWeatherBoardTimePlaceholder = "--:--";
 constexpr const char *kWeatherBoardSunrisePlaceholder = "日出 --:--";
 constexpr const char *kWeatherBoardSunsetPlaceholder = "日落 --:--";
 constexpr const char *kWeatherBoardAlertPlaceholder = "预警 --";
+constexpr const char *kWeatherBoardAlertPrefix = "预警 ";
+constexpr const char *kWeatherBoardAlertSeparator = " / ";
 constexpr const char *kWeatherBoardAdvicePlaceholder = "等待更多天气数据";
+constexpr int kWeatherBoardMaxAlertTitles = 3;
+constexpr int kWeatherBoardWeekdayCount = 7;
+constexpr const char *kWeatherBoardWeekdayNames[kWeatherBoardWeekdayCount] = {
+    "周日", "周一", "周二", "周三", "周四", "周五", "周六",
+};
+constexpr const char *kForecastShortDateFormat = "%d日";
+constexpr const char *kForecastDateLineFormat = "%s\n%s";
+constexpr const char *kForecastTempRangeFormat = "%s/%s";
+constexpr const char *kWeatherBoardCurrentUnitText = "C";
+constexpr const char *kWeatherBoardTodayRangeFormat = "今日 %s/%sC";
+constexpr const char *kWeatherBoardAirFormat = "AQI %s %s";
+constexpr const char *kWeatherBoardHumidityFormat = "湿度 %s%%";
+constexpr const char *kWeatherBoardWindFormat = "%s %s级";
+constexpr const char *kWeatherBoardSunriseFormat = "日出 %s";
+constexpr const char *kWeatherBoardSunsetFormat = "日落 %s";
 constexpr int kForecastCardX[kWeatherForecastDays] = {138, 180, 222, 264, 306, 348};
+template <typename T, size_t N>
+constexpr size_t array_count(const T (&)[N])
+{
+    return N;
+}
+
 constexpr int kForecastCardY = 66;
 constexpr int kForecastCardW = 34;
 constexpr int kForecastCardH = 126;
@@ -65,7 +90,7 @@ constexpr size_t kWeatherBoardAirLineSize = 40;
 constexpr size_t kWeatherBoardWindLineSize = 48;
 constexpr size_t kWeatherBoardSunTimeLineSize = 24;
 constexpr size_t kWeatherBoardAlertLineSize = 160;
-static_assert(sizeof(kForecastCardX) / sizeof(kForecastCardX[0]) == kWeatherForecastDays,
+static_assert(array_count(kForecastCardX) == kWeatherForecastDays,
               "weather forecast card positions must match forecast day count");
 
 void set_weather_label_align(lv_obj_t *label, lv_text_align_t align)
@@ -126,11 +151,10 @@ const char *weather_icon_or_default(const char *icon)
 
 const char *weekday_name_from_date(const char *date)
 {
-    static const char *names[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
     int year = 0;
     int month = 0;
     int day = 0;
-    if (!date || sscanf(date, "%d-%d-%d", &year, &month, &day) != 3) {
+    if (!date || sscanf(date, kForecastDateFormat, &year, &month, &day) != kForecastDateFieldCount) {
         return kWeatherBoardDash;
     }
     struct tm tm_value = {};
@@ -143,7 +167,10 @@ const char *weekday_name_from_date(const char *date)
         return kWeatherBoardDash;
     }
     localtime_r(&epoch, &tm_value);
-    return names[tm_value.tm_wday];
+    if (tm_value.tm_wday < 0 || tm_value.tm_wday >= kWeatherBoardWeekdayCount) {
+        return kWeatherBoardDash;
+    }
+    return kWeatherBoardWeekdayNames[tm_value.tm_wday];
 }
 
 void format_short_date(const char *date, char *out, size_t out_len)
@@ -154,11 +181,11 @@ void format_short_date(const char *date, char *out, size_t out_len)
     if (!out || out_len == 0) {
         return;
     }
-    if (!date || sscanf(date, "%d-%d-%d", &year, &month, &day) != 3) {
+    if (!date || sscanf(date, kForecastDateFormat, &year, &month, &day) != kForecastDateFieldCount) {
         strlcpy(out, kWeatherBoardShortDatePlaceholder, out_len);
         return;
     }
-    snprintf(out, out_len, "%d日", day);
+    snprintf(out, out_len, kForecastShortDateFormat, day);
 }
 
 bool update_forecast_card(ForecastCardUi &card, const WeatherForecastDay *day)
@@ -175,8 +202,8 @@ bool update_forecast_card(ForecastCardUi &card, const WeatherForecastDay *day)
     char date_short[kForecastShortDateSize];
     char temp_range[kForecastTempRangeSize];
     format_short_date(day->date, date_short, sizeof(date_short));
-    snprintf(date_line, sizeof(date_line), "%s\n%s", weekday_name_from_date(day->date), date_short);
-    snprintf(temp_range, sizeof(temp_range), "%s/%s", text_or_dash(day->temp_min), text_or_dash(day->temp_max));
+    snprintf(date_line, sizeof(date_line), kForecastDateLineFormat, weekday_name_from_date(day->date), date_short);
+    snprintf(temp_range, sizeof(temp_range), kForecastTempRangeFormat, text_or_dash(day->temp_min), text_or_dash(day->temp_max));
     changed |= set_label_text_if_changed(card.date, date_line);
     changed |= set_label_text_if_changed(card.icon, weather_icon_or_default(day->icon));
     changed |= set_label_text_if_changed(card.text, text_or_dash(day->text));
@@ -214,7 +241,7 @@ void build_weather_board_page()
 
     s_current_temp_label = make_label_with_font(screen, 20, 86, 88, 54, kWeatherBoardDash, &lv_font_montserrat_48);
     set_weather_label_align(s_current_temp_label, LV_TEXT_ALIGN_LEFT);
-    s_current_unit_label = make_label_with_font(screen, 88, 96, 24, 32, "C", &lv_font_montserrat_24);
+    s_current_unit_label = make_label_with_font(screen, 88, 96, 24, 32, kWeatherBoardCurrentUnitText, &lv_font_montserrat_24);
     set_weather_label_align(s_current_unit_label, LV_TEXT_ALIGN_LEFT);
 
     s_current_icon_label = make_label(screen, 20, 143, 42, 40, weather_icon_text(kWeatherBoardUnknownIcon));
@@ -299,13 +326,13 @@ bool update_weather_board_page(const struct tm &local)
     if (weather_ready) {
         char temp_line[kCurrentTempLineSize];
         char today_range[kTodayRangeLineSize];
-        snprintf(temp_line, sizeof(temp_line), "%s", text_or_dash(weather.temp));
+        strlcpy(temp_line, text_or_dash(weather.temp), sizeof(temp_line));
         changed |= set_label_text_if_changed(s_city_label, text_or_dash(weather.city));
         changed |= set_label_text_if_changed(s_current_temp_label, temp_line);
         changed |= set_label_text_if_changed(s_current_icon_label, weather_icon_or_default(weather.icon));
         changed |= set_label_text_if_changed(s_current_text_label, text_or_dash(weather.text));
         if (forecast.ready && forecast.count > 0 && forecast.days[0].valid) {
-            snprintf(today_range, sizeof(today_range), "今日 %s/%sC",
+            snprintf(today_range, sizeof(today_range), kWeatherBoardTodayRangeFormat,
                      text_or_dash(forecast.days[0].temp_min),
                      text_or_dash(forecast.days[0].temp_max));
         } else {
@@ -335,31 +362,31 @@ bool update_weather_board_page(const struct tm &local)
     char alert_line[kWeatherBoardAlertLineSize];
     const WeatherForecastDay *today = (forecast.ready && forecast.count > 0 && forecast.days[0].valid) ? &forecast.days[0] : nullptr;
     if (air.ready) {
-        snprintf(air_line, sizeof(air_line), "AQI %s %s",
+        snprintf(air_line, sizeof(air_line), kWeatherBoardAirFormat,
                  text_or_dash(air.aqi),
                  text_or_dash(air.category));
     } else {
-        snprintf(air_line, sizeof(air_line), "%s", kWeatherBoardAirPlaceholder);
+        strlcpy(air_line, kWeatherBoardAirPlaceholder, sizeof(air_line));
     }
-    snprintf(humi_line, sizeof(humi_line), "湿度 %s%%",
+    snprintf(humi_line, sizeof(humi_line), kWeatherBoardHumidityFormat,
              today && today->humidity[0] ? today->humidity : text_or_dash(weather.humidity));
-    snprintf(wind_line, sizeof(wind_line), "%s %s级",
+    snprintf(wind_line, sizeof(wind_line), kWeatherBoardWindFormat,
              today ? text_or_dash(today->wind_dir) : "--",
              today ? text_or_dash(today->wind_scale) : "--");
-    snprintf(sunrise_line, sizeof(sunrise_line), "日出 %s",
+    snprintf(sunrise_line, sizeof(sunrise_line), kWeatherBoardSunriseFormat,
              today && today->sunrise[0] ? today->sunrise : kWeatherBoardTimePlaceholder);
-    snprintf(sunset_line, sizeof(sunset_line), "日落 %s",
+    snprintf(sunset_line, sizeof(sunset_line), kWeatherBoardSunsetFormat,
              today && today->sunset[0] ? today->sunset : kWeatherBoardTimePlaceholder);
     if (alert.active && alert.count > 0 && alert.titles[0][0]) {
-        strlcpy(alert_line, "预警 ", sizeof(alert_line));
-        for (int i = 0; i < alert.count && i < 3; ++i) {
+        strlcpy(alert_line, kWeatherBoardAlertPrefix, sizeof(alert_line));
+        for (int i = 0; i < alert.count && i < kWeatherBoardMaxAlertTitles; ++i) {
             if (i > 0) {
-                strlcat(alert_line, " / ", sizeof(alert_line));
+                strlcat(alert_line, kWeatherBoardAlertSeparator, sizeof(alert_line));
             }
             strlcat(alert_line, alert.titles[i], sizeof(alert_line));
         }
     } else {
-        snprintf(alert_line, sizeof(alert_line), "%s", kWeatherBoardAlertPlaceholder);
+        strlcpy(alert_line, kWeatherBoardAlertPlaceholder, sizeof(alert_line));
     }
     changed |= set_label_text_if_changed(s_air_label, air_line);
     changed |= set_label_text_if_changed(s_humidity_label, humi_line);

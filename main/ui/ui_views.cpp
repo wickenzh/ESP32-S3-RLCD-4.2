@@ -625,7 +625,7 @@ void ui_task(void *)
                         char city[kUiWeatherCityTextSize];
                         char weather_temp[kUiWeatherValueTextSize];
                         char weather_humi[kUiWeatherValueTextSize];
-                        snprintf(city, sizeof(city), "%s", weather.city);
+                        strlcpy(city, weather.city, sizeof(city));
                         snprintf(weather_temp, sizeof(weather_temp), "%s℃", weather.temp);
                         snprintf(weather_humi, sizeof(weather_humi), "%s%%", weather.humidity);
                         content_changed |= set_label_text_if_changed(g_weather_city_label, city);

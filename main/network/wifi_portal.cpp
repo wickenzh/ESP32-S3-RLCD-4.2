@@ -15,6 +15,21 @@ char s_captive_portal_uri[] = "http://192.168.4.1/";
 constexpr int kDnsHeaderSize = 12;
 constexpr int kCaptiveDnsAnswerSize = 16;
 constexpr int kCaptiveDnsPacketSize = 512;
+constexpr int kDnsFlagsOffset = 2;
+constexpr int kDnsQuestionCountOffset = 4;
+constexpr int kDnsAnswerCountOffset = 6;
+constexpr int kDnsAuthorityCountOffset = 8;
+constexpr int kDnsAdditionalCountOffset = 10;
+constexpr uint8_t kDnsLabelPointerMask = 0xC0;
+constexpr uint16_t kDnsResponseFlagsStandardNoError = 0x8180;
+constexpr uint16_t kDnsNameCompressionPointerToQuestion = 0xC00C;
+constexpr uint16_t kDnsTypeARecord = 1;
+constexpr uint16_t kDnsClassInternet = 1;
+constexpr uint16_t kDnsIpv4AddressLength = 4;
+constexpr uint8_t kDnsByteMask = 0xFF;
+constexpr int kDnsByteShift8 = 8;
+constexpr int kDnsByteShift16 = 16;
+constexpr int kDnsByteShift24 = 24;
 constexpr uint16_t kCaptiveDnsPort = 53;
 constexpr uint32_t kCaptiveDnsTtlSeconds = 60;
 constexpr int kCaptiveDnsSocketTimeoutSec = 1;
@@ -23,6 +38,8 @@ constexpr TickType_t kCaptiveDnsStopWaitDelay = pdMS_TO_TICKS(100);
 constexpr uint32_t kCaptiveDnsTaskStack = 3072;
 constexpr UBaseType_t kCaptiveDnsTaskPriority = 3;
 constexpr BaseType_t kCaptiveDnsTaskCore = 0;
+constexpr uint8_t kSetupApChannel = 1;
+constexpr uint8_t kSetupApMaxConnections = 4;
 constexpr uint16_t kMaxListedApCount = 32;
 constexpr uint16_t kSetupHttpServerPort = 80;
 constexpr size_t kSetupHttpServerStackSize = 8192;
@@ -37,6 +54,11 @@ constexpr size_t kPortalRequestBufferSize = 640;
 constexpr size_t kPortalWeatherCityIdSize = 24;
 constexpr size_t kPortalWeatherCityNameSize = 32;
 constexpr uint32_t kPortalSaveWifiConnectWaitMs = 12000;
+constexpr uint8_t kCaptiveDnsApIpOctets[kDnsIpv4AddressLength] = {192, 168, 4, 1};
+constexpr const char *kPortalSectionCloseHtml = "</div></section>";
+constexpr const char *kPortalHtmlContentType = "text/html; charset=utf-8";
+constexpr const char *kPortalHtmlHeadPrefix =
+    "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
 
 class WifiScanRecords {
 public:
@@ -65,7 +87,8 @@ private:
 class PortalHtmlBuffer {
 public:
     explicit PortalHtmlBuffer(size_t len)
-        : html_((char *)calloc(1, len))
+        : html_((char *)calloc(1, len)),
+          size_(len)
     {
     }
 
@@ -82,8 +105,14 @@ public:
         return html_;
     }
 
+    size_t size() const
+    {
+        return size_;
+    }
+
 private:
     char *html_ = nullptr;
+    size_t size_;
 };
 
 esp_err_t configure_softap()
@@ -92,24 +121,24 @@ esp_err_t configure_softap()
     strlcpy((char *)ap_config.ap.ssid, g_ap_ssid, sizeof(ap_config.ap.ssid));
     strlcpy((char *)ap_config.ap.password, kSetupApPassword, sizeof(ap_config.ap.password));
     ap_config.ap.ssid_len = strlen(g_ap_ssid);
-    ap_config.ap.channel = 1;
-    ap_config.ap.max_connection = 4;
+    ap_config.ap.channel = kSetupApChannel;
+    ap_config.ap.max_connection = kSetupApMaxConnections;
     ap_config.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
     return esp_wifi_set_config(WIFI_IF_AP, &ap_config);
 }
 
 void dns_write_u16(uint8_t *buf, int offset, uint16_t value)
 {
-    buf[offset] = (uint8_t)(value >> 8);
-    buf[offset + 1] = (uint8_t)(value & 0xff);
+    buf[offset] = (uint8_t)(value >> kDnsByteShift8);
+    buf[offset + 1] = (uint8_t)(value & kDnsByteMask);
 }
 
 void dns_write_u32(uint8_t *buf, int offset, uint32_t value)
 {
-    buf[offset] = (uint8_t)(value >> 24);
-    buf[offset + 1] = (uint8_t)((value >> 16) & 0xff);
-    buf[offset + 2] = (uint8_t)((value >> 8) & 0xff);
-    buf[offset + 3] = (uint8_t)(value & 0xff);
+    buf[offset] = (uint8_t)(value >> kDnsByteShift24);
+    buf[offset + 1] = (uint8_t)((value >> kDnsByteShift16) & kDnsByteMask);
+    buf[offset + 2] = (uint8_t)((value >> kDnsByteShift8) & kDnsByteMask);
+    buf[offset + 3] = (uint8_t)(value & kDnsByteMask);
 }
 
 int build_captive_dns_response(const uint8_t *query, int query_len, uint8_t *response, int response_len)
@@ -117,7 +146,7 @@ int build_captive_dns_response(const uint8_t *query, int query_len, uint8_t *res
     if (query_len < kDnsHeaderSize || response_len < query_len + kCaptiveDnsAnswerSize) {
         return 0;
     }
-    uint16_t qd_count = ((uint16_t)query[4] << 8) | query[5];
+    uint16_t qd_count = ((uint16_t)query[kDnsQuestionCountOffset] << 8) | query[kDnsQuestionCountOffset + 1];
     if (qd_count == 0) {
         return 0;
     }
@@ -128,7 +157,7 @@ int build_captive_dns_response(const uint8_t *query, int query_len, uint8_t *res
         if (label_len == 0) {
             break;
         }
-        if ((label_len & 0xc0) != 0 || pos + label_len > query_len) {
+        if ((label_len & kDnsLabelPointerMask) != 0 || pos + label_len > query_len) {
             return 0;
         }
         pos += label_len;
@@ -143,28 +172,26 @@ int build_captive_dns_response(const uint8_t *query, int query_len, uint8_t *res
     }
 
     memcpy(response, query, question_len);
-    response[2] = 0x81;
-    response[3] = 0x80;
-    dns_write_u16(response, 4, 1);
-    dns_write_u16(response, 6, 1);
-    dns_write_u16(response, 8, 0);
-    dns_write_u16(response, 10, 0);
+    dns_write_u16(response, kDnsFlagsOffset, kDnsResponseFlagsStandardNoError);
+    dns_write_u16(response, kDnsQuestionCountOffset, 1);
+    dns_write_u16(response, kDnsAnswerCountOffset, 1);
+    dns_write_u16(response, kDnsAuthorityCountOffset, 0);
+    dns_write_u16(response, kDnsAdditionalCountOffset, 0);
 
     int out = question_len;
-    dns_write_u16(response, out, 0xc00c);
+    dns_write_u16(response, out, kDnsNameCompressionPointerToQuestion);
     out += 2;
-    dns_write_u16(response, out, 1);
+    dns_write_u16(response, out, kDnsTypeARecord);
     out += 2;
-    dns_write_u16(response, out, 1);
+    dns_write_u16(response, out, kDnsClassInternet);
     out += 2;
     dns_write_u32(response, out, kCaptiveDnsTtlSeconds);
     out += 4;
-    dns_write_u16(response, out, 4);
+    dns_write_u16(response, out, kDnsIpv4AddressLength);
     out += 2;
-    response[out++] = 192;
-    response[out++] = 168;
-    response[out++] = 4;
-    response[out++] = 1;
+    for (uint8_t octet : kCaptiveDnsApIpOctets) {
+        response[out++] = octet;
+    }
     return out;
 }
 
@@ -333,12 +360,12 @@ void append_wifi_scan_list(char *html, size_t html_len)
         err = esp_wifi_scan_get_ap_num(&ap_count);
         if (err != ESP_OK) {
             html_append(html, html_len, "<p class='muted'>Scan failed, refresh this page.</p>");
-            html_append(html, html_len, "</div></section>");
+            html_append(html, html_len, kPortalSectionCloseHtml);
             return;
         }
         if (ap_count == 0) {
             html_append(html, html_len, "<p class='muted'>No Wi-Fi found.</p>");
-            html_append(html, html_len, "</div></section>");
+            html_append(html, html_len, kPortalSectionCloseHtml);
             return;
         }
         uint16_t max_records = ap_count;
@@ -348,13 +375,13 @@ void append_wifi_scan_list(char *html, size_t html_len)
         WifiScanRecords records(max_records);
         if (records.data() == nullptr) {
             html_append(html, html_len, "<p class='muted'>Not enough memory to list Wi-Fi.</p>");
-            html_append(html, html_len, "</div></section>");
+            html_append(html, html_len, kPortalSectionCloseHtml);
             return;
         }
         err = esp_wifi_scan_get_ap_records(&max_records, records.data());
         if (err != ESP_OK) {
             html_append(html, html_len, "<p class='muted'>Scan failed, refresh this page.</p>");
-            html_append(html, html_len, "</div></section>");
+            html_append(html, html_len, kPortalSectionCloseHtml);
             return;
         }
         if (max_records == 0) {
@@ -371,7 +398,7 @@ void append_wifi_scan_list(char *html, size_t html_len)
                         ssid, ssid, records.data()[i].rssi);
         }
     }
-    html_append(html, html_len, "</div></section>");
+    html_append(html, html_len, kPortalSectionCloseHtml);
 }
 
 bool apply_station_config(bool reconnect)
@@ -413,14 +440,13 @@ esp_err_t root_get_handler(httpd_req_t *req)
     char safe_weather_city[kPortalEscapedCitySize] = {};
     html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
     html_escape(g_manual_weather_city, safe_weather_city, sizeof(safe_weather_city));
-    const size_t html_len = kPortalRootHtmlSize;
-    PortalHtmlBuffer html(html_len);
+    PortalHtmlBuffer html(kPortalRootHtmlSize);
     if (html.data() == nullptr) {
         httpd_resp_set_status(req, "500 Internal Server Error");
         return httpd_resp_sendstr(req, "Not enough memory.");
     }
-    html_append(html.data(), html_len,
-                "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+    html_append(html.data(), html.size(),
+                "%s"
                 "<title>WeatherClock Setup</title><style>"
                 ":root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
                 ".wrap{max-width:480px;margin:0 auto;padding:22px 16px 34px}.brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}"
@@ -442,10 +468,10 @@ esp_err_t root_get_handler(httpd_req_t *req)
                 "<label>Weather City (Optional)</label><input name='weather_city' placeholder='Leave blank for auto location' value='%s' autocomplete='off'>"
                 "<label>Offline Date & Time</label><input name='manual_time' type='datetime-local' placeholder='Set time without Wi-Fi'>"
                 "<button class='submit' type='submit'>Save and connect</button></form></div>",
-                g_ap_ssid, safe_ssid, safe_weather_city);
-    append_wifi_scan_list(html.data(), html_len);
-    html_append(html.data(), html_len, "</main></body></html>");
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
+                kPortalHtmlHeadPrefix, g_ap_ssid, safe_ssid, safe_weather_city);
+    append_wifi_scan_list(html.data(), html.size());
+    html_append(html.data(), html.size(), "</main></body></html>");
+    httpd_resp_set_type(req, kPortalHtmlContentType);
     return httpd_resp_send(req, html.data(), strlen(html.data()));
 }
 
@@ -493,7 +519,7 @@ esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected, co
     const char *body = saved ? (connected ? "The clock has joined your Wi-Fi network." : "The clock saved your settings but did not get an IP yet. Check the password or router signal, then try again.")
                              : "Enter Wi-Fi and QWeather API Key, or set date and time for offline mode.";
     html_append(html, sizeof(html),
-                "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "%s"
                 "<title>WeatherClock Setup</title><style>"
                 "*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
                 ".wrap{max-width:460px;margin:0 auto;padding:28px 16px}.panel{background:#fff;border:1px solid #d3dae2;border-radius:8px;padding:18px;box-shadow:0 8px 24px rgba(23,32,42,.08)}"
@@ -502,6 +528,7 @@ esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected, co
                 "a{display:block;height:46px;line-height:46px;text-align:center;background:#17202a;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;margin-top:16px}"
                 "</style></head><body><main class='wrap'><section class='panel'><div class='state'>%s</div><h1>%s</h1><p>%s</p>"
                 "%s%s%s<div class='meta'>SSID: %s<br>Weather city: %s<br>Last Wi-Fi reason: %d</div><a href='/'>Back to setup</a></section></main></body></html>",
+                kPortalHtmlHeadPrefix,
                 connected ? "OK" : "!",
                 title,
                 body,
@@ -511,7 +538,7 @@ esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected, co
                 safe_ssid,
                 safe_city,
                 g_last_wifi_disconnect_reason);
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_set_type(req, kPortalHtmlContentType);
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -519,7 +546,7 @@ esp_err_t send_offline_result_page(httpd_req_t *req, bool saved)
 {
     char html[kPortalOfflineResultHtmlSize] = {};
     html_append(html, sizeof(html),
-                "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "%s"
                 "<title>WeatherClock Offline</title><style>"
                 "*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
                 ".wrap{max-width:460px;margin:0 auto;padding:28px 16px}.panel{background:#fff;border:1px solid #d3dae2;border-radius:8px;padding:18px;box-shadow:0 8px 24px rgba(23,32,42,.08)}"
@@ -527,10 +554,11 @@ esp_err_t send_offline_result_page(httpd_req_t *req, bool saved)
                 "h1{font-size:24px;margin:0 0 8px}p{font-size:15px;line-height:1.45;color:#4d5b68;margin:0 0 14px}"
                 "a{display:block;height:46px;line-height:46px;text-align:center;background:#17202a;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;margin-top:16px}"
                 "</style></head><body><main class='wrap'><section class='panel'><div class='state'>%s</div><h1>%s</h1><p>%s</p><a href='/'>Back to setup</a></section></main></body></html>",
+                kPortalHtmlHeadPrefix,
                 saved ? "OK" : "!",
                 saved ? "Offline mode enabled" : "Invalid date or time",
                 saved ? "The clock will use the RTC time and skip all network updates." : "Please enter a valid date and time, or configure Wi-Fi and API Key.");
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_set_type(req, kPortalHtmlContentType);
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 

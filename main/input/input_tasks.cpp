@@ -9,6 +9,7 @@ namespace {
 constexpr int kButtonDebounceMs = 40;
 constexpr int kButtonLongPressMs = 1200;
 constexpr int kButtonBusyFeedbackMs = 2000;
+constexpr const char *kSettingsBusyFeedbackText = "请等待操作完成";
 
 bool low_refresh_button_idle_context()
 {
@@ -115,7 +116,7 @@ void button_task(void *)
                 if (!is_settings_sync_busy() && !ota_flow_active()) {
                     handle_settings_key_long();
                 } else {
-                    set_settings_feedback("请等待操作完成", kButtonBusyFeedbackMs);
+                    set_settings_feedback(kSettingsBusyFeedbackText, kButtonBusyFeedbackMs);
                 }
                 key_long_handled = true;
                 notify_ui_task();
@@ -157,7 +158,7 @@ void button_task(void *)
                     if (!is_settings_sync_busy() && !ota_flow_active()) {
                         handle_settings_key_long();
                     } else {
-                        set_settings_feedback("请等待操作完成", kButtonBusyFeedbackMs);
+                        set_settings_feedback(kSettingsBusyFeedbackText, kButtonBusyFeedbackMs);
                     }
                     notify_ui_task();
                 } else if (held >= pdMS_TO_TICKS(kButtonDebounceMs)) {
@@ -165,7 +166,7 @@ void button_task(void *)
                     if (!is_settings_sync_busy() && !ota_flow_active()) {
                         handle_settings_key_short();
                     } else {
-                        set_settings_feedback("请等待操作完成", kButtonBusyFeedbackMs);
+                        set_settings_feedback(kSettingsBusyFeedbackText, kButtonBusyFeedbackMs);
                         notify_ui_task();
                     }
                 }

@@ -25,7 +25,8 @@ constexpr const char *const kDailySayingJsonFields[] = {
 class DailySayingResponseBuffer {
 public:
     DailySayingResponseBuffer()
-        : data_((char *)calloc(kDailySayingResponseBufferSize, 1))
+        : data_((char *)calloc(kDailySayingResponseBufferSize, 1)),
+          size_(kDailySayingResponseBufferSize)
     {
         if (!data_) {
             ESP_LOGW(TAG, "daily saying response alloc failed");
@@ -48,7 +49,7 @@ public:
     void clear() const
     {
         if (data_) {
-            memset(data_, 0, kDailySayingResponseBufferSize);
+            memset(data_, 0, size_);
         }
     }
 
@@ -59,6 +60,7 @@ public:
 
 private:
     char *data_;
+    size_t size_;
 };
 
 class DailySayingJsonRoot {

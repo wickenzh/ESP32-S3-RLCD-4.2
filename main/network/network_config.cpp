@@ -4,6 +4,8 @@
 #include "sensor_services.h"
 #include "ui_views.h"
 
+#include <errno.h>
+
 namespace {
 constexpr const char *kWifiNvsNamespace = "wifi";
 constexpr const char *kWifiSsidKey = "ssid";
@@ -27,6 +29,7 @@ constexpr size_t kManualTimeFieldSize = 32;
 constexpr size_t kSetupSsidFieldSize = 33;
 constexpr size_t kSetupPasswordFieldSize = 65;
 constexpr size_t kSetupApiKeyFieldSize = 96;
+constexpr uint8_t kNvsUnsetU8 = 0xFF;
 constexpr uint8_t kDefaultChimeVolumePercent = 80;
 constexpr uint8_t kValidChimeVolumePercent[] = {20, 40, 60, 80, 100};
 constexpr uint8_t kWeatherClockPageMask = (uint8_t)(1U << kWorkPageWeatherClock);
@@ -39,14 +42,57 @@ constexpr size_t kLegacyPageOrderV1Count = 4;
 constexpr size_t kPageOrderV2Count = 5;
 constexpr int kTmYearOffset = 1900;
 constexpr int kTmMonthOffset = 1;
+constexpr int kManualTimeMinMonth = 1;
+constexpr int kManualTimeMaxMonth = 12;
+constexpr int kManualTimeMinDay = 1;
+constexpr int kManualTimeMaxDay = 31;
+constexpr int kManualTimeMinHour = 0;
+constexpr int kManualTimeMaxHour = 23;
+constexpr int kManualTimeMinMinute = 0;
+constexpr int kManualTimeMaxMinute = 59;
+constexpr int kManualTimeMinSecond = 0;
+constexpr int kManualTimeMaxSecond = 59;
+constexpr int kManualTimeRequiredFieldCount = 5; // year, month, day, hour and minute.
+constexpr const char *kManualTimeIsoSecondsFormat = "%d-%d-%dT%d:%d:%d";
+constexpr const char *kManualTimeSpaceSecondsFormat = "%d-%d-%d %d:%d:%d";
+constexpr const char *kManualTimeSpaceMinutesFormat = "%d-%d-%d %d:%d";
+constexpr const char *kConfigEventReasonFallback = "config";
+constexpr const char *kConfigEventReasonNetworkRequestReset = "network request reset";
+constexpr const char *kConfigEventReasonFactoryReset = "factory reset";
+constexpr const char *kConfigEventReasonOfflineManualTime = "offline manual time";
+constexpr const char *kConfigEventReasonProvisioningSave = "provisioning save";
+constexpr const char *kInvalidWeatherCitySaveLog = "skip saving invalid weather city";
+constexpr const char *kFormManualTimeKey = "manual_time";
+constexpr const char *kFormManualTimeFallbackKey = "datetime";
+constexpr const char *kFormSsidKey = "ssid";
+constexpr const char *kFormPasswordKey = "pass";
+constexpr const char *kFormPasswordFallbackKey = "password";
+constexpr const char *kFormApiKeyKey = "api_key";
+constexpr const char *kFormApiKeyFallbackKey = "weather";
+constexpr const char *kFormWeatherCityKey = "weather_city";
+constexpr const char *kFormWeatherCityFallbackKey = "city";
+constexpr const char *kInvalidWeatherCityChars = "&=?#%/\\<>\"'";
+constexpr const char *kClearConfigKeys[] = {
+    kWifiSsidKey,
+    kWifiPassKey,
+    kWeatherApiKeyKey,
+    kManualWeatherCityKey,
+    kLegacyApiHostKey,
+    kOfflineModeKey,
+};
 static_assert(kWorkPageCount <= 8, "work page enabled mask is stored as uint8_t");
 static_assert(kLegacyPageOrderV1Count <= kWorkPageCount);
 static_assert(kPageOrderV2Count <= kWorkPageCount);
 
+const char *config_event_reason_text(const char *reason)
+{
+    return reason ? reason : kConfigEventReasonFallback;
+}
+
 void clear_app_event_bits(EventBits_t bits, const char *reason)
 {
     if (!g_app_events) {
-        ESP_LOGW(TAG, "skip clear event bits for %s: event group unavailable", reason ? reason : "config");
+        ESP_LOGW(TAG, "skip clear event bits for %s: event group unavailable", config_event_reason_text(reason));
         return;
     }
     xEventGroupClearBits(g_app_events, bits);
@@ -55,7 +101,7 @@ void clear_app_event_bits(EventBits_t bits, const char *reason)
 void set_app_event_bits(EventBits_t bits, const char *reason)
 {
     if (!g_app_events) {
-        ESP_LOGW(TAG, "skip set event bits for %s: event group unavailable", reason ? reason : "config");
+        ESP_LOGW(TAG, "skip set event bits for %s: event group unavailable", config_event_reason_text(reason));
         return;
     }
     xEventGroupSetBits(g_app_events, bits);
@@ -121,6 +167,11 @@ bool decode_url_percent_byte(const char *src, char *out)
     return true;
 }
 
+bool value_in_range(int value, int min_value, int max_value)
+{
+    return value >= min_value && value <= max_value;
+}
+
 uint8_t normalize_chime_volume(uint8_t volume)
 {
     for (uint8_t valid : kValidChimeVolumePercent) {
@@ -170,7 +221,11 @@ int migrate_order_with_flip_clock(const uint8_t *source, size_t source_count, ui
 bool load_saved_config()
 {
     nvs_handle_t nvs;
-    if (nvs_open(kWifiNvsNamespace, NVS_READONLY, &nvs) != ESP_OK) {
+    esp_err_t open_err = nvs_open(kWifiNvsNamespace, NVS_READONLY, &nvs);
+    if (open_err != ESP_OK) {
+        if (open_err != ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGW(TAG, "nvs open failed while loading config: %s", esp_err_to_name(open_err));
+        }
         return false;
     }
     size_t ssid_len = sizeof(g_wifi_ssid);
@@ -262,7 +317,7 @@ void clear_network_request_bits()
                              kNetworkDiagBit |
                              kOtaCheckBit |
                              kOtaInstallBit,
-                         "network request reset");
+                         kConfigEventReasonNetworkRequestReset);
 }
 
 bool set_offline_mode_enabled(bool enabled)
@@ -273,7 +328,7 @@ bool set_offline_mode_enabled(bool enabled)
         ESP_LOGW(TAG, "nvs open failed while saving offline mode: %s", esp_err_to_name(err));
         return false;
     }
-    uint8_t old_value = 0xff;
+    uint8_t old_value = kNvsUnsetU8;
     uint8_t next_value = enabled ? 1 : 0;
     bool unchanged = nvs_get_u8(nvs, kOfflineModeKey, &old_value) == ESP_OK && old_value == next_value;
     if (!unchanged) {
@@ -302,6 +357,11 @@ bool can_leave_offline_mode_without_setup()
     return g_have_wifi_creds && g_have_weather_key;
 }
 
+bool weather_city_char_invalid(unsigned char ch)
+{
+    return ch < 0x20 || strchr(kInvalidWeatherCityChars, ch) != nullptr;
+}
+
 bool is_weather_city_input_valid(const char *city)
 {
     if (!city || city[0] == '\0') {
@@ -312,14 +372,24 @@ bool is_weather_city_input_valid(const char *city)
         return false;
     }
     for (size_t i = 0; i < len; ++i) {
-        unsigned char ch = (unsigned char)city[i];
-        if (ch < 0x20 ||
-            ch == '&' || ch == '=' || ch == '?' || ch == '#' || ch == '%' ||
-            ch == '/' || ch == '\\' || ch == '<' || ch == '>' || ch == '"' || ch == '\'') {
+        if (weather_city_char_invalid((unsigned char)city[i])) {
             return false;
         }
     }
     return true;
+}
+
+void copy_trimmed_weather_city(char *out, size_t out_len, const char *city)
+{
+    if (!out || out_len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!city) {
+        return;
+    }
+    strlcpy(out, city, out_len);
+    trim_ascii(out);
 }
 
 bool save_config(const char *ssid, const char *pass, const char *api_key, const char *weather_city)
@@ -335,12 +405,9 @@ bool save_config(const char *ssid, const char *pass, const char *api_key, const 
         api_key = "";
     }
     char city[kManualWeatherCityLen] = {};
-    if (weather_city) {
-        strlcpy(city, weather_city, sizeof(city));
-        trim_ascii(city);
-    }
+    copy_trimmed_weather_city(city, sizeof(city), weather_city);
     if (!is_weather_city_input_valid(city)) {
-        ESP_LOGW(TAG, "skip saving invalid weather city");
+        ESP_LOGW(TAG, "%s", kInvalidWeatherCitySaveLog);
         return false;
     }
     nvs_handle_t nvs;
@@ -360,10 +427,7 @@ bool save_config(const char *ssid, const char *pass, const char *api_key, const 
         if (city[0] != '\0') {
             err = nvs_set_str(nvs, kManualWeatherCityKey, city);
         } else {
-            esp_err_t erase_err = nvs_erase_key(nvs, kManualWeatherCityKey);
-            if (erase_err != ESP_OK && erase_err != ESP_ERR_NVS_NOT_FOUND) {
-                err = erase_err;
-            }
+            err = erase_nvs_key_if_present(nvs, kManualWeatherCityKey, nullptr);
         }
     }
     esp_err_t legacy_erase_err = erase_nvs_key_if_present(nvs, kLegacyApiHostKey, nullptr);
@@ -393,15 +457,12 @@ bool save_config(const char *ssid, const char *pass, const char *api_key, const 
 bool save_manual_weather_city(const char *city)
 {
     char next[kManualWeatherCityLen] = {};
-    if (city) {
-        strlcpy(next, city, sizeof(next));
-        trim_ascii(next);
-    }
+    copy_trimmed_weather_city(next, sizeof(next), city);
     if (next[0] == '\0') {
         return clear_manual_weather_city();
     }
     if (!is_weather_city_input_valid(next)) {
-        ESP_LOGW(TAG, "skip saving invalid weather city");
+        ESP_LOGW(TAG, "%s", kInvalidWeatherCitySaveLog);
         return false;
     }
     nvs_handle_t nvs;
@@ -569,15 +630,7 @@ bool clear_saved_config()
     if (open_err == ESP_OK) {
         bool erased = false;
         esp_err_t err = ESP_OK;
-        const char *keys[] = {
-            kWifiSsidKey,
-            kWifiPassKey,
-            kWeatherApiKeyKey,
-            kManualWeatherCityKey,
-            kLegacyApiHostKey,
-            kOfflineModeKey,
-        };
-        for (const char *key : keys) {
+        for (const char *key : kClearConfigKeys) {
             bool key_erased = false;
             err = erase_nvs_key_if_present(nvs, key, &key_erased);
             if (err != ESP_OK) {
@@ -607,7 +660,7 @@ bool clear_saved_config()
     g_have_weather_key = false;
     g_has_manual_weather_city = false;
     g_offline_mode_ui_enabled = false;
-    clear_app_event_bits(kWifiConnectedBit | kWeatherReadyBit, "factory reset");
+    clear_app_event_bits(kWifiConnectedBit | kWeatherReadyBit, kConfigEventReasonFactoryReset);
     clear_network_request_bits();
     return true;
 }
@@ -686,22 +739,22 @@ static bool parse_manual_datetime(const char *text, struct tm *out)
     int hour = 0;
     int minute = 0;
     int second = 0;
-    int parsed = sscanf(text, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &minute, &second);
-    if (parsed < 5) {
+    int parsed = sscanf(text, kManualTimeIsoSecondsFormat, &year, &month, &day, &hour, &minute, &second);
+    if (parsed < kManualTimeRequiredFieldCount) {
         second = 0;
-        parsed = sscanf(text, "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second);
-        if (parsed < 5) {
+        parsed = sscanf(text, kManualTimeSpaceSecondsFormat, &year, &month, &day, &hour, &minute, &second);
+        if (parsed < kManualTimeRequiredFieldCount) {
             second = 0;
-            parsed = sscanf(text, "%d-%d-%d %d:%d", &year, &month, &day, &hour, &minute);
+            parsed = sscanf(text, kManualTimeSpaceMinutesFormat, &year, &month, &day, &hour, &minute);
         }
     }
-    if (parsed < 5 ||
-        year < kMinValidYear || year > kMaxValidYear ||
-        month < 1 || month > 12 ||
-        day < 1 || day > 31 ||
-        hour < 0 || hour > 23 ||
-        minute < 0 || minute > 59 ||
-        second < 0 || second > 59) {
+    if (parsed < kManualTimeRequiredFieldCount ||
+        !value_in_range(year, kMinValidYear, kMaxValidYear) ||
+        !value_in_range(month, kManualTimeMinMonth, kManualTimeMaxMonth) ||
+        !value_in_range(day, kManualTimeMinDay, kManualTimeMaxDay) ||
+        !value_in_range(hour, kManualTimeMinHour, kManualTimeMaxHour) ||
+        !value_in_range(minute, kManualTimeMinMinute, kManualTimeMaxMinute) ||
+        !value_in_range(second, kManualTimeMinSecond, kManualTimeMaxSecond)) {
         return false;
     }
     struct tm local = {};
@@ -717,7 +770,10 @@ static bool parse_manual_datetime(const char *text, struct tm *out)
         return false;
     }
     struct tm normalized = {};
-    localtime_r(&epoch, &normalized);
+    if (!localtime_r(&epoch, &normalized)) {
+        ESP_LOGW(TAG, "manual offline time localtime normalization failed");
+        return false;
+    }
     if (normalized.tm_year != local.tm_year ||
         normalized.tm_mon != local.tm_mon ||
         normalized.tm_mday != local.tm_mday ||
@@ -736,7 +792,7 @@ bool save_offline_datetime_from_body(const char *body)
         return false;
     }
     char manual_time[kManualTimeFieldSize] = {};
-    form_value_fallback(body, "manual_time", "datetime", manual_time, sizeof(manual_time));
+    form_value_fallback(body, kFormManualTimeKey, kFormManualTimeFallbackKey, manual_time, sizeof(manual_time));
     trim_ascii(manual_time);
     struct tm local = {};
     if (!parse_manual_datetime(manual_time, &local)) {
@@ -744,17 +800,21 @@ bool save_offline_datetime_from_body(const char *body)
         return false;
     }
     time_t epoch = mktime(&local);
+    if (epoch <= 0) {
+        ESP_LOGW(TAG, "set manual offline time skipped: mktime failed");
+        return false;
+    }
     struct timeval now = {};
     now.tv_sec = epoch;
     if (settimeofday(&now, nullptr) != 0) {
-        ESP_LOGW(TAG, "set manual offline time failed");
+        ESP_LOGW(TAG, "set manual offline time failed errno=%d", errno);
         return false;
     }
     sync_rtc_from_system_time();
     if (!set_offline_mode_enabled(true)) {
         return false;
     }
-    set_app_event_bits(kTimeSyncedBit, "offline manual time");
+    set_app_event_bits(kTimeSyncedBit, kConfigEventReasonOfflineManualTime);
     ESP_LOGI(TAG, "offline mode enabled with manual time: %04d-%02d-%02d %02d:%02d:%02d",
              local.tm_year + kTmYearOffset,
              local.tm_mon + kTmMonthOffset,
@@ -775,10 +835,10 @@ bool save_credentials_from_body(const char *body)
     char pass[kSetupPasswordFieldSize] = {};
     char api_key[kSetupApiKeyFieldSize] = {};
     char weather_city[kManualWeatherCityLen] = {};
-    form_value(body, "ssid", ssid, sizeof(ssid));
-    form_value_fallback(body, "pass", "password", pass, sizeof(pass));
-    form_value_fallback(body, "api_key", "weather", api_key, sizeof(api_key));
-    form_value_fallback(body, "weather_city", "city", weather_city, sizeof(weather_city));
+    form_value(body, kFormSsidKey, ssid, sizeof(ssid));
+    form_value_fallback(body, kFormPasswordKey, kFormPasswordFallbackKey, pass, sizeof(pass));
+    form_value_fallback(body, kFormApiKeyKey, kFormApiKeyFallbackKey, api_key, sizeof(api_key));
+    form_value_fallback(body, kFormWeatherCityKey, kFormWeatherCityFallbackKey, weather_city, sizeof(weather_city));
     trim_ascii(api_key);
     trim_ascii(weather_city);
     if (ssid[0] == '\0') {
@@ -804,7 +864,7 @@ bool save_credentials_from_body(const char *body)
              weather_city[0] ? "set" : "auto",
              (unsigned)strlen(weather_city));
     g_last_wifi_disconnect_reason = 0;
-    clear_app_event_bits(kWifiConnectedBit, "provisioning save");
+    clear_app_event_bits(kWifiConnectedBit, kConfigEventReasonProvisioningSave);
     if (!save_config(ssid, pass, api_key, weather_city)) {
         return false;
     }

@@ -3,6 +3,8 @@
 
 #include "sensor_services.h"
 
+#include <string.h>
+
 namespace {
 constexpr int kHistoryWindowHours = 24;
 constexpr int kSecondsPerMinute = 60;
@@ -54,6 +56,15 @@ constexpr size_t kHistoryAxisHourTextSize = 8;
 constexpr size_t kHistorySensorSummaryTextSize = 32;
 constexpr size_t kHistoryAxisValueTextSize = 16;
 constexpr const char *kHistoryAxisHourFormat = "%02d:00";
+constexpr const char *kHistoryTimePlaceholder = "--:--";
+constexpr const char *kHistoryAxisPlaceholder = "--";
+constexpr const char *kHistoryTempTitle = "温度";
+constexpr const char *kHistoryHumiTitle = "湿度";
+constexpr const char *kHistoryTempAxisFormat = "%.0f℃";
+constexpr const char *kHistoryHumiAxisFormat = "%.0f%%";
+constexpr const char *kHistoryTempBadgeFormat = "%.1f";
+constexpr const char *kHistoryHumiBadgeFormat = "%.0f";
+constexpr const char *kHistorySensorSummaryFormat = "%.0fC %.0f%%";
 constexpr const char *kHistorySensorSummaryPlaceholder = "--C --%%";
 } // namespace
 
@@ -185,9 +196,9 @@ bool update_work_page_sensor_summary(lv_obj_t *label)
     }
     char text[kHistorySensorSummaryTextSize];
     if (g_sensor_ok) {
-        snprintf(text, sizeof(text), "%.0fC %.0f%%", g_temperature, g_humidity);
+        snprintf(text, sizeof(text), kHistorySensorSummaryFormat, g_temperature, g_humidity);
     } else {
-        snprintf(text, sizeof(text), "%s", kHistorySensorSummaryPlaceholder);
+        strlcpy(text, kHistorySensorSummaryPlaceholder, sizeof(text));
     }
     return set_label_text_if_changed(label, text);
 }
@@ -226,7 +237,7 @@ void draw_history_chart_panel(lv_obj_t *canvas,
         set_obj_visible(min_label, false);
         if (axis_labels) {
             for (int i = 0; i < kHistoryAxisValueCount; ++i) {
-                set_label_text_if_changed(axis_labels[i], "--");
+                set_label_text_if_changed(axis_labels[i], kHistoryAxisPlaceholder);
             }
         }
         return;
@@ -262,7 +273,7 @@ void draw_history_chart_panel(lv_obj_t *canvas,
         set_obj_visible(max_label, false);
         set_obj_visible(min_label, false);
         for (int i = 0; i < kHistoryAxisValueCount; ++i) {
-            set_label_text_if_changed(axis_labels[i], "--");
+            set_label_text_if_changed(axis_labels[i], kHistoryAxisPlaceholder);
         }
         return;
     }
@@ -276,11 +287,11 @@ void draw_history_chart_panel(lv_obj_t *canvas,
     float axis_max = max_value + pad;
     float axis_mid = (axis_min + axis_max) * kHistoryAxisMidRatio;
     char axis_text[kHistoryAxisValueTextSize];
-    snprintf(axis_text, sizeof(axis_text), temperature ? "%.0f℃" : "%.0f%%", axis_max);
+    snprintf(axis_text, sizeof(axis_text), temperature ? kHistoryTempAxisFormat : kHistoryHumiAxisFormat, axis_max);
     set_label_text_if_changed(axis_labels[0], axis_text);
-    snprintf(axis_text, sizeof(axis_text), temperature ? "%.0f℃" : "%.0f%%", axis_mid);
+    snprintf(axis_text, sizeof(axis_text), temperature ? kHistoryTempAxisFormat : kHistoryHumiAxisFormat, axis_mid);
     set_label_text_if_changed(axis_labels[1], axis_text);
-    snprintf(axis_text, sizeof(axis_text), temperature ? "%.0f℃" : "%.0f%%", axis_min);
+    snprintf(axis_text, sizeof(axis_text), temperature ? kHistoryTempAxisFormat : kHistoryHumiAxisFormat, axis_min);
     set_label_text_if_changed(axis_labels[2], axis_text);
 
     int prev_x = 0;
@@ -309,7 +320,7 @@ void draw_history_chart_panel(lv_obj_t *canvas,
 
     if (max_index >= 0) {
         char text[kHistoryAxisValueTextSize];
-        snprintf(text, sizeof(text), temperature ? "%.1f" : "%.0f",
+        snprintf(text, sizeof(text), temperature ? kHistoryTempBadgeFormat : kHistoryHumiBadgeFormat,
                  temperature ? samples[max_index].temperature : samples[max_index].humidity);
         int x = plot_x + (int)(((samples[max_index].timestamp - start) * plot_w) / (kHistoryWindowHours * kSecondsPerHour));
         int y = value_to_plot_y(temperature ? samples[max_index].temperature : samples[max_index].humidity,
@@ -322,7 +333,7 @@ void draw_history_chart_panel(lv_obj_t *canvas,
     }
     if (min_index >= 0 && min_index != max_index) {
         char text[kHistoryAxisValueTextSize];
-        snprintf(text, sizeof(text), temperature ? "%.1f" : "%.0f",
+        snprintf(text, sizeof(text), temperature ? kHistoryTempBadgeFormat : kHistoryHumiBadgeFormat,
                  temperature ? samples[min_index].temperature : samples[min_index].humidity);
         int x = plot_x + (int)(((samples[min_index].timestamp - start) * plot_w) / (kHistoryWindowHours * kSecondsPerHour));
         int y = value_to_plot_y(temperature ? samples[min_index].temperature : samples[min_index].humidity,
@@ -410,10 +421,18 @@ void build_history_page()
 
     lv_obj_t *history_top_line = make_bar(screen, 18, 54, 364, 4);
     set_obj_black(history_top_line, true);
-    lv_obj_t *temp_title = make_label(screen, 24, 67, 80, 24, "温度");
-    lv_obj_set_style_text_font(temp_title, &zh_font_16, LV_PART_MAIN);
-    lv_obj_t *humi_title = make_label(screen, 24, 172, 80, 24, "湿度");
-    lv_obj_set_style_text_font(humi_title, &zh_font_16, LV_PART_MAIN);
+    lv_obj_t *temp_title = make_label(screen, 24, 67, 80, 24, kHistoryTempTitle);
+    if (temp_title) {
+        lv_obj_set_style_text_font(temp_title, &zh_font_16, LV_PART_MAIN);
+    } else {
+        ESP_LOGW(TAG, "history temp title create failed");
+    }
+    lv_obj_t *humi_title = make_label(screen, 24, 172, 80, 24, kHistoryHumiTitle);
+    if (humi_title) {
+        lv_obj_set_style_text_font(humi_title, &zh_font_16, LV_PART_MAIN);
+    } else {
+        ESP_LOGW(TAG, "history humi title create failed");
+    }
 
     if (!g_history_chart_canvas_buf) {
         g_history_chart_canvas_buf = alloc_canvas_buffer(kHistoryCanvasW, kHistoryCanvasH);
@@ -432,8 +451,12 @@ void build_history_page()
             lv_canvas_fill_bg(g_history_chart_canvas, lv_color_white(), LV_OPA_COVER);
         }
     }
-    lv_obj_move_foreground(temp_title);
-    lv_obj_move_foreground(humi_title);
+    if (temp_title) {
+        lv_obj_move_foreground(temp_title);
+    }
+    if (humi_title) {
+        lv_obj_move_foreground(humi_title);
+    }
 
     for (int i = 0; i < kHistoryAxisTickCount; ++i) {
         g_history_time_labels[i] = make_label_with_font(screen,
@@ -441,9 +464,13 @@ void build_history_page()
                                                         kHistoryTimeLabelY,
                                                         kHistoryTimeLabelW,
                                                         kHistoryTimeLabelH,
-                                                        "--:--",
+                                                        kHistoryTimePlaceholder,
                                                         &lv_font_montserrat_14);
-        lv_obj_set_style_text_align(g_history_time_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        if (g_history_time_labels[i]) {
+            lv_obj_set_style_text_align(g_history_time_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        } else {
+            ESP_LOGW(TAG, "history time label create failed index=%d", i);
+        }
     }
     for (int i = 0; i < kHistoryAxisValueCount; ++i) {
         g_history_temp_axis_labels[i] = make_label(screen,
@@ -451,21 +478,29 @@ void build_history_page()
                                                    kHistoryTempAxisLabelY + i * kHistoryAxisLabelRowGap,
                                                    kHistoryAxisLabelW,
                                                    kHistoryAxisLabelH,
-                                                   "--");
+                                                   kHistoryAxisPlaceholder);
         g_history_humi_axis_labels[i] = make_label(screen,
                                                    kHistoryAxisLabelX,
                                                    kHistoryHumiAxisLabelY + i * kHistoryAxisLabelRowGap,
                                                    kHistoryAxisLabelW,
                                                    kHistoryAxisLabelH,
-                                                   "--");
-        lv_obj_set_style_text_align(g_history_temp_axis_labels[i], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-        lv_obj_set_style_text_align(g_history_humi_axis_labels[i], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+                                                   kHistoryAxisPlaceholder);
+        if (g_history_temp_axis_labels[i]) {
+            lv_obj_set_style_text_align(g_history_temp_axis_labels[i], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        } else {
+            ESP_LOGW(TAG, "history temp axis label create failed index=%d", i);
+        }
+        if (g_history_humi_axis_labels[i]) {
+            lv_obj_set_style_text_align(g_history_humi_axis_labels[i], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        } else {
+            ESP_LOGW(TAG, "history humi axis label create failed index=%d", i);
+        }
     }
 
-    g_history_temp_max_label = make_label_with_font(screen, 0, 0, 40, 16, "--", &lv_font_montserrat_12);
-    g_history_temp_min_label = make_label_with_font(screen, 0, 0, 40, 16, "--", &lv_font_montserrat_12);
-    g_history_humi_max_label = make_label_with_font(screen, 0, 0, 40, 16, "--", &lv_font_montserrat_12);
-    g_history_humi_min_label = make_label_with_font(screen, 0, 0, 40, 16, "--", &lv_font_montserrat_12);
+    g_history_temp_max_label = make_label_with_font(screen, 0, 0, 40, 16, kHistoryAxisPlaceholder, &lv_font_montserrat_12);
+    g_history_temp_min_label = make_label_with_font(screen, 0, 0, 40, 16, kHistoryAxisPlaceholder, &lv_font_montserrat_12);
+    g_history_humi_max_label = make_label_with_font(screen, 0, 0, 40, 16, kHistoryAxisPlaceholder, &lv_font_montserrat_12);
+    g_history_humi_min_label = make_label_with_font(screen, 0, 0, 40, 16, kHistoryAxisPlaceholder, &lv_font_montserrat_12);
     style_history_value_badge(g_history_temp_max_label);
     style_history_value_badge(g_history_temp_min_label);
     style_history_value_badge(g_history_humi_max_label);

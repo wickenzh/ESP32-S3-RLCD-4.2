@@ -40,6 +40,8 @@ constexpr int kWeatherSyncSearchStepHours = 1;
 constexpr int kUnknownTimeSensorSampleMs = kSecondsPerMinute * kMsPerSecond;
 constexpr int kSensorSampleDayMinutes = 1;
 constexpr int kSensorSampleNightMinutes = 2;
+constexpr int kNightSlowWindowStartHour = 22;
+constexpr int kNightSlowWindowEndHour = 6;
 constexpr int kTmYearOffset = 1900;
 static_assert(kHourlyHistoryCount <= 99, "hourly slot key format h%02d supports two-digit indexes");
 static_assert(kHourlySlotKeyBufferSize >= sizeof("h00"), "hourly slot key buffer must fit hNN plus terminator");
@@ -92,6 +94,11 @@ bool is_legacy_hourly_history_valid(const LegacyHourlySensorHistoryBlob &legacy,
            legacy.version == kLegacyHourlyHistoryVersion &&
            legacy.count == kLegacyHourlyHistoryCount;
 }
+
+bool is_hourly_history_index_valid(int index)
+{
+    return index >= 0 && index < kHourlyHistoryCount;
+}
 } // namespace
 
 static bool hourly_slot_key(int index, char *out, size_t out_len)
@@ -99,7 +106,7 @@ static bool hourly_slot_key(int index, char *out, size_t out_len)
     if (!out || out_len == 0) {
         return false;
     }
-    if (index < 0 || index >= kHourlyHistoryCount) {
+    if (!is_hourly_history_index_valid(index)) {
         out[0] = '\0';
         ESP_LOGW(TAG, "hourly sensor slot key index invalid: %d", index);
         return false;
@@ -147,7 +154,7 @@ bool is_tm_plausible(const struct tm &local)
 
 bool is_night_slow_window(const struct tm &local)
 {
-    return local.tm_hour >= 22 || local.tm_hour < 6;
+    return local.tm_hour >= kNightSlowWindowStartHour || local.tm_hour < kNightSlowWindowEndHour;
 }
 
 int periodic_sample_minutes(const struct tm &local, int day_minutes, int night_minutes)
@@ -244,7 +251,7 @@ void load_hourly_sensor_history()
 
 static bool save_hourly_sensor_slot(int index)
 {
-    if (index < 0 || index >= kHourlyHistoryCount) {
+    if (!is_hourly_history_index_valid(index)) {
         ESP_LOGW(TAG, "hourly sensor slot index invalid: %d", index);
         return false;
     }

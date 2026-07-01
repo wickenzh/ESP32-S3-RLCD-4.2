@@ -18,6 +18,7 @@ static constexpr int kStatusTimeH = 18;
 static constexpr int kStatusChimeX = 64;
 static constexpr int kStatusWifiX = 90;
 static constexpr int kStatusIconY = 15;
+static constexpr int kStatusFirstWorkPage = kWorkPageWeatherClock;
 static constexpr const char *kStatusDatePlaceholder = "----/--/-- / 星期-";
 static constexpr const char *kStatusSummaryPlaceholder = "--C --%";
 static constexpr const char *kStatusTimePlaceholder = "--:--";
@@ -26,7 +27,7 @@ static constexpr const char *kStatusTimeFormat = "%02d:%02d";
 
 bool is_status_icon_page(int page)
 {
-    return page > 0 && page < kWorkPageCount;
+    return page >= kStatusFirstWorkPage && page < kWorkPageCount && page != kWorkPageWeatherClock;
 }
 
 void build_status_icon(lv_obj_t *screen,

@@ -8,6 +8,21 @@
 
 namespace {
 TickType_t s_settings_primary_exit_block_until = 0;
+
+template <typename T, size_t N>
+constexpr size_t array_count(const T (&)[N])
+{
+    return N;
+}
+
+void copy_text(char *out, size_t out_len, const char *text)
+{
+    if (!out || out_len == 0) {
+        return;
+    }
+    strlcpy(out, text ? text : "", out_len);
+}
+
 constexpr uint32_t kBootAnimLvglLockTimeoutMs = 100;
 constexpr uint32_t kBootAnimFinishLvglLockTimeoutMs = 200;
 constexpr uint32_t kBootAnimFinishHoldMs = 100;
@@ -26,6 +41,15 @@ constexpr int kNetworkDiagGridStartY = 142;
 constexpr int kNetworkDiagGridRowGap = 28;
 constexpr int kNetworkDiagGridColGap = 174;
 constexpr int kNetworkDiagGridW = 160;
+constexpr size_t kNetworkDiagSummaryTextSize = 64;
+constexpr const char *kNetworkDiagTitle = "网络检测";
+constexpr const char *kNetworkDiagSummaryReady = "准备检测...";
+constexpr const char *kNetworkDiagSummaryRunning = "检测中...";
+constexpr const char *kNetworkDiagSummaryDone = "检测完成";
+constexpr const char *kNetworkDiagSummaryIdle = "等待开始";
+constexpr const char *kNetworkDiagLinePlaceholder = "--";
+constexpr const char *kNetworkDiagHintIdle = "Hold KEY to return";
+constexpr const char *kNetworkDiagHintRunning = "Checking... Hold KEY to return";
 constexpr int kSettingsOtaBarFrameX = 164;
 constexpr int kSettingsOtaBarFrameY = 203;
 constexpr int kSettingsOtaBarFrameW = 200;
@@ -34,6 +58,17 @@ constexpr int kSettingsOtaBarInset = 2;
 constexpr int kSettingsOtaBarFillW = kSettingsOtaBarFrameW - kSettingsOtaBarInset * 2;
 constexpr int kSettingsOtaBarFillH = kSettingsOtaBarFrameH - kSettingsOtaBarInset * 2;
 constexpr int kSettingsOtaProgressMax = 100;
+constexpr size_t kSettingsOtaLineTextSize = 96;
+constexpr size_t kSettingsOtaHintTextSize = 48;
+constexpr const char *kSettingsOtaUpdatingWithSpeedFormat = "OTA %d%%  %d KB/s";
+constexpr const char *kSettingsOtaUpdatingFormat = "OTA %d%%";
+constexpr const char *kSettingsOtaCurrentVersionFormat = "当前版本 %s";
+constexpr const char *kSettingsOtaHintDownloading = "下载中，请等待";
+constexpr const char *kSettingsOtaHintInstall = "BOOT安装更新";
+constexpr const char *kSettingsOtaHintChecking = "正在检查，请等待";
+constexpr const char *kSettingsOtaHintRebooting = "即将重启";
+constexpr const char *kSettingsOtaHintRetry = "BOOT重新检查";
+constexpr const char *kSettingsOtaHintCheck = "BOOT开始检查";
 constexpr int kSettingsPrimaryX = 12;
 constexpr int kSettingsPrimaryW = 112;
 constexpr int kSettingsSecondaryX = 150;
@@ -46,10 +81,11 @@ constexpr int kSettingsSwitchTextX = 352;
 constexpr int kSettingsSwitchTextYOffset = 6;
 constexpr int kSettingsSwitchTextW = 28;
 constexpr int kSettingsSwitchTextH = 18;
+constexpr size_t kSettingsSecondaryTextSize = 56;
 constexpr int kSettingsListRowY[] = {66, 105, 144, 183, 222, 222, 222};
 constexpr int kSettingsGridRowY[] = {66, 105, 144};
-constexpr size_t kSettingsListRowCount = sizeof(kSettingsListRowY) / sizeof(kSettingsListRowY[0]);
-constexpr size_t kSettingsGridRowCount = sizeof(kSettingsGridRowY) / sizeof(kSettingsGridRowY[0]);
+constexpr size_t kSettingsListRowCount = array_count(kSettingsListRowY);
+constexpr size_t kSettingsGridRowCount = array_count(kSettingsGridRowY);
 constexpr int kSettingsGridColumns = 2;
 constexpr int kSettingsGridLeftX = 150;
 constexpr int kSettingsGridRightX = 267;
@@ -61,6 +97,25 @@ constexpr int kSettingsGridSwitchTextDisplayXOffset = 90;
 constexpr int kSettingsGridSwitchTextSystemW = 26;
 constexpr int kSettingsGridSwitchTextDisplayW = 30;
 constexpr int kSettingsGridSwitchTextYOffset = 7;
+constexpr const char *kSettingsPrimaryItems[kSettingsPrimaryCount] = {"网络", "声音", "显示", "系统"};
+constexpr const char *kSettingsNetworkSyncTimeText = "同步时间";
+constexpr const char *kSettingsNetworkSyncWeatherText = "同步天气";
+constexpr const char *kSettingsNetworkSayingText = "更新一言";
+constexpr const char *kSettingsWeatherCityManualFormat = "天气城市 %s";
+constexpr const char *kSettingsWeatherCityAutoText = "天气城市 自动";
+constexpr const char *kSettingsSoundVolumeFormat = "音量 %d%%";
+constexpr const char *kSettingsSoundChoiceFormat = "声音选择 %d";
+constexpr const char *kSettingsHourlyText = "整点提醒 7:00 - 22:00";
+constexpr const char *kSettingsAllDayText = "全天提醒 0:00 - 24:00";
+constexpr const char *kSettingsPageOrderText = "页面顺序";
+constexpr const char *kSettingsOfflineFormat = "离线模式 %s";
+constexpr const char *kSettingsOfflineOnText = "开";
+constexpr const char *kSettingsOfflineOffText = "关";
+constexpr const char *kSettingsNetworkDiagText = "网络检测";
+constexpr const char *kSettingsFactoryResetConfirmText = "确认恢复";
+constexpr const char *kSettingsFactoryResetText = "恢复出厂设置";
+constexpr const char *kSettingsSystemInfoText = "关于本机";
+constexpr const char *kSettingsCheckUpdateText = "检查更新";
 constexpr int kBatteryFrameX = 20;
 constexpr int kBatteryFrameY = 17;
 constexpr int kBatteryFrameW = 34;
@@ -81,10 +136,44 @@ constexpr int kBatterySegmentW = 4;
 constexpr int kBatterySegmentH = 8;
 constexpr int kBatterySegmentGap = 6;
 constexpr size_t kSetupStatusLineSize = 96;
+constexpr const char *kSetupStatusTitle = "Setup Mode";
+constexpr const char *kSetupStatusPlaceholder = "--";
+constexpr const char *kSetupApSsidFormat = "AP SSID: %s";
+constexpr const char *kSetupApPasswordFormat = "AP Password: %s";
+constexpr const char *kSetupPortalIpFormat = "Portal IP: %s";
+constexpr const char *kSetupStaSsidFormat = "STA SSID: %s";
+constexpr const char *kSetupStaIpFormat = "STA IP: %s";
+constexpr const char *kSetupStaIpReasonFormat = "STA IP: --  reason %d";
+constexpr const char *kSetupStaIpPlaceholder = "STA IP: --";
+constexpr size_t kInfoTimeTextSize = 32;
+constexpr size_t kInfoLineTextSize = 96;
+constexpr const char *kInfoLastNtpFormat = "Last NTP: %s";
+constexpr const char *kInfoWifiFormat = "WiFi: %s";
+constexpr const char *kInfoLastWeatherFormat = "Last Weather: %s";
+constexpr const char *kInfoBatteryFullFormat = "Battery: %d%%  %.2fV";
+constexpr const char *kInfoBatteryPercentOnlyFormat = "Battery: %d%%  --";
+constexpr const char *kInfoBatteryPlaceholder = "Battery: --  --";
+constexpr const char *kInfoVersionFormat = "Version: %s / %s";
 constexpr int kInfoLabelY[] = {70, 104, 138, 172, 206};
-constexpr size_t kInfoLabelCount = sizeof(kInfoLabelY) / sizeof(kInfoLabelY[0]);
+constexpr size_t kInfoLabelCount = array_count(kInfoLabelY);
 static_assert(kSettingsListRowCount == kSettingsSecondaryMaxCount);
 static_assert(kSettingsGridRowCount * kSettingsGridColumns >= kWorkPageCount);
+static_assert(array_count(kSettingsPrimaryItems) == kSettingsPrimaryCount);
+
+void set_secondary_text(char items[][kSettingsSecondaryTextSize], int index, const char *text)
+{
+    copy_text(items[index], kSettingsSecondaryTextSize, text);
+}
+
+void hide_settings_switch_slot(int index)
+{
+    if (g_settings_switch_dots[index]) {
+        set_obj_visible(g_settings_switch_dots[index], false);
+    }
+    if (g_settings_switch_texts[index]) {
+        set_obj_visible(g_settings_switch_texts[index], false);
+    }
+}
 }
 
 void draw_boot_anim_frame_index(int frame)
@@ -101,7 +190,7 @@ void draw_boot_anim_frame_index(int frame)
     uint32_t bit = 0;
     for (int y = 0; y < BOOT_ANIM_HEIGHT; ++y) {
         for (int x = 0; x < BOOT_ANIM_WIDTH; ++x, ++bit) {
-            bool black = pixels[bit / 8] & (0x80 >> (bit & 7));
+            bool black = packed_1bit_bit_is_set(pixels, bit);
             lv_canvas_set_px_color(g_boot_anim_canvas, x, y, black ? lv_color_black() : lv_color_white());
         }
     }
@@ -339,7 +428,7 @@ void build_boot_info_page()
     lv_obj_t *top_line = make_bar(screen, 24, 50, 352, 3);
     set_obj_black(top_line, true);
 
-    static_assert(kInfoLabelCount == sizeof(g_info_labels) / sizeof(g_info_labels[0]),
+    static_assert(kInfoLabelCount == array_count(g_info_labels),
                   "System Info labels and row coordinates must stay in sync");
     for (size_t i = 0; i < kInfoLabelCount; ++i) {
         g_info_labels[i] = make_label_with_font(screen, 30, kInfoLabelY[i], 340, 24, "--", &lv_font_montserrat_14);
@@ -360,31 +449,31 @@ void build_boot_info_page()
 
 void update_boot_info_page()
 {
-    char ntp[32];
-    char weather[32];
-    char line[96];
+    char ntp[kInfoTimeTextSize];
+    char weather[kInfoTimeTextSize];
+    char line[kInfoLineTextSize];
 
     format_time_or_dash(g_last_ntp_sync_time, ntp, sizeof(ntp));
-    snprintf(line, sizeof(line), "Last NTP: %s", ntp);
+    snprintf(line, sizeof(line), kInfoLastNtpFormat, ntp);
     set_label_text_if_changed(g_info_labels[0], line);
 
-    snprintf(line, sizeof(line), "WiFi: %s", g_wifi_ssid[0] ? g_wifi_ssid : "--");
+    snprintf(line, sizeof(line), kInfoWifiFormat, g_wifi_ssid[0] ? g_wifi_ssid : "--");
     set_label_text_if_changed(g_info_labels[1], line);
 
     format_time_or_dash(g_last_weather_sync_time, weather, sizeof(weather));
-    snprintf(line, sizeof(line), "Last Weather: %s", weather);
+    snprintf(line, sizeof(line), kInfoLastWeatherFormat, weather);
     set_label_text_if_changed(g_info_labels[2], line);
 
     if (g_battery_percent >= 0 && g_battery_voltage >= 0.0f) {
-        snprintf(line, sizeof(line), "Battery: %d%%  %.2fV", g_battery_percent, g_battery_voltage);
+        snprintf(line, sizeof(line), kInfoBatteryFullFormat, g_battery_percent, g_battery_voltage);
     } else if (g_battery_percent >= 0) {
-        snprintf(line, sizeof(line), "Battery: %d%%  --", g_battery_percent);
+        snprintf(line, sizeof(line), kInfoBatteryPercentOnlyFormat, g_battery_percent);
     } else {
-        snprintf(line, sizeof(line), "Battery: --  --");
+        copy_text(line, sizeof(line), kInfoBatteryPlaceholder);
     }
     set_label_text_if_changed(g_info_labels[3], line);
 
-    snprintf(line, sizeof(line), "Version: %s / %s", APP_VERSION, APP_BUILD_DATE);
+    snprintf(line, sizeof(line), kInfoVersionFormat, APP_VERSION, APP_BUILD_DATE);
     set_label_text_if_changed(g_info_labels[4], line);
 
     ota_reset_status_if_idle();
@@ -402,7 +491,7 @@ void build_network_diag_page()
     g_network_diag_root = screen;
     lv_obj_add_flag(g_network_diag_root, LV_OBJ_FLAG_HIDDEN);
 
-    lv_obj_t *title = make_label(screen, 24, 18, 352, 28, "网络检测");
+    lv_obj_t *title = make_label(screen, 24, 18, 352, 28, kNetworkDiagTitle);
     if (title) {
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     } else {
@@ -412,7 +501,7 @@ void build_network_diag_page()
     lv_obj_t *top_line = make_bar(screen, 24, 52, 352, 3);
     set_obj_black(top_line, true);
 
-    g_network_diag_summary_label = make_label(screen, 24, 62, 352, 22, "准备检测...");
+    g_network_diag_summary_label = make_label(screen, 24, 62, 352, 22, kNetworkDiagSummaryReady);
     if (g_network_diag_summary_label) {
         lv_obj_set_style_text_align(g_network_diag_summary_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     } else {
@@ -439,7 +528,7 @@ void build_network_diag_page()
                 w = kNetworkDiagWideW;
             }
         }
-        g_network_diag_labels[i] = make_label(screen, x, y, w, 22, "--");
+        g_network_diag_labels[i] = make_label(screen, x, y, w, 22, kNetworkDiagLinePlaceholder);
         if (g_network_diag_labels[i]) {
             lv_label_set_long_mode(g_network_diag_labels[i], LV_LABEL_LONG_CLIP);
             lv_obj_set_style_text_align(g_network_diag_labels[i], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
@@ -450,7 +539,7 @@ void build_network_diag_page()
 
     lv_obj_t *bottom_line = make_bar(screen, 24, 266, 352, 2);
     set_obj_black(bottom_line, true);
-    g_network_diag_hint_label = make_label(screen, 24, 272, 352, 20, "Hold KEY to return");
+    g_network_diag_hint_label = make_label(screen, 24, 272, 352, 20, kNetworkDiagHintIdle);
     if (g_network_diag_hint_label) {
         lv_obj_set_style_text_align(g_network_diag_hint_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     } else {
@@ -461,22 +550,23 @@ void build_network_diag_page()
 bool update_network_diag_page()
 {
     bool changed = false;
-    char summary[64];
+    char summary[kNetworkDiagSummaryTextSize];
     if (g_network_diag_state == kNetworkDiagRunning) {
-        snprintf(summary, sizeof(summary), "检测中...");
+        copy_text(summary, sizeof(summary), kNetworkDiagSummaryRunning);
     } else if (g_network_diag_state == kNetworkDiagDone) {
-        snprintf(summary, sizeof(summary), "检测完成");
+        copy_text(summary, sizeof(summary), kNetworkDiagSummaryDone);
     } else {
-        snprintf(summary, sizeof(summary), "等待开始");
+        copy_text(summary, sizeof(summary), kNetworkDiagSummaryIdle);
     }
     changed |= set_label_text_if_changed(g_network_diag_summary_label, summary);
     for (int i = 0; i < kNetworkDiagLineCount; ++i) {
         changed |= set_label_text_if_changed(g_network_diag_labels[i],
-                                             g_network_diag_lines[i][0] ? g_network_diag_lines[i] : "--");
+                                             g_network_diag_lines[i][0] ? g_network_diag_lines[i] :
+                                                                          kNetworkDiagLinePlaceholder);
     }
     changed |= set_label_text_if_changed(g_network_diag_hint_label,
-                                         g_network_diag_state == kNetworkDiagRunning ? "Checking... Hold KEY to return" :
-                                                                                       "Hold KEY to return");
+                                         g_network_diag_state == kNetworkDiagRunning ? kNetworkDiagHintRunning :
+                                                                                       kNetworkDiagHintIdle);
     return changed;
 }
 
@@ -751,8 +841,7 @@ bool update_settings_page()
     static int last_ota_progress = -2;
     static int last_ota_speed = -2;
 
-    const char *primary_items[kSettingsPrimaryCount] = {"网络", "声音", "显示", "系统"};
-    char secondary_items[kSettingsSecondaryMaxCount][56] = {};
+    char secondary_items[kSettingsSecondaryMaxCount][kSettingsSecondaryTextSize] = {};
     int primary = clamp_settings_primary(g_settings_primary_selection);
     int selected = clamp_settings_secondary(primary, g_settings_selection);
     g_settings_primary_selection = primary;
@@ -762,66 +851,45 @@ bool update_settings_page()
     }
 
     if (primary == kSettingsPrimaryNetwork) {
-        strlcpy(secondary_items[kNetworkSettingsNtpItem],
-                "同步时间",
-                sizeof(secondary_items[kNetworkSettingsNtpItem]));
-        strlcpy(secondary_items[kNetworkSettingsWeatherItem],
-                "同步天气",
-                sizeof(secondary_items[kNetworkSettingsWeatherItem]));
-        strlcpy(secondary_items[kNetworkSettingsSayingItem],
-                "更新一言",
-                sizeof(secondary_items[kNetworkSettingsSayingItem]));
+        set_secondary_text(secondary_items, kNetworkSettingsNtpItem, kSettingsNetworkSyncTimeText);
+        set_secondary_text(secondary_items, kNetworkSettingsWeatherItem, kSettingsNetworkSyncWeatherText);
+        set_secondary_text(secondary_items, kNetworkSettingsSayingItem, kSettingsNetworkSayingText);
         if (g_has_manual_weather_city) {
             snprintf(secondary_items[kNetworkSettingsWeatherCityItem],
                      sizeof(secondary_items[kNetworkSettingsWeatherCityItem]),
-                     "天气城市 %s",
+                     kSettingsWeatherCityManualFormat,
                      g_manual_weather_city);
         } else {
-            strlcpy(secondary_items[kNetworkSettingsWeatherCityItem],
-                    "天气城市 自动",
-                    sizeof(secondary_items[kNetworkSettingsWeatherCityItem]));
+            set_secondary_text(secondary_items, kNetworkSettingsWeatherCityItem, kSettingsWeatherCityAutoText);
         }
     } else if (primary == kSettingsPrimarySound) {
         snprintf(secondary_items[kSoundSettingsVolumeItem],
                  sizeof(secondary_items[kSoundSettingsVolumeItem]),
-                 "音量 %d%%",
+                 kSettingsSoundVolumeFormat,
                  g_chime_volume_percent);
         snprintf(secondary_items[kSoundSettingsSoundItem],
                  sizeof(secondary_items[kSoundSettingsSoundItem]),
-                 "声音选择 %d",
+                 kSettingsSoundChoiceFormat,
                  g_chime_sound_index + 1);
-        strlcpy(secondary_items[kSoundSettingsHourlyItem],
-                "整点提醒 7:00 - 22:00",
-                sizeof(secondary_items[kSoundSettingsHourlyItem]));
-        strlcpy(secondary_items[kSoundSettingsAllDayItem],
-                "全天提醒 0:00 - 24:00",
-                sizeof(secondary_items[kSoundSettingsAllDayItem]));
+        set_secondary_text(secondary_items, kSoundSettingsHourlyItem, kSettingsHourlyText);
+        set_secondary_text(secondary_items, kSoundSettingsAllDayItem, kSettingsAllDayText);
     } else if (primary == kSettingsPrimaryDisplay) {
         for (int i = 0; i < kDisplaySettingsPageItemCount; ++i) {
-            strlcpy(secondary_items[i],
-                    work_page_name(display_settings_item_work_page(i)),
-                    sizeof(secondary_items[i]));
+            set_secondary_text(secondary_items, i, work_page_name(display_settings_item_work_page(i)));
         }
-        strlcpy(secondary_items[kDisplaySettingsOrderItem],
-                "页面顺序",
-                sizeof(secondary_items[kDisplaySettingsOrderItem]));
+        set_secondary_text(secondary_items, kDisplaySettingsOrderItem, kSettingsPageOrderText);
     } else {
         snprintf(secondary_items[kSystemSettingsOfflineItem],
                  sizeof(secondary_items[kSystemSettingsOfflineItem]),
-                 "离线模式 %s",
-                 g_offline_mode_ui_enabled ? "开" : "关");
-        strlcpy(secondary_items[kSystemSettingsNetworkDiagItem],
-                "网络检测",
-                sizeof(secondary_items[kSystemSettingsNetworkDiagItem]));
-        strlcpy(secondary_items[kSystemSettingsFactoryResetItem],
-                g_factory_reset_confirm_pending ? "确认恢复" : "恢复出厂设置",
-                sizeof(secondary_items[kSystemSettingsFactoryResetItem]));
-        strlcpy(secondary_items[kSystemSettingsInfoItem],
-                "关于本机",
-                sizeof(secondary_items[kSystemSettingsInfoItem]));
-        strlcpy(secondary_items[kSystemSettingsOtaItem],
-                "检查更新",
-                sizeof(secondary_items[kSystemSettingsOtaItem]));
+                 kSettingsOfflineFormat,
+                 g_offline_mode_ui_enabled ? kSettingsOfflineOnText : kSettingsOfflineOffText);
+        set_secondary_text(secondary_items, kSystemSettingsNetworkDiagItem, kSettingsNetworkDiagText);
+        set_secondary_text(secondary_items,
+                           kSystemSettingsFactoryResetItem,
+                           g_factory_reset_confirm_pending ? kSettingsFactoryResetConfirmText
+                                                           : kSettingsFactoryResetText);
+        set_secondary_text(secondary_items, kSystemSettingsInfoItem, kSettingsSystemInfoText);
+        set_secondary_text(secondary_items, kSystemSettingsOtaItem, kSettingsCheckUpdateText);
     }
     static bool last_page_order_mode = false;
     static int last_page_order_selection = -1;
@@ -846,7 +914,7 @@ bool update_settings_page()
     }
     for (int i = 0; i < kSettingsPrimaryCount; ++i) {
         if (g_settings_labels[i]) {
-            changed |= set_label_text_if_changed(g_settings_labels[i], primary_items[i]);
+            changed |= set_label_text_if_changed(g_settings_labels[i], kSettingsPrimaryItems[i]);
             if (selection_changed) {
                 style_settings_item(g_settings_labels[i], i == primary);
             }
@@ -861,12 +929,7 @@ bool update_settings_page()
         if (g_settings_page_order_mode) {
             if (i >= kWorkPageCount) {
                 set_obj_visible(g_settings_labels[slot], false);
-                if (g_settings_switch_dots[i]) {
-                    set_obj_visible(g_settings_switch_dots[i], false);
-                }
-                if (g_settings_switch_texts[i]) {
-                    set_obj_visible(g_settings_switch_texts[i], false);
-                }
+                hide_settings_switch_slot(i);
                 continue;
             }
             int col = i & 1;
@@ -879,12 +942,7 @@ bool update_settings_page()
                 snprintf(secondary_items[i], sizeof(secondary_items[i]), "%d %s", i + 1,
                          work_page_name(g_work_page_order[i]));
             }
-            if (g_settings_switch_dots[i]) {
-                set_obj_visible(g_settings_switch_dots[i], false);
-            }
-            if (g_settings_switch_texts[i]) {
-                set_obj_visible(g_settings_switch_texts[i], false);
-            }
+            hide_settings_switch_slot(i);
         } else if (primary == kSettingsPrimaryDisplay || primary == kSettingsPrimarySystem) {
             int col = i & 1;
             int row = i >> 1;
@@ -916,12 +974,7 @@ bool update_settings_page()
                                kSettingsSecondaryX,
                                primary == kSettingsPrimarySystem ? 144 : 183);
                 lv_obj_set_size(g_settings_labels[slot], kSettingsSecondaryW, kSettingsSecondaryH);
-                if (g_settings_switch_dots[i]) {
-                    set_obj_visible(g_settings_switch_dots[i], false);
-                }
-                if (g_settings_switch_texts[i]) {
-                    set_obj_visible(g_settings_switch_texts[i], false);
-                }
+                hide_settings_switch_slot(i);
             }
         } else {
             lv_obj_set_pos(g_settings_labels[slot], kSettingsSecondaryX, kSettingsListRowY[i]);
@@ -995,36 +1048,36 @@ bool update_settings_page()
     }
     bool ota_panel_visible = primary == kSettingsPrimarySystem && selected == kSystemSettingsOtaItem;
     if (g_settings_ota_status_label) {
-        char ota_line[96] = "";
-        char ota_hint[48] = "";
+        char ota_line[kSettingsOtaLineTextSize] = "";
+        char ota_hint[kSettingsOtaHintTextSize] = "";
         bool progress_visible = false;
         int progress = g_ota_progress;
         if (ota_panel_visible) {
             if (g_ota_state == kOtaUpdating && progress >= 0) {
                 progress_visible = true;
                 if (g_ota_speed_kbps > 0) {
-                    snprintf(ota_line, sizeof(ota_line), "OTA %d%%  %d KB/s", progress, g_ota_speed_kbps);
+                    snprintf(ota_line, sizeof(ota_line), kSettingsOtaUpdatingWithSpeedFormat, progress, g_ota_speed_kbps);
                 } else {
-                    snprintf(ota_line, sizeof(ota_line), "OTA %d%%", progress);
+                    snprintf(ota_line, sizeof(ota_line), kSettingsOtaUpdatingFormat, progress);
                 }
-                strlcpy(ota_hint, "下载中，请等待", sizeof(ota_hint));
+                strlcpy(ota_hint, kSettingsOtaHintDownloading, sizeof(ota_hint));
             } else if (g_ota_state == kOtaAvailable) {
-                snprintf(ota_line, sizeof(ota_line), "%s", g_ota_status);
-                strlcpy(ota_hint, "BOOT安装更新", sizeof(ota_hint));
+                copy_text(ota_line, sizeof(ota_line), g_ota_status);
+                strlcpy(ota_hint, kSettingsOtaHintInstall, sizeof(ota_hint));
             } else if (g_ota_state == kOtaChecking) {
-                snprintf(ota_line, sizeof(ota_line), "%s", g_ota_status);
-                strlcpy(ota_hint, "正在检查，请等待", sizeof(ota_hint));
+                copy_text(ota_line, sizeof(ota_line), g_ota_status);
+                strlcpy(ota_hint, kSettingsOtaHintChecking, sizeof(ota_hint));
             } else if (g_ota_state == kOtaSucceeded) {
                 progress_visible = true;
                 progress = kSettingsOtaProgressMax;
-                snprintf(ota_line, sizeof(ota_line), "%s", g_ota_status);
-                strlcpy(ota_hint, "即将重启", sizeof(ota_hint));
+                copy_text(ota_line, sizeof(ota_line), g_ota_status);
+                strlcpy(ota_hint, kSettingsOtaHintRebooting, sizeof(ota_hint));
             } else if (g_ota_state == kOtaFailed || g_ota_state == kOtaNoUpdate) {
-                snprintf(ota_line, sizeof(ota_line), "%s", g_ota_status);
-                strlcpy(ota_hint, "BOOT重新检查", sizeof(ota_hint));
+                copy_text(ota_line, sizeof(ota_line), g_ota_status);
+                strlcpy(ota_hint, kSettingsOtaHintRetry, sizeof(ota_hint));
             } else {
-                snprintf(ota_line, sizeof(ota_line), "当前版本 %s", APP_VERSION);
-                strlcpy(ota_hint, "BOOT开始检查", sizeof(ota_hint));
+                snprintf(ota_line, sizeof(ota_line), kSettingsOtaCurrentVersionFormat, APP_VERSION);
+                strlcpy(ota_hint, kSettingsOtaHintCheck, sizeof(ota_hint));
             }
         }
         changed |= set_label_text_if_changed(g_settings_ota_status_label, ota_line);
@@ -1105,21 +1158,21 @@ bool update_setup_status_panel()
     if (!g_setup_status_labels[0]) {
         return false;
     }
-    changed |= set_label_text_if_changed(g_setup_status_labels[0], "Setup Mode");
-    snprintf(line, sizeof(line), "AP SSID: %s", g_ap_ssid[0] ? g_ap_ssid : "--");
+    changed |= set_label_text_if_changed(g_setup_status_labels[0], kSetupStatusTitle);
+    snprintf(line, sizeof(line), kSetupApSsidFormat, g_ap_ssid[0] ? g_ap_ssid : kSetupStatusPlaceholder);
     changed |= set_label_text_if_changed(g_setup_status_labels[1], line);
-    snprintf(line, sizeof(line), "AP Password: %s", kSetupApPassword);
+    snprintf(line, sizeof(line), kSetupApPasswordFormat, kSetupApPassword);
     changed |= set_label_text_if_changed(g_setup_status_labels[2], line);
-    snprintf(line, sizeof(line), "Portal IP: %s", kSetupPortalIp);
+    snprintf(line, sizeof(line), kSetupPortalIpFormat, kSetupPortalIp);
     changed |= set_label_text_if_changed(g_setup_status_labels[3], line);
-    snprintf(line, sizeof(line), "STA SSID: %s", g_wifi_ssid[0] ? g_wifi_ssid : "--");
+    snprintf(line, sizeof(line), kSetupStaSsidFormat, g_wifi_ssid[0] ? g_wifi_ssid : kSetupStatusPlaceholder);
     changed |= set_label_text_if_changed(g_setup_status_labels[4], line);
     if (g_sta_ip[0]) {
-        snprintf(line, sizeof(line), "STA IP: %s", g_sta_ip);
+        snprintf(line, sizeof(line), kSetupStaIpFormat, g_sta_ip);
     } else if (g_last_wifi_disconnect_reason) {
-        snprintf(line, sizeof(line), "STA IP: --  reason %d", g_last_wifi_disconnect_reason);
+        snprintf(line, sizeof(line), kSetupStaIpReasonFormat, g_last_wifi_disconnect_reason);
     } else {
-        snprintf(line, sizeof(line), "STA IP: --");
+        copy_text(line, sizeof(line), kSetupStaIpPlaceholder);
     }
     changed |= set_label_text_if_changed(g_setup_status_labels[5], line);
     return changed;

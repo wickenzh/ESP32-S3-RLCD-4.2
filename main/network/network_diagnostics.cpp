@@ -45,7 +45,8 @@ static_assert(kNetworkDiagOtaLine >= 0 && kNetworkDiagOtaLine < kNetworkDiagLine
 class NetworkDiagResponseBuffer {
 public:
     explicit NetworkDiagResponseBuffer(size_t buffer_len)
-        : data_((char *)calloc(buffer_len, 1))
+        : data_((char *)calloc(buffer_len, 1)),
+          size_(buffer_len)
     {
         if (!data_) {
             ESP_LOGW(TAG, "network diag response alloc failed len=%u", (unsigned)buffer_len);
@@ -65,6 +66,11 @@ public:
         return data_;
     }
 
+    size_t size() const
+    {
+        return size_;
+    }
+
     explicit operator bool() const
     {
         return data_ != nullptr;
@@ -72,6 +78,7 @@ public:
 
 private:
     char *data_;
+    size_t size_;
 };
 
 class NetworkDiagJsonRoot {
@@ -146,7 +153,7 @@ bool http_probe_ok(const char *url, size_t buffer_len = kNetworkDiagDefaultProbe
     if (!response) {
         return false;
     }
-    return http_get_text(url, response.get(), buffer_len, nullptr) == ESP_OK;
+    return http_get_text(url, response.get(), response.size(), nullptr) == ESP_OK;
 }
 
 bool find_json_string_recursive(cJSON *node, const char *name, char *out, size_t out_len, int depth = 0)
@@ -223,7 +230,7 @@ bool lookup_public_ip(char *out, size_t out_len)
     bool ok = false;
     if (http_get_text(kNetworkDiagPublicIpUrl,
                       response.get(),
-                      kNetworkDiagPublicIpResponseBufferSize,
+                      response.size(),
                       nullptr) == ESP_OK) {
         NetworkDiagJsonRoot root(response.get());
         if (root) {
