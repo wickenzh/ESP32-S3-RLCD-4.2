@@ -7,8 +7,10 @@
 #include "network_diagnostics_state.h"
 #include "ota_services.h"
 #include "pomodoro_services.h"
+#include "task_notification_target.h"
 #include "ui_info_page_state.h"
 #include "ui_settings_activity_state.h"
+#include "ui_settings_navigation.h"
 #include "ui_views.h"
 #include "wifi_portal_state.h"
 #include "wifi_radio_state.h"
@@ -33,7 +35,7 @@ constexpr uint64_t kButtonInputPinMask = kBootButtonPinMask | kKeyButtonPinMask;
 constexpr TickType_t kButtonDebounceTicks = pdMS_TO_TICKS(kButtonDebounceMs);
 constexpr TickType_t kButtonLongPressTicks = pdMS_TO_TICKS(kButtonLongPressMs);
 constexpr const char *kSettingsBusyFeedbackText = "请等待操作完成";
-TaskHandle_t s_button_task_handle = nullptr;
+TaskNotificationTarget s_button_task_target;
 
 static_assert(kButtonLongPressMs > kButtonDebounceMs,
               "button long-press duration must be longer than debounce duration");
@@ -82,12 +84,7 @@ bool low_refresh_button_idle_context()
 void return_to_system_settings_item(int selection, TickType_t now)
 {
     settings_page_request();
-    g_settings_focus_secondary = true;
-    g_settings_page_toggle_mode = false;
-    g_settings_page_order_mode = false;
-    g_settings_primary_selection = kSettingsPrimarySystem;
-    g_settings_selection = selection;
-    g_settings_page_order_selection = 0;
+    enter_settings_system_item_navigation(selection);
     settings_activity_record(now);
 }
 
@@ -95,12 +92,7 @@ void enter_settings_primary_menu(TickType_t now)
 {
     info_page_clear();
     settings_page_request();
-    g_settings_focus_secondary = false;
-    g_settings_page_toggle_mode = false;
-    g_settings_page_order_mode = false;
-    g_settings_primary_selection = kSettingsPrimaryNetwork;
-    g_settings_selection = 0;
-    g_settings_page_order_selection = 0;
+    enter_settings_primary_navigation();
     settings_activity_record(now);
 }
 
@@ -115,12 +107,10 @@ void handle_settings_key_long_or_busy()
 
 void IRAM_ATTR notify_button_edge(void *)
 {
-    TaskHandle_t task = s_button_task_handle;
-    if (!task) {
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    if (!s_button_task_target.notify_from_isr(&higher_priority_task_woken)) {
         return;
     }
-    BaseType_t higher_priority_task_woken = pdFALSE;
-    vTaskNotifyGiveFromISR(task, &higher_priority_task_woken);
     if (higher_priority_task_woken == pdTRUE) {
         portYIELD_FROM_ISR();
     }
@@ -204,7 +194,7 @@ void button_task(void *)
         return;
     }
 
-    s_button_task_handle = xTaskGetCurrentTaskHandle();
+    s_button_task_target.publish(xTaskGetCurrentTaskHandle());
     const bool edge_wakeup_ready = setup_button_edge_wakeup();
 
     TickType_t boot_pressed_since = 0;

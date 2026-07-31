@@ -2,6 +2,7 @@
 #include "ui_visible_data_sync.h"
 
 #include "app_constexpr.h"
+#include "network_credentials_state.h"
 #include "network_services.h"
 #include "network_sync_schedule.h"
 #include "ota_services.h"
@@ -147,7 +148,7 @@ void update_visible_weather_sync(const ActiveWorkPageState &state,
                                  VisibleSyncRetryState<TickType_t> &retry)
 {
     if (!state.uses_weather_data ||
-        !g_have_weather_key ||
+        !network_weather_api_key_configured() ||
         g_offline_mode_ui_enabled ||
         ota_flow_active()) {
         retry.reset_request();
@@ -231,7 +232,7 @@ bool update_weather_clock_network_status(EventBits_t bits,
                                                        weather.icon);
         if (!weather_cache_stale(now)) {
             retry.reset();
-        } else if (g_have_weather_key && !g_offline_mode_ui_enabled) {
+        } else if (network_weather_api_key_configured() && !g_offline_mode_ui_enabled) {
             EventBits_t sync_bits = xEventGroupGetBits(g_app_events);
             bool sync_in_flight =
                 (sync_bits & (kManualWeatherSyncBit | kProvisioningSyncBit)) != 0;
@@ -243,7 +244,7 @@ bool update_weather_clock_network_status(EventBits_t bits,
         return changed;
     }
 
-    if (g_have_weather_key && !g_offline_mode_ui_enabled) {
+    if (network_weather_api_key_configured() && !g_offline_mode_ui_enabled) {
         EventBits_t sync_bits = xEventGroupGetBits(g_app_events);
         bool sync_in_flight =
             (sync_bits & (kManualWeatherSyncBit | kProvisioningSyncBit)) != 0;

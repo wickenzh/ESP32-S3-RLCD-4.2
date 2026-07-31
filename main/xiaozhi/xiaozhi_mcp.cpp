@@ -104,7 +104,9 @@ cJSON *create_device_status_result()
     } else {
         cJSON_AddNullToObject(status.get(), "battery_percent");
     }
-    cJSON_AddNumberToObject(status.get(), "volume_percent", g_chime_volume_percent);
+    cJSON_AddNumberToObject(status.get(),
+                            "volume_percent",
+                            static_cast<int>(g_chime_volume_percent));
     char *status_text = cJSON_PrintUnformatted(status.get());
     if (!status_text) {
         return nullptr;
@@ -126,7 +128,10 @@ cJSON *call_set_volume(const cJSON *arguments)
         apply_xiaozhi_speaker_volume(volume);
     }
     char result[kToolResultTextLen] = {};
-    snprintf(result, sizeof(result), "{\"volume_percent\":%d}", g_chime_volume_percent);
+    snprintf(result,
+             sizeof(result),
+             "{\"volume_percent\":%d}",
+             static_cast<int>(g_chime_volume_percent));
     return create_tool_content(result, false);
 }
 

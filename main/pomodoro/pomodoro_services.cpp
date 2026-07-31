@@ -6,6 +6,7 @@
 #include "ota_runtime_state.h"
 #include "reminder_schedule.h"
 #include "sensor_time.h"
+#include "task_notification_target.h"
 #include "ui_views.h"
 #include "wifi_portal_state.h"
 #include "xiaozhi_ai.h"
@@ -31,7 +32,7 @@ portMUX_TYPE s_pomodoro_mux = portMUX_INITIALIZER_UNLOCKED;
 PomodoroSnapshot s_snapshot = {kPomodoroIdle, 0, 0, false, 1};
 int64_t s_deadline_us = 0;
 int64_t s_completed_at_us = 0;
-TaskHandle_t s_task_handle = nullptr;
+TaskNotificationTarget s_task_target;
 std::atomic<bool> s_stop_alert_requested{false};
 
 uint32_t remaining_ms_locked(int64_t now_us)
@@ -45,9 +46,7 @@ uint32_t remaining_ms_locked(int64_t now_us)
 
 void notify_state_changed()
 {
-    if (s_task_handle) {
-        xTaskNotifyGive(s_task_handle);
-    }
+    (void)s_task_target.notify();
     notify_ui_task();
 }
 
@@ -186,7 +185,7 @@ void pomodoro_services_init()
 
 void pomodoro_task(void *)
 {
-    s_task_handle = xTaskGetCurrentTaskHandle();
+    s_task_target.publish(xTaskGetCurrentTaskHandle());
     for (;;) {
         PomodoroSnapshot snapshot = {};
         pomodoro_get_snapshot(&snapshot);
@@ -285,8 +284,6 @@ bool pomodoro_stop_alert_from_button()
         return false;
     }
     s_stop_alert_requested.store(true);
-    if (s_task_handle) {
-        xTaskNotifyGive(s_task_handle);
-    }
+    (void)s_task_target.notify();
     return true;
 }

@@ -2,6 +2,7 @@
 #include "network_services.h"
 
 #include "app_text_format.h"
+#include "network_credentials_state.h"
 #include "network_sync_schedule.h"
 #include "network_task_guards.h"
 #include "ui_views.h"
@@ -82,7 +83,9 @@ void run_boot_connectivity_sync()
         vTaskDelay(pdMS_TO_TICKS(kBootScreenOfflineDelayMs));
         return;
     }
-    if (!g_have_wifi_creds) {
+    NetworkCredentialsSnapshot credentials = {};
+    network_credentials_snapshot(&credentials);
+    if (!credentials.wifi_configured) {
         char detail[kBootSetupDetailTextSize] = {};
         format_boot_setup_detail(detail, sizeof(detail));
         update_boot_screen(kBootScreenCompletePercent, "Setup mode", detail);
@@ -90,7 +93,7 @@ void run_boot_connectivity_sync()
         return;
     }
 
-    update_boot_screen(18, "Connecting Wi-Fi", g_wifi_ssid);
+    update_boot_screen(18, "Connecting Wi-Fi", credentials.wifi_ssid);
     NetworkAwakeLockGuard awake_lock;
     BootSyncDeadlineGuard deadline_guard;
     if (!awake_lock.locked()) {

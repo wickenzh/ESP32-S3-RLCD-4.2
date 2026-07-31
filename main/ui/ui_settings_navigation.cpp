@@ -61,6 +61,27 @@ void reset_settings_navigation_state()
     reset_settings_confirmation();
 }
 
+void enter_settings_primary_navigation()
+{
+    g_settings_page_toggle_mode.store(false, std::memory_order_relaxed);
+    g_settings_page_order_mode.store(false, std::memory_order_relaxed);
+    g_settings_primary_selection.store(kSettingsPrimaryNetwork, std::memory_order_relaxed);
+    g_settings_selection.store(0, std::memory_order_relaxed);
+    g_settings_page_order_selection.store(0, std::memory_order_relaxed);
+    g_settings_focus_secondary.store(false, std::memory_order_release);
+}
+
+void enter_settings_system_item_navigation(int selection)
+{
+    const int selected = clamp_settings_secondary(kSettingsPrimarySystem, selection);
+    g_settings_page_toggle_mode.store(false, std::memory_order_relaxed);
+    g_settings_page_order_mode.store(false, std::memory_order_relaxed);
+    g_settings_primary_selection.store(kSettingsPrimarySystem, std::memory_order_relaxed);
+    g_settings_selection.store(selected, std::memory_order_relaxed);
+    g_settings_page_order_selection.store(0, std::memory_order_relaxed);
+    g_settings_focus_secondary.store(true, std::memory_order_release);
+}
+
 int clamp_settings_primary(int primary)
 {
     if (primary < 0 || primary >= kSettingsPrimaryCount) {

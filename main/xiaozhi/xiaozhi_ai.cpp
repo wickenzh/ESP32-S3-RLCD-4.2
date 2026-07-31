@@ -6,6 +6,7 @@
 #include "alarm_services.h"
 #include "audio_services.h"
 #include "network_services.h"
+#include "network_credentials_state.h"
 #include "network_https_resources.h"
 #include "scoped_heap_buffer.h"
 #include "ui_views.h"
@@ -54,6 +55,8 @@ constexpr uint32_t kLoopIdleMs = 500;
 constexpr TickType_t kPomodoroAudioPausedWaitTicks = portMAX_DELAY;
 constexpr uint32_t kWakeAudioPerformanceSettleMs = 40;
 constexpr uint32_t kConversationIdleTimeoutMs = 30000;
+constexpr uint32_t kMcpWeatherRefreshPollMs = 500;
+constexpr uint32_t kMcpWeatherRefreshTimeoutMs = 150000;
 constexpr int kIncomingAudioBufferSize = 4096;
 // 官方实现为 Opus 编解码任务预留 24 KiB。这里的任务还负责 WebSocket
 // 协议，因此至少保持相同栈空间，避免进入 SILK 编码器后破坏任务栈。
@@ -85,6 +88,10 @@ static_assert(kWakeAudioPerformanceSettleMs > 0,
               "Xiaozhi wake audio performance settle time must be positive");
 static_assert(pdMS_TO_TICKS(kTaskStartRetryMs) > 0,
               "Xiaozhi task start retry delay must convert to ticks");
+static_assert(pdMS_TO_TICKS(kMcpWeatherRefreshPollMs) > 0,
+              "MCP weather refresh poll delay must convert to ticks");
+static_assert(kMcpWeatherRefreshTimeoutMs > kMcpWeatherRefreshPollMs,
+              "MCP weather refresh timeout must exceed its poll delay");
 // The main AI task reads NVS. Flash/NVS operations temporarily disable the
 // external-memory cache, so its stack must stay in internal DRAM. Reserving it
 // statically avoids the late 24 KiB contiguous-heap allocation failure.
@@ -233,6 +240,11 @@ bool run_voice_conversation()
     while (ready && (xEventGroupGetBits(s_events) & kAiPageActiveBit) != 0 &&
            !s_pomodoro_audio_suspended.load(std::memory_order_acquire) &&
            (xTaskGetTickCount() - last_activity) < pdMS_TO_TICKS(kConversationIdleTimeoutMs)) {
+        if (xiaozhi_tts_playback_failed()) {
+            ESP_LOGW(TAG, "Xiaozhi TTS playback failed; rebuilding voice session");
+            ready = false;
+            break;
+        }
         if (session.empty_reply_continuation_pending &&
             app_tick_deadline_reached(xTaskGetTickCount(),
                                       session.empty_reply_continuation_deadline)) {
@@ -437,6 +449,27 @@ void ensure_wake_word_listening()
     xiaozhi_power_session_set_idle(true);
 }
 
+bool wait_for_mcp_weather_refresh()
+{
+    if (!g_app_events || !s_events) {
+        ESP_LOGW(TAG, "Xiaozhi weather refresh wait skipped: event group unavailable");
+        return false;
+    }
+    const TickType_t deadline = xTaskGetTickCount() +
+                                pdMS_TO_TICKS(kMcpWeatherRefreshTimeoutMs);
+    while ((xEventGroupGetBits(g_app_events) & kManualWeatherSyncBit) != 0 &&
+           (xEventGroupGetBits(s_events) & kAiPageActiveBit) != 0) {
+        if (app_tick_deadline_reached(xTaskGetTickCount(), deadline)) {
+            ESP_LOGW(TAG,
+                     "Xiaozhi weather refresh wait timed out after %u ms; continuing in background",
+                     static_cast<unsigned>(kMcpWeatherRefreshTimeoutMs));
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(kMcpWeatherRefreshPollMs));
+    }
+    return (xEventGroupGetBits(g_app_events) & kManualWeatherSyncBit) == 0;
+}
+
 void xiaozhi_ai_task(void *)
 {
     TickType_t next_activation_attempt = 0;
@@ -476,7 +509,7 @@ void xiaozhi_ai_task(void *)
             ESP_LOGI(TAG, "Xiaozhi audio resuming after pomodoro completion");
         }
         if (xiaozhi_ai_configuration_blocked(g_offline_mode_ui_enabled,
-                                             g_have_wifi_creds)) {
+                                             network_wifi_credentials_configured())) {
             release_realtime_network();
             if (g_offline_mode_ui_enabled) {
                 snapshot_set(kXiaozhiAiError, kErrorStatus, kOfflineDetail);
@@ -557,10 +590,7 @@ void xiaozhi_ai_task(void *)
                                  "天气城市已保存",
                                  "正在后台更新全部天气");
                     release_realtime_network();
-                    while ((xEventGroupGetBits(g_app_events) & kManualWeatherSyncBit) != 0 &&
-                           (xEventGroupGetBits(s_events) & kAiPageActiveBit) != 0) {
-                        vTaskDelay(pdMS_TO_TICKS(100));
-                    }
+                    (void)wait_for_mcp_weather_refresh();
                 }
             }
             if (!conversation_ok) {

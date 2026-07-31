@@ -9,7 +9,6 @@ struct OtaManifest {
     char version[kOtaVersionLen] = {};
     char url[kOtaUrlLen] = {};
     char sha256[kOtaSha256Len] = {};
-    char notes[kOtaNotesLen] = {};
     int size = 0;
 };
 

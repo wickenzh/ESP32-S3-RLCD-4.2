@@ -3,6 +3,7 @@
 
 #include "app_constexpr.h"
 #include "app_state.h"
+#include "network_credentials_state.h"
 #include "ui_text_format.h"
 #include "ui_views.h"
 #include "wifi_portal_state.h"
@@ -98,6 +99,8 @@ void build_setup_status_panel(lv_obj_t *parent)
 
 bool update_setup_status_panel()
 {
+    char wifi_ssid[kNetworkWifiSsidLen] = {};
+    (void)network_wifi_ssid_snapshot(wifi_ssid, sizeof(wifi_ssid));
     bool changed = false;
     if (!g_setup_status_labels[kSetupStatusTitleIndex]) {
         return false;
@@ -118,10 +121,13 @@ bool update_setup_status_panel()
     changed |= set_setup_status_line(kSetupStatusStaSsidIndex,
                                      kSetupStatusPlaceholder,
                                      kSetupStaSsidFormat,
-                                     g_wifi_ssid[0] ? g_wifi_ssid : kSetupStatusPlaceholder);
+                                     wifi_ssid[0] ? wifi_ssid : kSetupStatusPlaceholder);
+    char station_ip[kWifiStationIpTextLen] = {};
+    const bool have_station_ip = wifi_station_ip_snapshot(station_ip, sizeof(station_ip));
     const int disconnect_reason = wifi_last_disconnect_reason();
-    if (g_sta_ip[0]) {
-        changed |= set_setup_status_line(kSetupStatusStaIpIndex, kSetupStaIpPlaceholder, kSetupStaIpFormat, g_sta_ip);
+    if (have_station_ip) {
+        changed |= set_setup_status_line(
+            kSetupStatusStaIpIndex, kSetupStaIpPlaceholder, kSetupStaIpFormat, station_ip);
     } else if (disconnect_reason) {
         changed |= set_setup_status_line(kSetupStatusStaIpIndex,
                                          kSetupStaIpPlaceholder,

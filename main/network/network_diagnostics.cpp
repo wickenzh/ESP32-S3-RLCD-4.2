@@ -3,6 +3,7 @@
 
 #include "app_constexpr.h"
 #include "app_text_format.h"
+#include "network_credentials_state.h"
 #include "network_diagnostics_catalog.h"
 #include "network_diagnostics_state.h"
 #include "network_json_root.h"
@@ -386,11 +387,12 @@ void run_network_diagnostic_checks()
     char location[kNetworkDiagLocationTextSize] = {};
     char city[kNetworkDiagCityTextSize] = {};
     char public_ip[kNetworkDiagPublicIpTextSize] = {};
-    bool local_ip_ok = g_sta_ip[0] != '\0';
+    char local_ip[kWifiStationIpTextLen] = {};
+    bool local_ip_ok = wifi_station_ip_snapshot(local_ip, sizeof(local_ip));
     network_diag_record_text_line(kNetworkDiagLocalIpLine,
                                   kNetworkDiagLocalIpFormat,
                                   local_ip_ok,
-                                  g_sta_ip,
+                                  local_ip,
                                   kNetworkDiagPlaceholder);
 
     network_diag_set_checking_line(kNetworkDiagPublicIpLine, kNetworkDiagPublicIpFormat);
@@ -412,7 +414,7 @@ void run_network_diagnostic_checks()
     network_diag_record_result_line(kNetworkDiagDnsLine, kNetworkDiagDnsFormat, dns_ok);
 
     bool weather_ok = false;
-    if (g_have_weather_key && !battery_low_mode_load()) {
+    if (network_weather_api_key_configured() && !battery_low_mode_load()) {
         network_diag_set_checking_line(kNetworkDiagWeatherLine, kNetworkDiagWeatherFormat);
         weather_ok = perform_weather_update() == WeatherUpdateResult::kSuccess;
     }

@@ -13,7 +13,6 @@ constexpr const char *kVersionField = "version";
 constexpr const char *kUrlField = "url";
 constexpr const char *kSha256Field = "sha256";
 constexpr const char *kSizeField = "size";
-constexpr const char *kNotesField = "notes";
 static_assert(kOtaSha256HexLen + 1 == kOtaSha256Len,
               "OTA SHA256 storage must fit hex text and NUL");
 } // namespace
@@ -24,6 +23,8 @@ OtaManifestParseResult ota_parse_manifest_json(const char *json, OtaManifest *ma
     if (!json || !manifest) {
         return result;
     }
+
+    *manifest = OtaManifest{};
 
     NetworkJsonRoot root(json);
     if (!root) {
@@ -49,10 +50,6 @@ OtaManifestParseResult ota_parse_manifest_json(const char *json, OtaManifest *ma
     if (cJSON_IsNumber(size)) {
         manifest->size = size->valueint;
     }
-    (void)json_copy_string(root.get(),
-                           kNotesField,
-                           manifest->notes,
-                           sizeof(manifest->notes));
 
     if (!result.have_version || !result.have_url || !result.have_sha256) {
         result.status = kOtaManifestParseMissingRequiredFields;

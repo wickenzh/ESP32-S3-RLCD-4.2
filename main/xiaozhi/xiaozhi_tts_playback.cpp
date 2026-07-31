@@ -9,6 +9,7 @@
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <freertos/stream_buffer.h>
 #include <freertos/task.h>
 #include <atomic>
@@ -28,6 +29,8 @@ constexpr const char *kStreamCreateFailedLog =
     "xiaozhi TTS stream buffer creation failed";
 constexpr const char *kTaskCreateFailedLog =
     "xiaozhi TTS playback task creation failed";
+constexpr const char *kWakeSignalCreateFailedLog =
+    "xiaozhi TTS wake signal creation failed";
 constexpr const char *kSampleCountOverflowLog =
     "xiaozhi TTS sample count overflow";
 #define XIAOZHI_TTS_TASK_STOP_TIMEOUT_FORMAT \
@@ -43,6 +46,8 @@ StaticTask_t *s_task_buffer = nullptr;
 uint8_t *s_storage = nullptr;
 StaticStreamBuffer_t *s_stream_buffer = nullptr;
 StreamBufferHandle_t s_stream = nullptr;
+StaticSemaphore_t s_wake_signal_storage = {};
+SemaphoreHandle_t s_wake_signal = nullptr;
 
 static_assert(kStreamBytes > kPrebufferBytes,
               "TTS stream must exceed its prebuffer threshold");
@@ -66,6 +71,27 @@ void release_storage()
     s_task_buffer = nullptr;
 }
 
+bool prepare_wake_signal()
+{
+    if (!s_wake_signal) {
+        s_wake_signal = xSemaphoreCreateBinaryStatic(&s_wake_signal_storage);
+        if (!s_wake_signal) {
+            ESP_LOGW(TAG, "%s", kWakeSignalCreateFailedLog);
+            return false;
+        }
+    }
+    while (xSemaphoreTake(s_wake_signal, 0) == pdTRUE) {
+    }
+    return true;
+}
+
+void signal_playback_task()
+{
+    if (s_wake_signal) {
+        (void)xSemaphoreGive(s_wake_signal);
+    }
+}
+
 void playback_task(void *)
 {
     int16_t pcm[kChunkSamples] = {};
@@ -76,16 +102,17 @@ void playback_task(void *)
         if (!primed) {
             if (available == 0) {
                 pending_since = 0;
-                vTaskDelay(pdMS_TO_TICKS(10));
+                (void)xSemaphoreTake(s_wake_signal, portMAX_DELAY);
                 continue;
             }
             TickType_t now = xTaskGetTickCount();
             if (pending_since == 0) {
                 pending_since = now;
             }
-            if (available < kPrebufferBytes &&
-                (now - pending_since) < pdMS_TO_TICKS(kPrebufferWaitMs)) {
-                vTaskDelay(pdMS_TO_TICKS(5));
+            TickType_t elapsed = now - pending_since;
+            const TickType_t prebuffer_wait = pdMS_TO_TICKS(kPrebufferWaitMs);
+            if (available < kPrebufferBytes && elapsed < prebuffer_wait) {
+                (void)xSemaphoreTake(s_wake_signal, prebuffer_wait - elapsed);
                 continue;
             }
             primed = true;
@@ -126,6 +153,7 @@ void playback_task(void *)
 void xiaozhi_tts_playback_stop()
 {
     s_running.store(false);
+    signal_playback_task();
     for (int retry = 0;
          s_task && !s_exited.load() && retry < kStopRetryCount;
          ++retry) {
@@ -152,6 +180,9 @@ bool xiaozhi_tts_playback_start()
         return true;
     }
     xiaozhi_tts_playback_stop();
+    if (!prepare_wake_signal()) {
+        return false;
+    }
     s_storage = static_cast<uint8_t *>(heap_caps_calloc(
         1, kStreamBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     s_stream_buffer = static_cast<StaticStreamBuffer_t *>(heap_caps_calloc(
@@ -215,6 +246,9 @@ bool xiaozhi_tts_playback_enqueue(const int16_t *samples, size_t sample_count)
                                     samples,
                                     bytes,
                                     pdMS_TO_TICKS(250));
+    if (sent > 0) {
+        signal_playback_task();
+    }
     if (sent != bytes) {
         ESP_LOGW(TAG,
                  "Xiaozhi TTS queue full: sent=%u expected=%u free=%u",
@@ -231,6 +265,11 @@ bool xiaozhi_tts_playback_drained()
     return s_stream &&
            xStreamBufferBytesAvailable(s_stream) == 0 &&
            !s_busy.load();
+}
+
+bool xiaozhi_tts_playback_failed()
+{
+    return s_failed.load();
 }
 
 void xiaozhi_tts_playback_get_snapshot(XiaozhiTtsPlaybackSnapshot *out)

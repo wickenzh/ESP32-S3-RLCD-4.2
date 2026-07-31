@@ -3,6 +3,7 @@
 
 #include "alarm_services.h"
 #include "network_config_internal.h"
+#include "network_credentials_state.h"
 #include "manual_time_parser.h"
 #include "provisioning_form_fields.h"
 #include "sensor_services.h"
@@ -76,8 +77,8 @@ bool save_credentials_from_body(const char *body)
         ESP_LOGW(TAG, "%s", PROVISIONING_EMPTY_SSID_LOG);
         return false;
     }
-    if (fields.api_key[0] == '\0' && g_weather_api_key[0] != '\0') {
-        strlcpy(fields.api_key, g_weather_api_key, sizeof(fields.api_key));
+    if (fields.api_key[0] == '\0') {
+        (void)network_weather_api_key_snapshot(fields.api_key, sizeof(fields.api_key));
     }
     if (fields.api_key[0] == '\0') {
         ESP_LOGW(TAG, "%s", PROVISIONING_EMPTY_API_KEY_LOG);

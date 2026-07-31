@@ -114,9 +114,10 @@ void create_settings_chime_retry_task()
 
 void run_hourly_chime(int sound_index)
 {
+    const int volume_percent = g_chime_volume_percent.load(std::memory_order_acquire);
     CodecPort *codec = audio_prepare_codec_for_playback();
-    if (codec && codec->CodecPort_PlayChimeSound(sound_index, g_chime_volume_percent)) {
-        ESP_LOGI(TAG, HOURLY_CHIME_PLAYED_LOG_FORMAT, sound_index, g_chime_volume_percent);
+    if (codec && codec->CodecPort_PlayChimeSound(sound_index, volume_percent)) {
+        ESP_LOGI(TAG, HOURLY_CHIME_PLAYED_LOG_FORMAT, sound_index, volume_percent);
     } else {
         ESP_LOGW(TAG, HOURLY_CHIME_SKIPPED_LOG_FORMAT, sound_index);
     }
@@ -160,6 +161,7 @@ bool play_chime_sound_repeated_blocking(int source_slot,
         return false;
     }
     CodecPort *codec = audio_prepare_codec_for_playback();
+    const int volume_percent = g_chime_volume_percent.load(std::memory_order_acquire);
     bool played = codec != nullptr;
     for (int repeat = 0; played && repeat < repeat_count; ++repeat) {
         if (stop_requested && stop_requested()) {
@@ -167,7 +169,7 @@ bool play_chime_sound_repeated_blocking(int source_slot,
             break;
         }
         played = codec->CodecPort_PlayChimeSound(source_slot,
-                                                 g_chime_volume_percent,
+                                                 volume_percent,
                                                  stop_requested);
     }
     audio_finish_playback();

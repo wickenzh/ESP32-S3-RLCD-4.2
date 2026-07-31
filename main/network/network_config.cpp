@@ -10,6 +10,8 @@
 #include "network_config_keys.h"
 #include "network_config_nvs.h"
 #include "network_config_internal.h"
+#include "network_credentials_state.h"
+#include "manual_weather_city_state.h"
 #include "network_factory_reset.h"
 #include "network_page_storage.h"
 #include "network_runtime_events.h"
@@ -94,6 +96,9 @@ struct LoadedNetworkConfig {
     esp_err_t ssid_err = ESP_FAIL;
     esp_err_t pass_err = ESP_FAIL;
     esp_err_t key_err = ESP_FAIL;
+    char wifi_ssid[kNetworkWifiSsidLen] = {};
+    char wifi_password[kNetworkWifiPasswordLen] = {};
+    char weather_api_key[kNetworkWeatherApiKeyLen] = {};
     uint8_t chime = 0;
     uint8_t all_day = 0;
     uint8_t volume = chime_settings::kDefaultVolumePercent;
@@ -102,6 +107,7 @@ struct LoadedNetworkConfig {
     uint8_t offline = 0;
     uint8_t xiaozhi_auto_return = 0;
     uint8_t page_order[kWorkPageCount] = {};
+    char manual_weather_city[kManualWeatherCityLen] = {};
     bool have_page_order = false;
 };
 
@@ -149,33 +155,36 @@ bool clear_saved_config_nvs()
     return true;
 }
 
-void load_saved_manual_weather_city(nvs_handle_t nvs)
+void load_saved_manual_weather_city(nvs_handle_t nvs, char *out, size_t out_len)
 {
-    network_weather_city_storage::load_preferred_city(
-        nvs, g_manual_weather_city, sizeof(g_manual_weather_city));
+    network_weather_city_storage::load_preferred_city(nvs, out, out_len);
 }
 
 bool apply_loaded_page_config(uint8_t page_mask, const uint8_t *page_order, bool have_page_order)
 {
-    g_work_page_enabled_mask = normalize_work_page_enabled_mask(page_mask);
+    work_page_enabled_mask_store(normalize_work_page_enabled_mask(page_mask));
     if (have_page_order && page_order) {
-        memcpy(g_work_page_order, page_order, sizeof(g_work_page_order));
+        work_page_order_replace(page_order, kWorkPageCount);
+    } else {
+        normalize_work_page_order();
     }
-    normalize_work_page_order();
-    uint8_t online_mask = g_work_page_enabled_mask;
+    uint8_t online_mask = work_page_enabled_mask_load();
     if (g_offline_mode_ui_enabled) {
-        g_work_page_enabled_mask = work_page_mask_for_offline_mode(g_work_page_enabled_mask);
+        work_page_enabled_mask_store(work_page_mask_for_offline_mode(online_mask));
     }
     active_work_page_store(first_enabled_work_page());
-    return online_mask != g_work_page_enabled_mask;
+    return online_mask != work_page_enabled_mask_load();
 }
 
 LoadedNetworkConfig read_loaded_network_config(nvs_handle_t nvs)
 {
     LoadedNetworkConfig loaded = {};
-    loaded.ssid_err = read_nvs_string(nvs, kWifiSsidKey, g_wifi_ssid, sizeof(g_wifi_ssid));
-    loaded.pass_err = read_nvs_string(nvs, kWifiPassKey, g_wifi_pass, sizeof(g_wifi_pass));
-    loaded.key_err = read_nvs_string(nvs, kWeatherApiKeyKey, g_weather_api_key, sizeof(g_weather_api_key));
+    loaded.ssid_err =
+        read_nvs_string(nvs, kWifiSsidKey, loaded.wifi_ssid, sizeof(loaded.wifi_ssid));
+    loaded.pass_err = read_nvs_string(
+        nvs, kWifiPassKey, loaded.wifi_password, sizeof(loaded.wifi_password));
+    loaded.key_err = read_nvs_string(
+        nvs, kWeatherApiKeyKey, loaded.weather_api_key, sizeof(loaded.weather_api_key));
     network_chime_storage::StoredChimeSettings chime =
         network_chime_storage::read(nvs, chime_settings::kDefaultVolumePercent);
     loaded.chime = chime.enabled;
@@ -185,15 +194,25 @@ LoadedNetworkConfig read_loaded_network_config(nvs_handle_t nvs)
     loaded.page_mask = read_saved_page_mask(nvs);
     loaded.offline = read_nvs_u8_or_default(nvs, kOfflineModeKey, 0);
     loaded.xiaozhi_auto_return = read_nvs_u8_or_default(nvs, kXiaozhiAutoReturnKey, 0);
-    load_saved_manual_weather_city(nvs);
+    load_saved_manual_weather_city(
+        nvs, loaded.manual_weather_city, sizeof(loaded.manual_weather_city));
     loaded.have_page_order = read_saved_page_order(nvs, loaded.page_order, sizeof(loaded.page_order));
     return loaded;
 }
 
 bool apply_loaded_network_config(const LoadedNetworkConfig &loaded)
 {
-    g_have_weather_key = loaded.key_err == ESP_OK && g_weather_api_key[0] != '\0';
-    g_has_manual_weather_city = g_manual_weather_city[0] != '\0';
+    const bool wifi_configured = loaded.ssid_err == ESP_OK &&
+                                 loaded.pass_err == ESP_OK &&
+                                 loaded.wifi_ssid[0] != '\0';
+    const bool weather_key_configured = loaded.key_err == ESP_OK &&
+                                        loaded.weather_api_key[0] != '\0';
+    network_credentials_store(loaded.wifi_ssid,
+                              loaded.wifi_password,
+                              loaded.weather_api_key,
+                              wifi_configured,
+                              weather_key_configured);
+    manual_weather_city_store(loaded.manual_weather_city);
     g_hourly_chime_enabled = nvs_u8_to_bool(loaded.chime);
     g_hourly_chime_all_day = nvs_u8_to_bool(loaded.all_day);
     g_offline_mode_ui_enabled = nvs_u8_to_bool(loaded.offline);
@@ -217,7 +236,7 @@ bool load_saved_config()
     if (offline_page_mask_changed && !save_work_page_settings()) {
         ESP_LOGW(TAG, "%s", kOfflinePageMaskPersistFailedLog);
     }
-    return loaded.ssid_err == ESP_OK && loaded.pass_err == ESP_OK && g_wifi_ssid[0] != '\0';
+    return network_wifi_credentials_configured();
 }
 
 void clear_network_request_bits()
@@ -239,9 +258,10 @@ bool set_offline_mode_enabled(bool enabled)
         return false;
     }
     uint8_t next_value = bool_to_nvs_u8(enabled);
+    const uint8_t current_page_mask = work_page_enabled_mask_load();
     uint8_t next_page_mask = enabled
-                                 ? work_page_mask_for_offline_mode(g_work_page_enabled_mask)
-                                 : g_work_page_enabled_mask;
+                                 ? work_page_mask_for_offline_mode(current_page_mask)
+                                 : current_page_mask;
     bool offline_changed = false;
     bool page_mask_changed = false;
     err = write_changed_nvs_u8(nvs.get(), err, kOfflineModeKey, next_value, &offline_changed);
@@ -255,7 +275,7 @@ bool set_offline_mode_enabled(bool enabled)
     }
     g_offline_mode_ui_enabled = enabled;
     if (enabled) {
-        g_work_page_enabled_mask = next_page_mask;
+        work_page_enabled_mask_store(next_page_mask);
         normalize_work_page_order();
         ensure_active_work_page_enabled();
         clear_network_request_bits();
@@ -269,7 +289,7 @@ bool set_offline_mode_enabled(bool enabled)
 
 bool can_leave_offline_mode_without_setup()
 {
-    return g_have_wifi_creds && g_have_weather_key;
+    return network_all_online_credentials_configured();
 }
 
 bool is_weather_city_input_valid(const char *city)
@@ -289,12 +309,6 @@ static void copy_trimmed_weather_city(char *out, size_t out_len, const char *cit
     }
 }
 
-static void set_manual_weather_city_state(const char *city)
-{
-    strlcpy(g_manual_weather_city, cstr_or_empty(city), sizeof(g_manual_weather_city));
-    g_has_manual_weather_city = g_manual_weather_city[0] != '\0';
-}
-
 static bool finish_manual_weather_city_save(ScopedNvsHandle &nvs,
                                             esp_err_t err,
                                             const char *city,
@@ -306,26 +320,22 @@ static bool finish_manual_weather_city_save(ScopedNvsHandle &nvs,
         ESP_LOGW(TAG, NVS_SAVE_WEATHER_CITY_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
-    set_manual_weather_city_state(city);
+    manual_weather_city_store(city);
     return true;
 }
 
 static void reset_saved_config_runtime_state()
 {
-    g_wifi_ssid[0] = '\0';
-    g_wifi_pass[0] = '\0';
-    g_weather_api_key[0] = '\0';
-    set_manual_weather_city_state("");
-    g_sta_ip[0] = '\0';
-    g_have_wifi_creds = false;
-    g_have_weather_key = false;
+    network_credentials_clear();
+    manual_weather_city_store("");
+    clear_wifi_station_ip();
     g_offline_mode_ui_enabled = false;
     g_xiaozhi_auto_return_enabled = false;
     g_hourly_chime_enabled = false;
     g_hourly_chime_all_day = false;
     g_chime_volume_percent = chime_settings::kDefaultVolumePercent;
     g_chime_sound_index = 0;
-    g_work_page_enabled_mask = kDefaultWorkPageMask;
+    work_page_enabled_mask_store(kDefaultWorkPageMask);
     reset_work_page_order();
     active_work_page_store(first_enabled_work_page());
     clear_config_event_bits(kWifiConnectedBit | kWeatherReadyBit, kConfigEventReasonFactoryReset);
@@ -338,12 +348,15 @@ static void apply_saved_config_runtime_state(const char *ssid,
                                              const char *api_key,
                                              const char *weather_city)
 {
-    strlcpy(g_wifi_ssid, cstr_or_empty(ssid), sizeof(g_wifi_ssid));
-    strlcpy(g_wifi_pass, cstr_or_empty(pass), sizeof(g_wifi_pass));
-    strlcpy(g_weather_api_key, cstr_or_empty(api_key), sizeof(g_weather_api_key));
-    set_manual_weather_city_state(weather_city);
-    g_have_wifi_creds = g_wifi_ssid[0] != '\0';
-    g_have_weather_key = g_weather_api_key[0] != '\0';
+    const char *saved_ssid = cstr_or_empty(ssid);
+    const char *saved_password = cstr_or_empty(pass);
+    const char *saved_api_key = cstr_or_empty(api_key);
+    network_credentials_store(saved_ssid,
+                              saved_password,
+                              saved_api_key,
+                              saved_ssid[0] != '\0',
+                              saved_api_key[0] != '\0');
+    manual_weather_city_store(weather_city);
 }
 
 static esp_err_t write_saved_config_nvs(nvs_handle_t nvs,
@@ -427,6 +440,8 @@ bool save_manual_weather_city(const char *city)
 
 bool clear_manual_weather_city()
 {
+    char active_city[kManualWeatherCityLen] = {};
+    (void)manual_weather_city_snapshot(active_city, sizeof(active_city));
     ScopedNvsHandle nvs;
     esp_err_t err = nvs.open(NVS_READWRITE, kNvsActionClearingWeatherCity);
     if (err != ESP_OK) {
@@ -434,14 +449,14 @@ bool clear_manual_weather_city()
     }
     bool changed = false;
     err = network_weather_city_storage::clear_manual_city(
-        nvs.get(), g_manual_weather_city, &changed);
+        nvs.get(), active_city, &changed);
     err = commit_nvs_if_changed(nvs.get(), err, changed);
     nvs.close();
     if (err != ESP_OK) {
         ESP_LOGW(TAG, NVS_CLEAR_WEATHER_CITY_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
-    set_manual_weather_city_state("");
+    manual_weather_city_store("");
     return true;
 }
 
@@ -474,7 +489,7 @@ bool save_work_page_settings()
     if (err != ESP_OK) {
         return false;
     }
-    uint8_t mask = normalize_work_page_enabled_mask(g_work_page_enabled_mask);
+    uint8_t mask = normalize_work_page_enabled_mask(work_page_enabled_mask_load());
     bool changed = false;
     err = write_changed_nvs_u8(nvs.get(), err, kPageMaskV5Key, mask, &changed);
     err = commit_nvs_if_changed(nvs.get(), err, changed);
@@ -482,13 +497,17 @@ bool save_work_page_settings()
         ESP_LOGW(TAG, NVS_SAVE_PAGE_SETTINGS_FAILED_FORMAT, esp_err_to_name(err));
         return false;
     }
-    g_work_page_enabled_mask = mask;
+    work_page_enabled_mask_store(mask);
     return true;
 }
 
 bool save_work_page_order()
 {
     normalize_work_page_order();
+    uint8_t page_order[kWorkPageCount] = {};
+    if (!work_page_order_copy(page_order, sizeof(page_order))) {
+        return false;
+    }
     ScopedNvsHandle nvs;
     esp_err_t err = nvs.open(NVS_READWRITE, kNvsActionSavingPageOrder);
     if (err != ESP_OK) {
@@ -497,8 +516,8 @@ bool save_work_page_order()
     bool changed = false;
     err = write_work_page_order_nvs(nvs.get(),
                                     err,
-                                    g_work_page_order,
-                                    sizeof(g_work_page_order),
+                                    page_order,
+                                    sizeof(page_order),
                                     &changed);
     err = commit_nvs_if_changed(nvs.get(), err, changed);
     if (!nvs.close_save_ok(err)) {

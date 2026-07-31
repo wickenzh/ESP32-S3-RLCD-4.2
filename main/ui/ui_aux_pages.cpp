@@ -2,6 +2,7 @@
 #include "ui_views.h"
 
 #include "app_constexpr.h"
+#include "network_credentials_state.h"
 #include "network_diagnostics_catalog.h"
 #include "network_diagnostics_state.h"
 #include "network_services.h"
@@ -246,8 +247,12 @@ void build_boot_info_page()
 
 void update_boot_info_page()
 {
+    char wifi_ssid[kNetworkWifiSsidLen] = {};
+    (void)network_wifi_ssid_snapshot(wifi_ssid, sizeof(wifi_ssid));
     set_info_time_label(kInfoNtpLabelIndex, kInfoLastNtpFormat, get_last_ntp_sync_time());
-    set_info_string_label(kInfoWifiLabelIndex, kInfoWifiFormat, g_wifi_ssid[0] ? g_wifi_ssid : "--");
+    set_info_string_label(kInfoWifiLabelIndex,
+                          kInfoWifiFormat,
+                          wifi_ssid[0] ? wifi_ssid : "--");
     set_info_time_label(kInfoWeatherLabelIndex,
                         kInfoLastWeatherFormat,
                         get_last_weather_sync_time());

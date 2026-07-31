@@ -1,21 +1,18 @@
 // 集中维护 UI 任务句柄并安全转发跨核心刷新通知。
 #include "ui_task_notify.h"
 
-#include <atomic>
+#include "task_notification_target.h"
 
 namespace {
-std::atomic<TaskHandle_t> s_ui_task_handle{nullptr};
+TaskNotificationTarget s_ui_task_target;
 } // namespace
 
 void register_ui_task_handle(TaskHandle_t handle)
 {
-    s_ui_task_handle.store(handle, std::memory_order_release);
+    s_ui_task_target.publish(handle);
 }
 
 void notify_ui_task()
 {
-    TaskHandle_t handle = s_ui_task_handle.load(std::memory_order_acquire);
-    if (handle) {
-        xTaskNotifyGive(handle);
-    }
+    (void)s_ui_task_target.notify();
 }

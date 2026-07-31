@@ -4,6 +4,7 @@
 #include "alarm_services.h"
 #include "app_constexpr.h"
 #include "app_state.h"
+#include "manual_weather_city_state.h"
 #include "ui_settings_confirmation_state.h"
 #include "ui_text_format.h"
 
@@ -123,25 +124,28 @@ void populate_settings_secondary_items(
         set_secondary_text(secondary_items, kNetworkSettingsNtpItem, kSettingsNetworkSyncTimeText);
         set_secondary_text(secondary_items, kNetworkSettingsWeatherItem, kSettingsNetworkSyncWeatherText);
         set_secondary_text(secondary_items, kNetworkSettingsSayingItem, kSettingsNetworkSayingText);
-        if (g_has_manual_weather_city) {
+        char weather_city[kManualWeatherCityLen] = {};
+        if (manual_weather_city_snapshot(weather_city, sizeof(weather_city))) {
             format_secondary_text(secondary_items,
                                   kNetworkSettingsWeatherCityItem,
                                   kSettingsWeatherCityManualFormat,
-                                  g_manual_weather_city);
+                                  weather_city);
         } else {
             set_secondary_text(secondary_items,
                                kNetworkSettingsWeatherCityItem,
                                kSettingsWeatherCityAutoText);
         }
     } else if (primary == kSettingsPrimarySound) {
+        const int volume_percent = static_cast<int>(g_chime_volume_percent);
+        const int sound_index = static_cast<int>(g_chime_sound_index);
         format_secondary_text(secondary_items,
                               kSoundSettingsVolumeItem,
                               kSettingsSoundVolumeFormat,
-                              g_chime_volume_percent);
+                              volume_percent);
         format_secondary_text(secondary_items,
                               kSoundSettingsSoundItem,
                               kSettingsSoundChoiceFormat,
-                              g_chime_sound_index + 1);
+                              sound_index + 1);
         set_secondary_text(secondary_items, kSoundSettingsHourlyItem, kSettingsHourlyText);
         set_secondary_text(secondary_items, kSoundSettingsAllDayItem, kSettingsAllDayText);
     } else if (primary == kSettingsPrimaryDisplay) {

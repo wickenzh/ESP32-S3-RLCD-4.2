@@ -5,6 +5,7 @@
 #include "app_constexpr.h"
 #include "audio_services.h"
 #include "chime_settings.h"
+#include "manual_weather_city_state.h"
 #include "network_diagnostics_state.h"
 #include "network_services.h"
 #include "ota_services.h"
@@ -157,8 +158,8 @@ void set_formatted_settings_feedback(const char *format, ...)
     set_settings_feedback(feedback, kSettingsFeedbackDefaultMs);
 }
 
-template <typename T>
-bool save_chime_setting_or_restore(T &setting, T previous)
+template <typename Setting, typename Value>
+bool save_chime_setting_or_restore(Setting &setting, Value previous)
 {
     if (save_hourly_chime_setting()) {
         return true;
@@ -204,13 +205,7 @@ void handle_page_order_settings_action()
     normalize_work_page_order();
     int current = valid_enabled_work_page_order_index(g_settings_page_order_selection);
     int next = next_enabled_work_page_order_index(current);
-    uint8_t tmp = g_work_page_order[current];
-    g_work_page_order[current] = g_work_page_order[next];
-    g_work_page_order[next] = tmp;
-    if (!work_page_order_has_valid_home()) {
-        tmp = g_work_page_order[current];
-        g_work_page_order[current] = g_work_page_order[next];
-        g_work_page_order[next] = tmp;
+    if (!swap_work_page_order_entries_preserving_home(current, next)) {
         set_settings_feedback(kXiaozhiHomeBlockedFeedback, kSettingsFeedbackDefaultMs);
         return;
     }
@@ -226,7 +221,7 @@ void handle_page_order_settings_action()
 void handle_network_settings_action(int selected)
 {
     if (selected == kNetworkSettingsWeatherCityItem) {
-        if (!g_has_manual_weather_city) {
+        if (!manual_weather_city_is_configured()) {
             set_settings_feedback(kManualWeatherCityEditFeedback, kSettingsFeedbackDefaultMs);
             return;
         }
@@ -275,48 +270,51 @@ void handle_network_settings_action(int selected)
 void handle_sound_settings_action(int selected)
 {
     if (selected == kSoundSettingsVolumeItem) {
-        int previous = g_chime_volume_percent;
-        int next = chime_settings::next_volume_percent(g_chime_volume_percent);
+        const int previous = g_chime_volume_percent.load(std::memory_order_acquire);
+        const int next = chime_settings::next_volume_percent(previous);
         g_chime_volume_percent = next;
         if (!save_chime_setting_or_restore(g_chime_volume_percent, previous)) {
             return;
         }
-        set_formatted_settings_feedback(kSoundVolumeFeedbackFormat, g_chime_volume_percent);
+        set_formatted_settings_feedback(kSoundVolumeFeedbackFormat, next);
         request_settings_confirmation_chime();
     } else if (selected == kSoundSettingsSoundItem) {
-        int previous = g_chime_sound_index;
-        g_chime_sound_index = (g_chime_sound_index + 1) % kChimeSoundCount;
+        const int previous = g_chime_sound_index.load(std::memory_order_acquire);
+        const int next = (previous + 1) % kChimeSoundCount;
+        g_chime_sound_index = next;
         if (!save_chime_setting_or_restore(g_chime_sound_index, previous)) {
             return;
         }
-        set_formatted_settings_feedback(kSoundIndexFeedbackFormat, g_chime_sound_index + 1);
+        set_formatted_settings_feedback(kSoundIndexFeedbackFormat, next + 1);
         request_settings_confirmation_chime();
     } else if (selected == kSoundSettingsHourlyItem) {
-        bool previous = g_hourly_chime_enabled;
-        g_hourly_chime_enabled = !g_hourly_chime_enabled;
+        const bool previous = g_hourly_chime_enabled.load(std::memory_order_acquire);
+        const bool enabled = !previous;
+        g_hourly_chime_enabled = enabled;
         if (!save_chime_setting_or_restore(g_hourly_chime_enabled, previous)) {
             return;
         }
-        set_settings_feedback(g_hourly_chime_enabled ? kHourlyChimeEnabledFeedback : kHourlyChimeDisabledFeedback,
+        set_settings_feedback(enabled ? kHourlyChimeEnabledFeedback : kHourlyChimeDisabledFeedback,
                               kSettingsFeedbackDefaultMs);
         ESP_LOGI(TAG,
                  HOURLY_CHIME_SETTING_LOG_FORMAT,
-                 g_hourly_chime_enabled ? CHIME_SETTING_ENABLED_LOG_VALUE : CHIME_SETTING_DISABLED_LOG_VALUE);
-        if (g_hourly_chime_enabled) {
+                 enabled ? CHIME_SETTING_ENABLED_LOG_VALUE : CHIME_SETTING_DISABLED_LOG_VALUE);
+        if (enabled) {
             request_settings_confirmation_chime();
         }
     } else if (selected == kSoundSettingsAllDayItem) {
-        bool previous = g_hourly_chime_all_day;
-        g_hourly_chime_all_day = !g_hourly_chime_all_day;
+        const bool previous = g_hourly_chime_all_day.load(std::memory_order_acquire);
+        const bool enabled = !previous;
+        g_hourly_chime_all_day = enabled;
         if (!save_chime_setting_or_restore(g_hourly_chime_all_day, previous)) {
             return;
         }
-        set_settings_feedback(g_hourly_chime_all_day ? kAllDayChimeEnabledFeedback : kAllDayChimeDisabledFeedback,
+        set_settings_feedback(enabled ? kAllDayChimeEnabledFeedback : kAllDayChimeDisabledFeedback,
                               kSettingsFeedbackDefaultMs);
         ESP_LOGI(TAG,
                  ALL_DAY_CHIME_SETTING_LOG_FORMAT,
-                 g_hourly_chime_all_day ? CHIME_SETTING_ENABLED_LOG_VALUE : CHIME_SETTING_DISABLED_LOG_VALUE);
-        if (g_hourly_chime_all_day) {
+                 enabled ? CHIME_SETTING_ENABLED_LOG_VALUE : CHIME_SETTING_DISABLED_LOG_VALUE);
+        if (enabled) {
             request_settings_confirmation_chime();
         }
     }
@@ -335,7 +333,7 @@ void handle_display_settings_action(int selected)
             set_settings_feedback(kOfflinePageUnavailableFeedback, kSettingsFeedbackDefaultMs);
             return;
         }
-        uint8_t next_mask = toggled_work_page_mask(g_work_page_enabled_mask, page);
+        uint8_t next_mask = toggled_work_page_mask(work_page_enabled_mask_load(), page);
         if (next_mask == 0) {
             set_settings_feedback(kLastWorkPageFeedback, kSettingsFeedbackDefaultMs);
             return;
@@ -350,10 +348,10 @@ void handle_display_settings_action(int selected)
             set_settings_feedback(kPomodoroRunningFeedback, kSettingsFeedbackInstructionMs);
             return;
         }
-        uint8_t previous = g_work_page_enabled_mask;
-        g_work_page_enabled_mask = next_mask;
+        uint8_t previous = work_page_enabled_mask_load();
+        work_page_enabled_mask_store(next_mask);
         if (!save_work_page_settings()) {
-            g_work_page_enabled_mask = previous;
+            work_page_enabled_mask_store(previous);
             set_settings_feedback(kSettingsSaveFailedFeedback, kSettingsFeedbackDefaultMs);
             return;
         }

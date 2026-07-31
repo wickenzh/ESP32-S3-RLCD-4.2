@@ -5,6 +5,7 @@ idf_component_register(
     "display_bsp.cpp"
     "i2c_bsp.cpp"
     "i2c_equipment.cpp"
+    "sdcard_bsp.cpp" 
     REQUIRES
     driver
     esp_lcd

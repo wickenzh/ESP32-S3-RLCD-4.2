@@ -4,10 +4,9 @@
 #include "app_state.h"
 
 #include <assert.h>
+#include <atomic>
 #include <string.h>
-
-uint8_t g_work_page_enabled_mask = 0;
-uint8_t g_work_page_order[kWorkPageCount] = {};
+#include <thread>
 
 namespace {
 
@@ -27,7 +26,9 @@ void expect_default_order()
         kWorkPageHistory,
         kWorkPageXiaozhiAI,
     };
-    assert(memcmp(g_work_page_order, expected, sizeof(expected)) == 0);
+    uint8_t actual[kWorkPageCount] = {};
+    assert(work_page_order_copy(actual, sizeof(actual)));
+    assert(memcmp(actual, expected, sizeof(expected)) == 0);
 }
 
 } // namespace
@@ -36,7 +37,7 @@ int main()
 {
     reset_work_page_order();
     expect_default_order();
-    g_work_page_enabled_mask = static_cast<uint8_t>((1U << kWorkPageCount) - 1U);
+    work_page_enabled_mask_store(static_cast<uint8_t>((1U << kWorkPageCount) - 1U));
 
     assert(strcmp(work_page_name(kWorkPageWeatherClock), "天气时钟") == 0);
     assert(strcmp(work_page_name(kWorkPageHistory), "温湿历史") == 0);
@@ -77,7 +78,7 @@ int main()
 
     const uint8_t local_pages = page_bit(kWorkPageFlipClock) |
                                 page_bit(kWorkPageCalendar);
-    assert(work_page_mask_for_offline_mode(g_work_page_enabled_mask) ==
+    assert(work_page_mask_for_offline_mode(work_page_enabled_mask_load()) ==
            (page_bit(kWorkPageFlipClock) |
             page_bit(kWorkPageCalendar) |
             page_bit(kWorkPageHistory)));
@@ -87,27 +88,32 @@ int main()
     assert(work_page_mask_for_offline_mode(page_bit(kWorkPageWeatherClock)) ==
            page_bit(kWorkPageFlipClock));
 
-    g_work_page_order[0] = kWorkPageXiaozhiAI;
-    g_work_page_order[1] = kWorkPageHistory;
-    g_work_page_order[2] = kWorkPageCalendar;
-    g_work_page_order[3] = kWorkPageFlipClock;
-    g_work_page_order[4] = kWorkPageWeatherBoard;
-    g_work_page_order[5] = kWorkPageGallery;
-    g_work_page_order[6] = kWorkPageWeatherClock;
+    const uint8_t xiaozhi_first[kWorkPageCount] = {
+        kWorkPageXiaozhiAI,
+        kWorkPageHistory,
+        kWorkPageCalendar,
+        kWorkPageFlipClock,
+        kWorkPageWeatherBoard,
+        kWorkPageGallery,
+        kWorkPageWeatherClock,
+    };
+    work_page_order_replace(xiaozhi_first, sizeof(xiaozhi_first));
     normalize_work_page_order();
-    assert(g_work_page_order[0] == kWorkPageHistory);
-    assert(g_work_page_order[1] == kWorkPageXiaozhiAI);
+    uint8_t normalized[kWorkPageCount] = {};
+    assert(work_page_order_copy(normalized, sizeof(normalized)));
+    assert(normalized[0] == kWorkPageHistory);
+    assert(normalized[1] == kWorkPageXiaozhiAI);
     assert(first_enabled_work_page() == kWorkPageHistory);
     assert(work_page_order_has_valid_home());
 
-    g_work_page_enabled_mask = page_bit(kWorkPageXiaozhiAI);
+    work_page_enabled_mask_store(page_bit(kWorkPageXiaozhiAI));
     normalize_work_page_order();
-    assert(!work_page_mask_has_valid_home(g_work_page_enabled_mask));
+    assert(!work_page_mask_has_valid_home(work_page_enabled_mask_load()));
     assert(!work_page_order_has_valid_home());
 
-    g_work_page_enabled_mask = page_bit(kWorkPageWeatherClock) |
-                               page_bit(kWorkPageCalendar) |
-                               page_bit(kWorkPageHistory);
+    work_page_enabled_mask_store(page_bit(kWorkPageWeatherClock) |
+                                 page_bit(kWorkPageCalendar) |
+                                 page_bit(kWorkPageHistory));
     reset_work_page_order();
     assert(first_enabled_work_page() == kWorkPageWeatherClock);
     assert(next_enabled_work_page(kWorkPageWeatherClock) == kWorkPageCalendar);
@@ -118,9 +124,46 @@ int main()
     ensure_active_work_page_enabled();
     assert(active_work_page_load() == kWorkPageWeatherClock);
 
-    g_work_page_order[0] = kWorkPageWeatherClock;
-    g_work_page_order[1] = kWorkPageWeatherClock;
-    normalize_work_page_order();
+    const uint8_t invalid_order[kWorkPageCount] = {
+        kWorkPageWeatherClock,
+        kWorkPageWeatherClock,
+    };
+    work_page_order_replace(invalid_order, sizeof(invalid_order));
     expect_default_order();
+
+    const uint8_t default_order[kWorkPageCount] = {
+        kWorkPageWeatherClock,
+        kWorkPageGallery,
+        kWorkPageWeatherBoard,
+        kWorkPageFlipClock,
+        kWorkPageCalendar,
+        kWorkPageHistory,
+        kWorkPageXiaozhiAI,
+    };
+    const uint8_t alternate_order[kWorkPageCount] = {
+        kWorkPageHistory,
+        kWorkPageCalendar,
+        kWorkPageFlipClock,
+        kWorkPageWeatherBoard,
+        kWorkPageGallery,
+        kWorkPageWeatherClock,
+        kWorkPageXiaozhiAI,
+    };
+    work_page_enabled_mask_store(all_pages);
+    std::atomic<bool> writer_done{false};
+    std::thread writer([&]() {
+        for (int i = 0; i < 10000; ++i) {
+            const uint8_t *order = (i & 1) ? default_order : alternate_order;
+            work_page_order_replace(order, kWorkPageCount);
+        }
+        writer_done.store(true, std::memory_order_release);
+    });
+    do {
+        uint8_t snapshot[kWorkPageCount] = {};
+        assert(work_page_order_copy(snapshot, sizeof(snapshot)));
+        assert(memcmp(snapshot, default_order, sizeof(snapshot)) == 0 ||
+               memcmp(snapshot, alternate_order, sizeof(snapshot)) == 0);
+    } while (!writer_done.load(std::memory_order_acquire));
+    writer.join();
     return 0;
 }

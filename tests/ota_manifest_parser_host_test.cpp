@@ -37,20 +37,29 @@ int main()
     assert(strcmp(manifest.version, "v1.5.7") == 0);
     assert(strcmp(manifest.url, "https://example.invalid/weather_clock.bin") == 0);
     assert(strcmp(manifest.sha256, kValidSha) == 0);
-    assert(strcmp(manifest.notes, "稳定性更新") == 0);
     assert(manifest.size == 123456);
 
     OtaManifest optional_fields;
     optional_fields.size = 321;
-    strcpy(optional_fields.notes, "保留");
     result = ota_parse_manifest_json(
         "{\"version\":\"v1.5.7\","
         "\"url\":\"https://example.invalid/weather_clock.bin\","
         "\"sha256\":\"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF\"}",
         &optional_fields);
     assert(result.status == kOtaManifestParseOk);
-    assert(optional_fields.size == 321);
-    assert(strcmp(optional_fields.notes, "保留") == 0);
+    assert(optional_fields.size == 0);
+
+    OtaManifest invalid_json;
+    strcpy(invalid_json.version, "stale-version");
+    strcpy(invalid_json.url, "https://stale.invalid/a.bin");
+    strcpy(invalid_json.sha256, kValidSha);
+    invalid_json.size = 321;
+    result = ota_parse_manifest_json("{", &invalid_json);
+    assert(result.status == kOtaManifestParseInvalidJson);
+    assert(invalid_json.version[0] == '\0');
+    assert(invalid_json.url[0] == '\0');
+    assert(invalid_json.sha256[0] == '\0');
+    assert(invalid_json.size == 0);
 
     assert(ota_parse_manifest_json(nullptr, &manifest).status ==
            kOtaManifestParseInvalidArgument);

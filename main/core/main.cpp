@@ -30,6 +30,9 @@
 #define MAIN_INVALID_BOOT_TASK_LOG_FORMAT "%s: invalid boot task request"
 #define MAIN_BOOT_TASK_CREATE_FAILED_LOG_FORMAT "%s"
 #define MAIN_SHTC3_ALLOCATION_FAILED_LOG_FORMAT "shtc3 allocation failed"
+#define MAIN_DISPLAY_UNAVAILABLE_LOG_FORMAT "RLCD display resources unavailable; startup stopped"
+#define MAIN_I2C_UNAVAILABLE_LOG_FORMAT "I2C master bus unavailable; startup stopped"
+#define MAIN_LVGL_INIT_FAILED_LOG_FORMAT "LVGL initialization failed; startup stopped"
 
 namespace {
 constexpr uint32_t kBootAnimTaskStack = 6144;
@@ -64,6 +67,7 @@ constexpr const char *kBootAnimTaskCreateFailed = "boot animation task create fa
 constexpr const char *kBootConnectivityTaskCreateFailed = "boot connectivity task create failed";
 constexpr const char *kBootReadyStatus = "Ready";
 constexpr const char *kBootReadyDetail = "Starting clock";
+StaticEventGroup_t s_app_event_group_storage = {};
 
 struct AppTaskSpec {
     TaskFunction_t task;
@@ -168,7 +172,10 @@ static void release_app_event_group()
 
 static bool init_system_event_services()
 {
-    g_app_events = xEventGroupCreate();
+    if (g_app_events) {
+        return true;
+    }
+    g_app_events = xEventGroupCreateStatic(&s_app_event_group_storage);
     if (!g_app_events) {
         ESP_LOGE(TAG, MAIN_EVENT_GROUP_CREATE_FAILED_LOG_FORMAT);
         return false;
@@ -218,6 +225,14 @@ static void create_boot_task_or_signal(TaskFunction_t task,
 
 extern "C" void app_main(void)
 {
+    if (!g_display.IsReady()) {
+        ESP_LOGE(TAG, MAIN_DISPLAY_UNAVAILABLE_LOG_FORMAT);
+        return;
+    }
+    if (!g_i2c.IsReady()) {
+        ESP_LOGE(TAG, MAIN_I2C_UNAVAILABLE_LOG_FORMAT);
+        return;
+    }
     if (!init_nvs_storage()) {
         return;
     }
@@ -234,7 +249,7 @@ extern "C" void app_main(void)
     load_daily_saying_cache();
     custom_assets_init();
 
-    g_have_wifi_creds = load_saved_config();
+    (void)load_saved_config();
     Rtc_Setup(&g_i2c, 0x51);
     setenv("TZ", "CST-8", 1);
     tzset();
@@ -257,7 +272,10 @@ extern "C" void app_main(void)
     g_display.RLCD_Init();
     g_display.RLCD_ColorClear(ColorWhite);
     g_display.RLCD_Display();
-    Lvgl_PortInit(kDisplayWidth, kDisplayHeight, flush_callback);
+    if (!Lvgl_PortInit(kDisplayWidth, kDisplayHeight, flush_callback)) {
+        ESP_LOGE(TAG, MAIN_LVGL_INIT_FAILED_LOG_FORMAT);
+        return;
+    }
     if (Lvgl_lock(-1)) {
         show_boot_screen();
         Lvgl_unlock();

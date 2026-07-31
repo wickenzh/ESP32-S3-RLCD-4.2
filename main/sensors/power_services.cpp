@@ -30,6 +30,7 @@ constexpr const char *kAudioCpuPmLogName = "audio_cpu";
 #include "freertos/semphr.h"
 
 namespace {
+StaticSemaphore_t s_pm_lock_mutex_storage = {};
 SemaphoreHandle_t s_pm_lock_mutex = nullptr;
 esp_pm_lock_handle_t s_network_pm_lock = nullptr;
 esp_pm_lock_handle_t s_audio_pm_lock = nullptr;
@@ -134,6 +135,9 @@ bool set_pm_lock_active(esp_pm_lock_handle_t lock, int *depth, const char *name,
 void init_power_management()
 {
 #if CONFIG_PM_ENABLE
+    if (s_pm_lock_mutex) {
+        return;
+    }
     esp_pm_config_t pm_config = {};
     pm_config.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
     pm_config.min_freq_mhz = CONFIG_XTAL_FREQ;
@@ -146,7 +150,7 @@ void init_power_management()
         ESP_LOGI(TAG, POWER_SETUP_OK_LOG_FORMAT,
                  pm_config.max_freq_mhz, pm_config.min_freq_mhz);
     }
-    s_pm_lock_mutex = xSemaphoreCreateMutex();
+    s_pm_lock_mutex = xSemaphoreCreateMutexStatic(&s_pm_lock_mutex_storage);
     if (!s_pm_lock_mutex) {
         ESP_LOGW(TAG, POWER_MUTEX_CREATE_FAILED_LOG_FORMAT);
     }

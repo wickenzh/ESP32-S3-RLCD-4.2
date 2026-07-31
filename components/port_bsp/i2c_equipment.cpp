@@ -40,6 +40,12 @@ static_assert(kShtc3MeasureDelay > 0, "SHTC3 measure tick delay must be positive
 
 Shtc3Port::Shtc3Port(I2cMasterBus& i2cbus) :
 i2cbus_(i2cbus) {
+    if (!i2cbus_.IsReady()) {
+        ESP_LOGW(kShtc3LogTag,
+                 SHTC3_DEVICE_ADD_FAILED_FORMAT,
+                 esp_err_to_name(ESP_ERR_INVALID_STATE));
+        return;
+    }
     i2c_master_bus_handle_t I2cMasterBus = i2cbus_.Get_I2cBusHandle();
     i2c_device_config_t dev_cfg = {};
     dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -60,6 +66,14 @@ i2cbus_(i2cbus) {
 }
 
 Shtc3Port::~Shtc3Port() {
+    if (!I2c_DevShtc3) {
+        return;
+    }
+    esp_err_t err = i2c_master_bus_rm_device(I2c_DevShtc3);
+    if (err != ESP_OK) {
+        ESP_LOGW(kShtc3LogTag, "device remove failed: %s", esp_err_to_name(err));
+    }
+    I2c_DevShtc3 = nullptr;
 }
 
 etError Shtc3Port::Shtc3_GetId() {
@@ -236,8 +250,9 @@ static bool I2cDevCallback(uint8_t address, uint8_t reg, uint8_t *buf, size_t le
 }
 
 void Rtc_Setup(I2cMasterBus *i2cbus,uint8_t dev_addr) {
-    if (!i2cbus) {
-        ESP_LOGW(kRtcLogTag, RTC_DEVICE_ADD_FAILED_FORMAT, esp_err_to_name(ESP_ERR_INVALID_ARG));
+    if (!i2cbus || !i2cbus->IsReady()) {
+        esp_err_t err = i2cbus ? ESP_ERR_INVALID_STATE : ESP_ERR_INVALID_ARG;
+        ESP_LOGW(kRtcLogTag, RTC_DEVICE_ADD_FAILED_FORMAT, esp_err_to_name(err));
         return;
     }
     if (I2cbus_ == NULL) {

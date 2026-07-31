@@ -8,6 +8,7 @@
 #include "pomodoro_services.h"
 #include "reminder_schedule.h"
 #include "sensor_services.h"
+#include "task_notification_target.h"
 #include "ui_views.h"
 #include "xiaozhi_ai.h"
 #include "xiaozhi_mcp.h"
@@ -37,7 +38,7 @@ constexpr const char *kAlarmReplaceConfirmationInvalidResult =
 
 portMUX_TYPE s_alarm_mux = portMUX_INITIALIZER_UNLOCKED;
 AlarmSnapshot s_alarm = {false, false, 0, 0, 1};
-TaskHandle_t s_alarm_task_handle = nullptr;
+TaskNotificationTarget s_alarm_task_target;
 std::atomic<bool> s_stop_requested{false};
 std::atomic<bool> s_save_pending{false};
 AlarmReplacementConfirmation s_replacement_confirmation = {};
@@ -94,9 +95,7 @@ void publish_alarm_state(bool enabled, bool ringing, int hour, int minute)
     s_alarm.minute = static_cast<uint8_t>(minute);
     ++s_alarm.version;
     portEXIT_CRITICAL(&s_alarm_mux);
-    if (s_alarm_task_handle) {
-        xTaskNotifyGive(s_alarm_task_handle);
-    }
+    (void)s_alarm_task_target.notify();
     notify_ui_task();
 }
 
@@ -299,7 +298,7 @@ void alarm_services_init()
 
 void alarm_task(void *)
 {
-    s_alarm_task_handle = xTaskGetCurrentTaskHandle();
+    s_alarm_task_target.publish(xTaskGetCurrentTaskHandle());
     for (;;) {
         AlarmSnapshot snapshot = {};
         alarm_get_snapshot(&snapshot);
@@ -389,17 +388,13 @@ bool alarm_stop_ringing_from_button()
         return false;
     }
     s_stop_requested.store(true);
-    if (s_alarm_task_handle) {
-        xTaskNotifyGive(s_alarm_task_handle);
-    }
+    (void)s_alarm_task_target.notify();
     return true;
 }
 
 void alarm_notify_time_changed()
 {
-    if (s_alarm_task_handle) {
-        xTaskNotifyGive(s_alarm_task_handle);
-    }
+    (void)s_alarm_task_target.notify();
 }
 
 bool alarm_clear_saved_state()

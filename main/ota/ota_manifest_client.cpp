@@ -143,7 +143,6 @@ void ota_manifest_load_cached(OtaManifest *manifest)
     strlcpy(manifest->version, s_cached_manifest.version, sizeof(manifest->version));
     strlcpy(manifest->url, s_cached_manifest.url, sizeof(manifest->url));
     strlcpy(manifest->sha256, s_cached_manifest.sha256, sizeof(manifest->sha256));
-    strlcpy(manifest->notes, s_cached_manifest.notes, sizeof(manifest->notes));
     manifest->size = s_cached_manifest.size;
 }
 
@@ -152,7 +151,6 @@ void ota_manifest_store_cached(const OtaManifest &manifest)
     strlcpy(s_cached_manifest.version, manifest.version, sizeof(s_cached_manifest.version));
     strlcpy(s_cached_manifest.url, manifest.url, sizeof(s_cached_manifest.url));
     strlcpy(s_cached_manifest.sha256, manifest.sha256, sizeof(s_cached_manifest.sha256));
-    strlcpy(s_cached_manifest.notes, manifest.notes, sizeof(s_cached_manifest.notes));
     s_cached_manifest.size = manifest.size;
 }
 

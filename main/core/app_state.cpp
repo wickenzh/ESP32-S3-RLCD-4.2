@@ -3,7 +3,7 @@
 #include "chime_settings.h"
 
 const char *const TAG = "WeatherClock";
-const char *const APP_VERSION = "v1.5.13";
+const char *const APP_VERSION = "v1.5.17";
 #ifndef WEATHER_CLOCK_BUILD_DATE
 #define WEATHER_CLOCK_BUILD_DATE "unknown"
 #endif
@@ -12,37 +12,19 @@ DisplayPort g_display(12, 11, 5, 40, 41, kDisplayWidth, kDisplayHeight);
 I2cMasterBus g_i2c(14, 13, 0);
 Shtc3Port *g_shtc3 = nullptr;
 EventGroupHandle_t g_app_events;
-char g_wifi_ssid[33] = {};
-char g_wifi_pass[65] = {};
-char g_weather_api_key[96] = {};
-char g_manual_weather_city[kManualWeatherCityLen] = {};
 char g_ap_ssid[33] = {};
-char g_sta_ip[16] = {};
-bool g_have_wifi_creds = false;
-bool g_have_weather_key = false;
-bool g_has_manual_weather_city = false;
-bool g_hourly_chime_enabled = false;
-bool g_hourly_chime_all_day = false;
-bool g_offline_mode_ui_enabled = false;
-bool g_xiaozhi_auto_return_enabled = false;
-int g_chime_volume_percent = chime_settings::kDefaultVolumePercent;
-int g_chime_sound_index = 0;
-volatile bool g_settings_focus_secondary = false;
-volatile bool g_settings_page_toggle_mode = false;
-volatile bool g_settings_page_order_mode = false;
-volatile int g_settings_primary_selection = kSettingsPrimaryNetwork;
-volatile int g_settings_selection = 0;
-volatile int g_settings_page_order_selection = 0;
-uint8_t g_work_page_enabled_mask = (uint8_t)((1U << kWorkPageCount) - 1);
-uint8_t g_work_page_order[kWorkPageCount] = {
-    kWorkPageWeatherClock,
-    kWorkPageGallery,
-    kWorkPageWeatherBoard,
-    kWorkPageFlipClock,
-    kWorkPageCalendar,
-    kWorkPageHistory,
-    kWorkPageXiaozhiAI,
-};
+std::atomic<bool> g_hourly_chime_enabled{false};
+std::atomic<bool> g_hourly_chime_all_day{false};
+std::atomic<bool> g_offline_mode_ui_enabled{false};
+std::atomic<bool> g_xiaozhi_auto_return_enabled{false};
+std::atomic<int> g_chime_volume_percent{chime_settings::kDefaultVolumePercent};
+std::atomic<int> g_chime_sound_index{0};
+std::atomic<bool> g_settings_focus_secondary{false};
+std::atomic<bool> g_settings_page_toggle_mode{false};
+std::atomic<bool> g_settings_page_order_mode{false};
+std::atomic<int> g_settings_primary_selection{kSettingsPrimaryNetwork};
+std::atomic<int> g_settings_selection{0};
+std::atomic<int> g_settings_page_order_selection{0};
 lv_obj_t *g_clock_root;
 lv_obj_t *g_history_root;
 lv_obj_t *g_gallery_root;

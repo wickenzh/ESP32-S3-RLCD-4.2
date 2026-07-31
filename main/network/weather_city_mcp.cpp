@@ -2,6 +2,7 @@
 #include "weather_city_mcp.h"
 
 #include "app_state.h"
+#include "network_credentials_state.h"
 #include "network_services.h"
 #include "ui_views.h"
 #include "xiaozhi_mcp.h"
@@ -66,7 +67,7 @@ bool handle_weather_city(const XiaozhiMcpWeatherCityRequest &request,
         }
         return true;
     }
-    if (g_offline_mode_ui_enabled || !g_have_weather_key) {
+    if (g_offline_mode_ui_enabled || !network_weather_api_key_configured()) {
         if (result && result_len > 0) {
             std::snprintf(result, result_len, "weather service is not configured");
         }

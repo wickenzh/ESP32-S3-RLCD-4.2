@@ -166,7 +166,6 @@ inline constexpr const char *kOtaBackupManifestUrl = WEATHER_CLOCK_OTA_BACKUP_MA
 inline constexpr int kOtaVersionLen = 24;
 inline constexpr int kOtaUrlLen = 256;
 inline constexpr int kOtaSha256Len = 65;
-inline constexpr int kOtaNotesLen = 96;
 inline constexpr int kOtaHttpTimeoutMs = 8 * kAppMsPerSecond;
 inline constexpr int kOtaNoProgressTimeoutMs = 45 * kAppMsPerSecond;
 inline constexpr int kOtaMaxDownloadMs = 10 * kAppMsPerMinute;
@@ -215,27 +214,19 @@ extern DisplayPort g_display;
 extern I2cMasterBus g_i2c;
 extern Shtc3Port *g_shtc3;
 extern EventGroupHandle_t g_app_events;
-extern char g_wifi_ssid[33];
-extern char g_wifi_pass[65];
-extern char g_weather_api_key[96];
-extern char g_manual_weather_city[kManualWeatherCityLen];
 extern char g_ap_ssid[33];
-extern char g_sta_ip[16];
-extern bool g_have_wifi_creds;
-extern bool g_have_weather_key;
-extern bool g_has_manual_weather_city;
-extern bool g_hourly_chime_enabled;
-extern bool g_hourly_chime_all_day;
-extern bool g_offline_mode_ui_enabled;
-extern bool g_xiaozhi_auto_return_enabled;
-extern int g_chime_volume_percent;
-extern int g_chime_sound_index;
-extern volatile bool g_settings_focus_secondary;
-extern volatile bool g_settings_page_toggle_mode;
-extern volatile bool g_settings_page_order_mode;
-extern volatile int g_settings_primary_selection;
-extern volatile int g_settings_selection;
-extern volatile int g_settings_page_order_selection;
+extern std::atomic<bool> g_hourly_chime_enabled;
+extern std::atomic<bool> g_hourly_chime_all_day;
+extern std::atomic<bool> g_offline_mode_ui_enabled;
+extern std::atomic<bool> g_xiaozhi_auto_return_enabled;
+extern std::atomic<int> g_chime_volume_percent;
+extern std::atomic<int> g_chime_sound_index;
+extern std::atomic<bool> g_settings_focus_secondary;
+extern std::atomic<bool> g_settings_page_toggle_mode;
+extern std::atomic<bool> g_settings_page_order_mode;
+extern std::atomic<int> g_settings_primary_selection;
+extern std::atomic<int> g_settings_selection;
+extern std::atomic<int> g_settings_page_order_selection;
 struct WeatherData {
     char city[32] = {};
     char text[32] = {};
@@ -305,9 +296,6 @@ struct HourlySensorHistoryBlob {
     uint16_t count = kHourlyHistoryCount;
     HourlySensorSample samples[kHourlyHistoryCount] = {};
 };
-
-extern uint8_t g_work_page_enabled_mask;
-extern uint8_t g_work_page_order[kWorkPageCount];
 
 extern lv_obj_t *g_clock_root;
 extern lv_obj_t *g_history_root;

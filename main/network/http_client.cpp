@@ -9,6 +9,8 @@
 #include "scoped_heap_buffer.h"
 #include "scoped_http_client.h"
 
+#include "freertos/semphr.h"
+
 namespace {
 constexpr size_t kGzipHeaderProbeSize = 3;
 constexpr int kHttpStatusOkMin = 200;
@@ -30,6 +32,7 @@ constexpr const char *kHttpBootBudgetExhaustedLog = "http get skipped: boot sync
 constexpr const char *kHttpClientInitFailedLog = "http client init failed";
 constexpr const char *kHttpTransactionMutexCreateFailedLog = "http transaction mutex create failed";
 constexpr const char *kHttpTransactionLockTimeoutLog = "http transaction deferred: TLS session is busy";
+StaticSemaphore_t s_http_transaction_mutex_storage = {};
 SemaphoreHandle_t s_http_transaction_mutex = nullptr;
 static_assert(kGzipHeaderProbeSize >= 3, "gzip header probe must cover magic and compression method");
 static_assert(kHttpStatusOkMin >= 100 && kHttpStatusOkMin < kHttpStatusOkMax,
@@ -226,7 +229,7 @@ bool init_network_http_transaction_lock()
     if (s_http_transaction_mutex) {
         return true;
     }
-    s_http_transaction_mutex = xSemaphoreCreateMutex();
+    s_http_transaction_mutex = xSemaphoreCreateMutexStatic(&s_http_transaction_mutex_storage);
     if (!s_http_transaction_mutex) {
         ESP_LOGE(TAG, "%s", kHttpTransactionMutexCreateFailedLog);
         return false;

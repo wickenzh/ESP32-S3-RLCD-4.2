@@ -1,5 +1,6 @@
 // 封装 RLCD 显示屏初始化、像素写入和整屏/局部刷新接口。
 #include <string.h>
+#include <limits>
 #include <freertos/FreeRTOS.h>
 #include <esp_log.h>
 #include <esp_heap_caps.h>
@@ -7,6 +8,10 @@
 
 #define PIXEL_OUT_OF_BOUNDS_LOG_FORMAT "Beyond the limit : (%d,%d)"
 #define RLCD_TX_FAILED_LOG_FORMAT "RLCD tx failed err=%s len=%d offset=%d dma_free=%u dma_largest=%u"
+#define RLCD_PARAM_TX_FAILED_LOG_FORMAT "RLCD %s tx failed value=0x%02x err=%s dma_free=%u dma_largest=%u"
+#define RLCD_INIT_INVALID_SIZE_LOG_FORMAT "RLCD invalid display size width=%d height=%d"
+#define RLCD_INIT_STAGE_FAILED_LOG_FORMAT "RLCD %s failed: %s"
+#define RLCD_RELEASE_STAGE_FAILED_LOG_FORMAT "RLCD release %s failed: %s"
 
 static constexpr int kRlcdSpiClockHz = 5 * 1000 * 1000;
 static constexpr int kRlcdTxChunkBytes = 2048;
@@ -63,6 +68,11 @@ static int RlcdTxRetryDelayMs(bool conservative, int attempt)
     return base_delay + attempt * step_delay;
 }
 
+static bool RlcdTxCanRetry(esp_err_t err)
+{
+    return err == ESP_ERR_NO_MEM || err == ESP_ERR_TIMEOUT;
+}
+
 static void LogDisplayAllocationFailure(const char *name, size_t bytes)
 {
     ESP_LOGE("Display",
@@ -73,6 +83,18 @@ static void LogDisplayAllocationFailure(const char *name, size_t bytes)
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+}
+
+static void LogDisplayStageFailure(const char *stage, esp_err_t err)
+{
+    ESP_LOGE("Display", RLCD_INIT_STAGE_FAILED_LOG_FORMAT, stage, esp_err_to_name(err));
+}
+
+static void LogDisplayReleaseFailure(const char *stage, esp_err_t err)
+{
+    if (err != ESP_OK) {
+        ESP_LOGW("Display", RLCD_RELEASE_STAGE_FAILED_LOG_FORMAT, stage, esp_err_to_name(err));
+    }
 }
 
 static bool Display_IsDmaConservativeMode()
@@ -115,8 +137,15 @@ dc_(dc),
 cs_(cs), 
 rst_(rst), 
 width_(width), 
-height_(height) 
+height_(height),
+spihost_(spihost)
 {
+    if (width_ <= 0 || height_ <= 0 ||
+        width_ > std::numeric_limits<int>::max() / height_) {
+        ESP_LOGE(TAG, RLCD_INIT_INVALID_SIZE_LOG_FORMAT, width_, height_);
+        return;
+    }
+
     esp_err_t        ret;
     spi_bus_config_t buscfg   = {};
     int              transfer = width_ * height_;
@@ -126,8 +155,12 @@ height_(height)
     buscfg.quadwp_io_num                 = -1;
     buscfg.quadhd_io_num                 = -1;
     buscfg.max_transfer_sz               = transfer;
-    ret                                  = spi_bus_initialize(spihost, &buscfg, SPI_DMA_CH_AUTO);
-    ESP_ERROR_CHECK(ret);
+    ret                                  = spi_bus_initialize(spihost_, &buscfg, SPI_DMA_CH_AUTO);
+    if (ret != ESP_OK) {
+        LogDisplayStageFailure("SPI bus initialization", ret);
+        return;
+    }
+    spi_bus_initialized_ = true;
 
     esp_lcd_panel_io_spi_config_t io_config = {};
     io_config.dc_gpio_num = dc_;
@@ -138,7 +171,13 @@ height_(height)
     io_config.spi_mode = kRlcdSpiMode;
     io_config.trans_queue_depth = kRlcdSpiTransQueueDepth;
 
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)spihost, &io_config, &io_handle));
+    ret = esp_lcd_new_panel_io_spi(
+        (esp_lcd_spi_bus_handle_t)spihost_, &io_config, &io_handle);
+    if (ret != ESP_OK) {
+        LogDisplayStageFailure("panel IO creation", ret);
+        ReleaseResources();
+        return;
+    }
 
     gpio_config_t gpio_conf = {};
     gpio_conf.intr_type     = GPIO_INTR_DISABLE;
@@ -146,7 +185,13 @@ height_(height)
     gpio_conf.pin_bit_mask  = (0x1ULL << rst_);
     gpio_conf.pull_down_en  = GPIO_PULLDOWN_DISABLE;
     gpio_conf.pull_up_en    = GPIO_PULLUP_ENABLE;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(gpio_config(&gpio_conf));
+    ret = gpio_config(&gpio_conf);
+    if (ret != ESP_OK) {
+        LogDisplayStageFailure("reset GPIO configuration", ret);
+        ReleaseResources();
+        return;
+    }
+    reset_gpio_configured_ = true;
 
     Set_ResetIOLevel(1);
 
@@ -154,8 +199,9 @@ height_(height)
     DispBuffer                = (uint8_t *) heap_caps_malloc(DisplayLen, MALLOC_CAP_SPIRAM);
     if (DispBuffer == NULL) {
         LogDisplayAllocationFailure("RLCD display buffer", DisplayLen);
+        ReleaseResources();
+        return;
     }
-    assert(DispBuffer);
 
 #if (AlgorithmOptimization == 3)
 	PixelIndexLUT = (uint16_t (*)[300])heap_caps_malloc(transfer * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
@@ -166,22 +212,60 @@ height_(height)
     if (PixelBitLUT == NULL) {
         LogDisplayAllocationFailure("RLCD pixel bit LUT", transfer * sizeof(uint8_t));
     }
-    assert(PixelIndexLUT);
-    assert(PixelBitLUT);
+    if (!PixelIndexLUT || !PixelBitLUT) {
+        ReleaseResources();
+        return;
+    }
     if(width_ == 400) {
         InitLandscapeLUT();
     } else {
         InitPortraitLUT();
     }
 #endif
+    ready_ = true;
 }
 
 DisplayPort::~DisplayPort() {
+    ReleaseResources();
+}
+
+void DisplayPort::ReleaseResources() {
+    ready_ = false;
+    initializing_ = false;
+#if (AlgorithmOptimization == 3)
+    free(PixelBitLUT);
+    PixelBitLUT = NULL;
+    free(PixelIndexLUT);
+    PixelIndexLUT = NULL;
+#endif
+    free(DispBuffer);
+    DispBuffer = NULL;
+    DisplayLen = 0;
+    if (reset_gpio_configured_) {
+        LogDisplayReleaseFailure("reset GPIO", gpio_reset_pin((gpio_num_t)rst_));
+        reset_gpio_configured_ = false;
+    }
+    if (io_handle) {
+        LogDisplayReleaseFailure("panel IO", esp_lcd_panel_io_del(io_handle));
+        io_handle = NULL;
+    }
+    if (spi_bus_initialized_) {
+        LogDisplayReleaseFailure("SPI bus", spi_bus_free(spihost_));
+        spi_bus_initialized_ = false;
+    }
+}
+
+bool DisplayPort::IsReady() const {
+    return ready_;
 }
 
 void DisplayPort::RLCD_Init() {
+    if (!ready_) {
+        return;
+    }
     RLCD_Reset();
     KeepPinsActiveInLightSleep();
+    initializing_ = true;
 
     RLCD_SendCommand(0xD6);  // NVM Load Control
 	RLCD_SendData(0x17);
@@ -294,6 +378,7 @@ void DisplayPort::RLCD_Init() {
 	RLCD_SendCommand(0x38);
 	RLCD_SendCommand(0x29);
 
+    initializing_ = false;
     RLCD_ColorClear(ColorWhite);
 }
 
@@ -313,25 +398,32 @@ void DisplayPort::KeepPinsActiveInLightSleep(void) {
 }
 
 void DisplayPort::RLCD_ColorClear(uint8_t color) {
+    if (!ready_ || !DispBuffer || DisplayLen <= 0) {
+        return;
+    }
     memset(DispBuffer, color, DisplayLen);
 }
 
 void DisplayPort::RLCD_Display() {
-    RLCD_SendCommand(0x2A);     // Column Address Set
-  	RLCD_SendData(0x12);
-  	RLCD_SendData(0x2A);
-
-  	RLCD_SendCommand(0x2B);     // Page Address Set
-  	RLCD_SendData(0x00);
-  	RLCD_SendData(0xC7);
-
-  	RLCD_SendCommand(0x2c);     // Page Address Set
+    if (!ready_ || !DispBuffer) {
+        return;
+    }
+    if (!RLCD_SendCommand(0x2A) ||     // Column Address Set
+        !RLCD_SendData(0x12) ||
+        !RLCD_SendData(0x2A) ||
+        !RLCD_SendCommand(0x2B) ||     // Page Address Set
+        !RLCD_SendData(0x00) ||
+        !RLCD_SendData(0xC7) ||
+        !RLCD_SendCommand(0x2c)) {     // Memory Write
+        return;
+    }
 
 	RLCD_Sendbuffera(DispBuffer,DisplayLen);
 }
 
 void DisplayPort::RLCD_DisplayXRange(uint16_t x1, uint16_t x2) {
-    if (x1 >= (uint16_t)width_ || x2 >= (uint16_t)width_ || x1 > x2) {
+    if (!ready_ || !DispBuffer || x1 >= (uint16_t)width_ ||
+        x2 >= (uint16_t)width_ || x1 > x2) {
         return;
     }
     uint16_t start_pair = x1 >> 1;
@@ -340,15 +432,15 @@ void DisplayPort::RLCD_DisplayXRange(uint16_t x1, uint16_t x2) {
     uint32_t offset = (uint32_t)start_pair * rows_per_pair;
     uint32_t len = (uint32_t)(end_pair - start_pair + 1) * rows_per_pair;
 
-    RLCD_SendCommand(0x2A);
-    RLCD_SendData(0x12);
-    RLCD_SendData(0x2A);
-
-    RLCD_SendCommand(0x2B);
-    RLCD_SendData(start_pair & 0xFF);
-    RLCD_SendData(end_pair & 0xFF);
-
-    RLCD_SendCommand(0x2c);
+    if (!RLCD_SendCommand(0x2A) ||
+        !RLCD_SendData(0x12) ||
+        !RLCD_SendData(0x2A) ||
+        !RLCD_SendCommand(0x2B) ||
+        !RLCD_SendData(start_pair & 0xFF) ||
+        !RLCD_SendData(end_pair & 0xFF) ||
+        !RLCD_SendCommand(0x2c)) {
+        return;
+    }
 
 	RLCD_Sendbuffera(DispBuffer + offset, len);
 }
@@ -362,15 +454,53 @@ void DisplayPort::RLCD_Reset(void) {
     vTaskDelay(kRlcdResetHighDelay);
 }
 
-void DisplayPort::RLCD_SendCommand(uint8_t Reg) {
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_handle, Reg, NULL, 0));
+bool DisplayPort::RLCD_SendParamChecked(int command,
+                                       const void *data,
+                                       size_t data_size,
+                                       const char *kind,
+                                       uint8_t value) {
+    if (!ready_ || !io_handle) {
+        return false;
+    }
+    const bool conservative = Display_IsDmaConservativeMode();
+    const int retry_count = conservative ? kRlcdOtaTxRetryCount : kRlcdTxRetryCount;
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 0; attempt < retry_count; ++attempt) {
+        err = esp_lcd_panel_io_tx_param(io_handle, command, data, data_size);
+        if (err == ESP_OK) {
+            return true;
+        }
+        if (!RlcdTxCanRetry(err)) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(RlcdTxRetryDelayMs(conservative, attempt)));
+    }
+
+    ESP_LOGW(TAG,
+             RLCD_PARAM_TX_FAILED_LOG_FORMAT,
+             kind,
+             value,
+             esp_err_to_name(err),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+    if (initializing_) {
+        ESP_ERROR_CHECK(err);
+    }
+    return false;
 }
 
-void DisplayPort::RLCD_SendData(uint8_t Data) {
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_handle, -1, &Data, 1));
+bool DisplayPort::RLCD_SendCommand(uint8_t Reg) {
+    return RLCD_SendParamChecked(Reg, NULL, 0, "command", Reg);
+}
+
+bool DisplayPort::RLCD_SendData(uint8_t Data) {
+    return RLCD_SendParamChecked(-1, &Data, 1, "data", Data);
 }
 
 void DisplayPort::RLCD_Sendbuffera(uint8_t *Data, int len) {
+    if (!ready_ || !io_handle || !Data || len <= 0) {
+        return;
+    }
     int offset = 0;
     const bool quiet = Display_IsDmaConservativeMode();
     const int max_chunk = quiet ? kRlcdOtaTxChunkBytes : kRlcdTxChunkBytes;
@@ -387,7 +517,7 @@ void DisplayPort::RLCD_Sendbuffera(uint8_t *Data, int len) {
             if (err == ESP_OK) {
                 break;
             }
-            if (err != ESP_ERR_NO_MEM && err != ESP_ERR_TIMEOUT) {
+            if (!RlcdTxCanRetry(err)) {
                 break;
             }
             vTaskDelay(pdMS_TO_TICKS(RlcdTxRetryDelayMs(quiet, attempt)));
@@ -540,6 +670,10 @@ void DisplayPort::InitLandscapeLUT() {
 }
 
 void DisplayPort::RLCD_SetPixel(uint16_t x, uint16_t y, uint8_t color) {
+    if (!ready_ || !DispBuffer || !PixelIndexLUT || !PixelBitLUT ||
+        x >= static_cast<uint16_t>(width_) || y >= static_cast<uint16_t>(height_)) {
+        return;
+    }
     uint32_t idx = PixelIndexLUT[x][y];
     uint8_t  mask = PixelBitLUT[x][y];
 

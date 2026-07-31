@@ -4,6 +4,7 @@
 #include "ota_runtime_state.h"
 
 #include "network_https_resources.h"
+#include "network_credentials_state.h"
 #include "network_diagnostics_catalog.h"
 #include "network_sync_requests.h"
 #include "network_sync_schedule.h"
@@ -71,6 +72,24 @@ static constexpr const char *kNetworkSyncPowerLockUnavailableLog =
     "network PM lock unavailable during sync window";
 static constexpr const char *kNetworkSyncWifiConnectTimeoutLog = "wifi connect timeout during sync window";
 static constexpr const char *kNetworkBootSyncGateWaitLog = "network sync waiting for boot connectivity task";
+
+struct NetworkRuntimeAvailabilitySnapshot {
+    bool have_wifi_creds;
+    bool have_weather_key;
+    bool offline_mode;
+    bool low_battery_mode;
+};
+
+static NetworkRuntimeAvailabilitySnapshot capture_network_runtime_availability()
+{
+    const NetworkCredentialsAvailability credentials = network_credentials_availability();
+    return {
+        credentials.wifi_configured,
+        credentials.weather_api_key_configured,
+        g_offline_mode_ui_enabled.load(std::memory_order_acquire),
+        battery_low_mode_load(),
+    };
+}
 
 bool wait_for_wifi_connected(uint32_t timeout_ms)
 {
@@ -437,14 +456,16 @@ void network_sync_task(void *)
     time_t next_daily_ntp_at = boot_ntp_due
                                    ? 0
                                    : next_local_midnight_time(boot_schedule_now);
-    bool boot_weather_due = g_have_wifi_creds &&
-                            g_have_weather_key &&
-                            !g_offline_mode_ui_enabled &&
-                            !battery_low_mode_load() &&
+    const NetworkRuntimeAvailabilitySnapshot initial_runtime =
+        capture_network_runtime_availability();
+    bool boot_weather_due = initial_runtime.have_wifi_creds &&
+                            initial_runtime.have_weather_key &&
+                            !initial_runtime.offline_mode &&
+                            !initial_runtime.low_battery_mode &&
                             enabled_weather_data_page_exists();
-    bool boot_saying_due = g_have_wifi_creds &&
-                           !g_offline_mode_ui_enabled &&
-                           !battery_low_mode_load() &&
+    bool boot_saying_due = initial_runtime.have_wifi_creds &&
+                           !initial_runtime.offline_mode &&
+                           !initial_runtime.low_battery_mode &&
                            enabled_daily_saying_page_exists();
     time_t boot_weather_due_at = boot_schedule_now + kBootWeatherRefreshDelaySec;
     time_t boot_saying_due_at = boot_schedule_now + kBootSayingRefreshDelaySec;
@@ -457,26 +478,28 @@ void network_sync_task(void *)
         // latest runtime state. Sync request bits stay level-triggered.
         xEventGroupClearBits(g_app_events, kNetworkStateChangedBit);
         NetworkSyncRequestSnapshot requests = snapshot_network_sync_requests();
+        const NetworkRuntimeAvailabilitySnapshot runtime =
+            capture_network_runtime_availability();
         int ota_state = ota_runtime_state_load();
         if (ota_blocks_background_network_sync(ota_state)) {
             wait_for_ota_network_block_change();
             continue;
         }
-        if (g_offline_mode_ui_enabled) {
+        if (runtime.offline_mode) {
             boot_weather_due = false;
             boot_saying_due = false;
             finish_offline_network_requests(requests);
             wait_for_network_runtime_request();
             continue;
         }
-        if (!g_have_wifi_creds) {
+        if (!runtime.have_wifi_creds) {
             boot_weather_due = false;
             boot_saying_due = false;
             finish_unconfigured_network_requests(requests);
             wait_for_network_runtime_request();
             continue;
         }
-        if (requests.manual_weather && !g_have_weather_key) {
+        if (requests.manual_weather && !runtime.have_weather_key) {
             finish_settings_sync_and_clear_bit(kSettingsSyncWeather, kNetworkSyncWeatherKeyMissing, kManualWeatherSyncBit);
             wait_for_network_sync_event(kNetworkShortRetryWaitMs);
             continue;
@@ -515,7 +538,7 @@ void network_sync_task(void *)
         if (boot_saying_due && saying_cache_current_day(now)) {
             boot_saying_due = false;
         }
-        if (battery_low_mode_load()) {
+        if (runtime.low_battery_mode) {
             boot_weather_due = false;
             boot_saying_due = false;
         }
@@ -524,8 +547,8 @@ void network_sync_task(void *)
         schedule_input.next_ntp_retry_at = next_ntp_retry_at;
         schedule_input.boot_weather_due_at = boot_weather_due_at;
         schedule_input.boot_saying_due_at = boot_saying_due_at;
-        schedule_input.have_weather_key = g_have_weather_key;
-        schedule_input.low_battery_mode = battery_low_mode_load();
+        schedule_input.have_weather_key = runtime.have_weather_key;
+        schedule_input.low_battery_mode = runtime.low_battery_mode;
         schedule_input.provisioning_sync_due = requests.provisioning;
         schedule_input.manual_ntp_due = requests.manual_ntp;
         schedule_input.manual_weather_due = requests.manual_weather;
@@ -541,12 +564,12 @@ void network_sync_task(void *)
             now,
             &boot_weather_due_at,
             &boot_saying_due_at);
-        if (battery_low_mode_load() && requests.manual_weather) {
+        if (runtime.low_battery_mode && requests.manual_weather) {
             finish_settings_sync_and_clear_bit(kSettingsSyncWeather, kNetworkSyncLowBatterySkipped, kManualWeatherSyncBit);
             wait_for_network_sync_event(kNetworkShortRetryWaitMs);
             continue;
         }
-        if (battery_low_mode_load() && requests.manual_saying) {
+        if (runtime.low_battery_mode && requests.manual_saying) {
             finish_settings_sync_and_clear_bit(kSettingsSyncSaying, kNetworkSyncLowBatterySkipped, kManualSayingSyncBit);
             wait_for_network_sync_event(kNetworkShortRetryWaitMs);
             continue;

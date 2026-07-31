@@ -92,6 +92,7 @@ bool run_captive_dns_server()
     timeout.tv_sec = kCaptiveDnsSocketTimeoutSec;
     if (setsockopt(sock.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0) {
         ESP_LOGW(TAG, CAPTIVE_DNS_TIMEOUT_SETUP_FAILED_FORMAT, errno);
+        return false;
     }
 
     sockaddr_in addr = {};

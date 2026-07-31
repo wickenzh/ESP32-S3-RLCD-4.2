@@ -56,6 +56,18 @@ jobs:
             exit 1
           fi
 
+      - name: 准备私有 OTA 端点
+        env:
+          OTA_MANIFEST_URL: ${{ secrets.WEATHER_CLOCK_OTA_MANIFEST_URL }}
+          OTA_BACKUP_MANIFEST_URL: ${{ secrets.WEATHER_CLOCK_OTA_BACKUP_MANIFEST_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare_ota_endpoint.py \
+            --output main/core/ota_endpoint_local.h
+          test -s main/core/ota_endpoint_local.h
+          echo "Private OTA endpoint configuration prepared"
+
       - name: 编译并生成双固件
         uses: espressif/esp-idf-ci-action@v1
         with:

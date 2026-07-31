@@ -10,12 +10,14 @@
 
 #include "app_constexpr.h"
 #include "app_text_format.h"
+#include "network_credentials_state.h"
 #include "network_services.h"
 #include "network_task_guards.h"
 #include "scoped_heap_buffer.h"
 #include "sensor_services.h"
 #include "ui_info_page_state.h"
 #include "ui_settings_activity_state.h"
+#include "ui_settings_navigation.h"
 #include "ui_views.h"
 
 #include "esp_app_format.h"
@@ -196,11 +198,7 @@ static void keep_ota_settings_panel_visible()
 {
     TickType_t now = xTaskGetTickCount();
     settings_page_request();
-    g_settings_focus_secondary = true;
-    g_settings_page_toggle_mode = false;
-    g_settings_page_order_mode = false;
-    g_settings_primary_selection = kSettingsPrimarySystem;
-    g_settings_selection = kSystemSettingsOtaItem;
+    enter_settings_system_item_navigation(kSystemSettingsOtaItem);
     settings_activity_record(now);
     info_page_hold_until_store(0);
 }
@@ -534,7 +532,7 @@ static bool download_and_apply_ota(const OtaManifest &manifest)
 
 static bool prepare_ota_wifi()
 {
-    if (!g_have_wifi_creds) {
+    if (!network_wifi_credentials_configured()) {
         ota_set_failed_status(kOtaStatusNoWifi);
         return false;
     }

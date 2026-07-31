@@ -11,15 +11,21 @@
 #include "ui_settings_ota_panel.h"
 
 namespace {
-int collect_visible_work_page_order_indices(int *indices, size_t capacity)
+int collect_visible_work_page_order(int *indices, uint8_t *pages, size_t capacity)
 {
-    if (!indices || capacity == 0) {
+    if (!indices || !pages || capacity == 0) {
+        return 0;
+    }
+    uint8_t order[kWorkPageCount] = {};
+    if (!work_page_order_copy(order, sizeof(order))) {
         return 0;
     }
     int count = 0;
     for (int order_index = 0; order_index < kWorkPageCount && (size_t)count < capacity; ++order_index) {
-        if (is_work_page_enabled(g_work_page_order[order_index])) {
-            indices[count++] = order_index;
+        if (is_work_page_enabled(order[order_index])) {
+            indices[count] = order_index;
+            pages[count] = order[order_index];
+            ++count;
         }
     }
     return count;
@@ -311,7 +317,7 @@ bool layout_settings_secondary_slot(
     int index,
     int primary,
     int visible_order_count,
-    const int *visible_order_indices,
+    const uint8_t *visible_order_pages,
     char secondary_items[][kSettingsSecondaryTextSize])
 {
     int slot = kSettingsPrimaryCount + index;
@@ -326,12 +332,11 @@ bool layout_settings_secondary_slot(
         lv_obj_set_pos(g_settings_labels[slot], cell.x, cell.y);
         lv_obj_set_size(g_settings_labels[slot], kSettingsGridColW, kSettingsSecondaryH);
         if (g_settings_page_order_mode) {
-            int order_index = visible_order_indices[index];
             format_secondary_text(secondary_items,
                                   index,
                                   kSettingsPageOrderEntryFormat,
                                   index + 1,
-                                  work_page_name(g_work_page_order[order_index]));
+                                  work_page_name(visible_order_pages[index]));
             hide_settings_switch_slot(index);
         } else {
             set_secondary_text(secondary_items, index, work_page_name(index));
@@ -394,7 +399,7 @@ void update_settings_switch_slot(int index, int primary, int selected, bool visi
         dot_visible = true;
         dot_on = index == kDisplaySettingsAlarmItem
                      ? alarm_is_enabled()
-                     : g_xiaozhi_auto_return_enabled;
+                     : g_xiaozhi_auto_return_enabled.load(std::memory_order_acquire);
     }
     if (g_settings_switch_dots[index]) {
         set_obj_visible(g_settings_switch_dots[index], dot_visible);
@@ -415,9 +420,11 @@ bool update_settings_secondary_items(
     bool changed = false;
     int secondary_count = settings_secondary_count(primary);
     int visible_order_indices[kWorkPageCount] = {};
+    uint8_t visible_order_pages[kWorkPageCount] = {};
     int visible_order_count = g_settings_page_order_mode
-                                  ? collect_visible_work_page_order_indices(visible_order_indices,
-                                                                            array_count(visible_order_indices))
+                                  ? collect_visible_work_page_order(visible_order_indices,
+                                                                    visible_order_pages,
+                                                                    array_count(visible_order_indices))
                                   : 0;
     for (int i = 0; i < kSettingsSecondaryMaxCount; ++i) {
         int slot = kSettingsPrimaryCount + i;
@@ -427,7 +434,7 @@ bool update_settings_secondary_items(
         if (!layout_settings_secondary_slot(i,
                                             primary,
                                             visible_order_count,
-                                            visible_order_indices,
+                                            visible_order_pages,
                                             secondary_items)) {
             continue;
         }

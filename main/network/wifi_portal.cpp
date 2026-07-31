@@ -5,6 +5,7 @@
 
 #include "app_constexpr.h"
 #include "app_text_format.h"
+#include "network_credentials_state.h"
 #include "wifi_idle_stop_policy.h"
 #include "wifi_portal_dns.h"
 #include "wifi_portal_state.h"
@@ -43,6 +44,8 @@ static_assert(cstr_length(kSetupApSsidFallback) < sizeof(g_ap_ssid),
 #define WIFI_STA_ONLY_MODE_FAILED_FORMAT "wifi sta-only mode failed: %s"
 #define WIFI_POWER_SAVE_SETUP_FAILED_FORMAT "wifi power save setup failed: %s"
 #define WIFI_APSTA_MODE_FAILED_FORMAT "wifi apsta mode failed: %s"
+#define WIFI_RUNNING_MODE_READ_FAILED_FORMAT "wifi running mode read failed: %s"
+#define WIFI_SETUP_ROLLBACK_MODE_FAILED_FORMAT "wifi setup rollback mode failed: %s"
 #define WIFI_SOFTAP_CONFIG_FAILED_FORMAT "wifi softap config failed: %s"
 #define WIFI_SETUP_POWER_SAVE_DISABLE_FAILED_FORMAT "wifi setup power save disable failed: %s"
 #define WIFI_SETUP_AP_ACTIVE_FORMAT "setup AP active ssid=%s"
@@ -75,14 +78,17 @@ static_assert(cstr_length(kSetupApSsidFallback) < sizeof(g_ap_ssid),
 void format_sta_ip_or_clear(const esp_ip4_addr_t *ip)
 {
     if (!ip) {
-        g_sta_ip[0] = '\0';
+        clear_wifi_station_ip();
         return;
     }
-    int written = snprintf(g_sta_ip, sizeof(g_sta_ip), IPSTR, IP2STR(ip));
-    if (app_text::format_failed(written, sizeof(g_sta_ip))) {
-        g_sta_ip[0] = '\0';
+    char station_ip[kWifiStationIpTextLen] = {};
+    int written = snprintf(station_ip, sizeof(station_ip), IPSTR, IP2STR(ip));
+    if (app_text::format_failed(written, sizeof(station_ip))) {
+        clear_wifi_station_ip();
         ESP_LOGW(TAG, WIFI_STA_IP_FORMAT_FAILED_LOG);
+        return;
     }
+    wifi_station_ip_store(station_ip);
 }
 
 void set_wifi_connected_event(bool connected)
@@ -100,7 +106,7 @@ void set_wifi_connected_event(bool connected)
 
 void clear_sta_connection_state()
 {
-    g_sta_ip[0] = '\0';
+    clear_wifi_station_ip();
     set_wifi_connected_event(false);
 }
 
@@ -223,10 +229,21 @@ bool configure_initial_wifi_mode()
 
 bool apply_station_config(bool reconnect)
 {
+    NetworkCredentialsSnapshot credentials = {};
+    network_credentials_snapshot(&credentials);
+    if (!credentials.wifi_configured) {
+        return false;
+    }
     wifi_config_t sta_config = {};
-    strlcpy((char *)sta_config.sta.ssid, g_wifi_ssid, sizeof(sta_config.sta.ssid));
-    strlcpy((char *)sta_config.sta.password, g_wifi_pass, sizeof(sta_config.sta.password));
-    sta_config.sta.threshold.authmode = g_wifi_pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    strlcpy((char *)sta_config.sta.ssid,
+            credentials.wifi_ssid,
+            sizeof(sta_config.sta.ssid));
+    strlcpy((char *)sta_config.sta.password,
+            credentials.wifi_password,
+            sizeof(sta_config.sta.password));
+    sta_config.sta.threshold.authmode = credentials.wifi_password[0]
+                                             ? WIFI_AUTH_WPA2_PSK
+                                             : WIFI_AUTH_OPEN;
     sta_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &sta_config);
     if (err != ESP_OK) {
@@ -260,6 +277,20 @@ static void configure_wifi_power_save(bool enable_setup_portal)
     }
 }
 
+static void rollback_running_setup_transition(wifi_mode_t previous_mode,
+                                              bool entering_setup_portal)
+{
+    if (entering_setup_portal) {
+        stop_http_server();
+    }
+    esp_err_t err = esp_wifi_set_mode(previous_mode);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG,
+                 WIFI_SETUP_ROLLBACK_MODE_FAILED_FORMAT,
+                 esp_err_to_name(err));
+    }
+}
+
 static bool configure_running_wifi_radio(bool enable_setup_portal,
                                          bool entering_setup_portal)
 {
@@ -272,27 +303,44 @@ static bool configure_running_wifi_radio(bool enable_setup_portal,
         }
         configure_wifi_power_save(false);
     } else {
+        wifi_mode_t previous_mode = WIFI_MODE_STA;
+        esp_err_t previous_mode_err = esp_wifi_get_mode(&previous_mode);
+        if (previous_mode_err != ESP_OK) {
+            ESP_LOGW(TAG,
+                     WIFI_RUNNING_MODE_READ_FAILED_FORMAT,
+                     esp_err_to_name(previous_mode_err));
+            previous_mode = WIFI_MODE_STA;
+        }
+        if (entering_setup_portal && previous_mode == WIFI_MODE_APSTA) {
+            // An inactive portal should not preserve a stale APSTA mode after
+            // another failed entry attempt.
+            previous_mode = WIFI_MODE_STA;
+        }
         esp_err_t mode_err = esp_wifi_set_mode(WIFI_MODE_APSTA);
         if (mode_err != ESP_OK) {
             ESP_LOGW(TAG, WIFI_APSTA_MODE_FAILED_FORMAT, esp_err_to_name(mode_err));
             return false;
         }
         if (!configure_runtime_softap()) {
+            rollback_running_setup_transition(previous_mode,
+                                              entering_setup_portal);
             return false;
         }
-        configure_wifi_power_save(true);
-        if (!g_have_wifi_creds) {
+        if (!network_wifi_credentials_configured()) {
             (void)esp_wifi_disconnect();
             clear_sta_connection_state();
         }
-    }
-    if (enable_setup_portal && !setup_portal_active_load()) {
-        if (!start_http_server()) {
-            return false;
+        if (!setup_portal_active_load()) {
+            if (!start_http_server()) {
+                rollback_running_setup_transition(previous_mode,
+                                                  entering_setup_portal);
+                return false;
+            }
+            ESP_LOGI(TAG, WIFI_SETUP_AP_ACTIVE_FORMAT, g_ap_ssid);
         }
-        ESP_LOGI(TAG, WIFI_SETUP_AP_ACTIVE_FORMAT, g_ap_ssid);
+        configure_wifi_power_save(true);
     }
-    if (g_have_wifi_creds) {
+    if (network_wifi_credentials_configured()) {
         (void)apply_station_config(true);
     }
     if (entering_setup_portal) {
@@ -315,7 +363,7 @@ static bool start_stopped_wifi_radio(bool enable_setup_portal,
             return false;
         }
     }
-    if (g_have_wifi_creds) {
+    if (network_wifi_credentials_configured()) {
         (void)apply_station_config(false);
     }
     err = esp_wifi_start();
@@ -373,7 +421,7 @@ void stop_wifi_radio(bool force_setup_portal)
     if (setup_portal_active_load() && !force_setup_portal) {
         return;
     }
-    if (!g_have_wifi_creds && !force_setup_portal) {
+    if (!network_wifi_credentials_configured() && !force_setup_portal) {
         return;
     }
     stop_http_server();
@@ -433,7 +481,8 @@ void service_wifi_radio_stop_when_idle()
 
 void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START && g_have_wifi_creds) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START &&
+        network_wifi_credentials_configured()) {
         (void)start_station_connection(StationConnectAttempt::Start);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
@@ -441,7 +490,7 @@ void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, v
         clear_sta_connection_state();
         ESP_LOGW(TAG, WIFI_DISCONNECTED_FORMAT, event ? event->reason : -1);
         notify_ui_task();
-        if (g_have_wifi_creds && wifi_radio_on_load() &&
+        if (network_wifi_credentials_configured() && wifi_radio_on_load() &&
             !s_wifi_stop_requested.load(std::memory_order_acquire)) {
             (void)start_station_connection(StationConnectAttempt::Reconnect);
         }
@@ -502,7 +551,7 @@ void init_wifi()
         return;
     }
 
-    if (!g_have_wifi_creds && !g_offline_mode_ui_enabled) {
+    if (!network_wifi_credentials_configured() && !g_offline_mode_ui_enabled) {
         start_wifi_radio(true);
     }
 }

@@ -30,18 +30,25 @@ class DisplayPort {
     int                 rst_;
     int                 width_;
     int                 height_;
+    spi_host_device_t   spihost_;
     uint8_t            *DispBuffer = NULL;
-    int                 DisplayLen;
+    int                 DisplayLen = 0;
+    bool                spi_bus_initialized_ = false;
+    bool                reset_gpio_configured_ = false;
+    bool                ready_ = false;
+    bool                initializing_ = false;
 #if (AlgorithmOptimization == 3)
-	uint16_t (*PixelIndexLUT)[300];
-	uint8_t  (*PixelBitLUT  )[300];
+	uint16_t (*PixelIndexLUT)[300] = NULL;
+	uint8_t  (*PixelBitLUT  )[300] = NULL;
 	void InitPortraitLUT();
 	void InitLandscapeLUT();
 #endif
 
+    void ReleaseResources();
     void Set_ResetIOLevel(uint8_t level);
-    void RLCD_SendCommand(uint8_t Reg);
-    void RLCD_SendData(uint8_t Data);
+    bool RLCD_SendParamChecked(int command, const void *data, size_t data_size, const char *kind, uint8_t value);
+    bool RLCD_SendCommand(uint8_t Reg);
+    bool RLCD_SendData(uint8_t Data);
     void RLCD_Sendbuffera(uint8_t *Data, int len);
     void RLCD_Reset(void);
     void KeepPinsActiveInLightSleep(void);
@@ -49,6 +56,7 @@ class DisplayPort {
   public:
     DisplayPort(int mosi, int scl, int dc, int cs, int rst, int width, int height, spi_host_device_t spihost = SPI3_HOST);
     ~DisplayPort();
+    bool IsReady() const;
     void RLCD_Init();
     void RLCD_ColorClear(uint8_t color);
     void RLCD_Display();

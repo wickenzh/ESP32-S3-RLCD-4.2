@@ -1,8 +1,10 @@
 // 负责选择手动城市或 IP 定位，并组合提交完整天气更新结果。
 #include "network_services.h"
 #include "network_https_resources.h"
+#include "network_credentials_state.h"
 
 #include "app_constexpr.h"
+#include "manual_weather_city_state.h"
 #include "network_sync_schedule.h"
 #include "qweather_location_text.h"
 #include "startup_state.h"
@@ -172,14 +174,13 @@ WeatherUpdateResult update_weather_by_ip_location()
 
 WeatherUpdateResult perform_weather_update()
 {
-    if (!g_have_weather_key || battery_low_mode_load()) {
+    if (!network_weather_api_key_configured() || battery_low_mode_load()) {
         clear_weather_ready_event();
         return WeatherUpdateResult::kFailed;
     }
 
     char manual_city[kManualWeatherCityLen] = {};
-    if (g_has_manual_weather_city) {
-        strlcpy(manual_city, g_manual_weather_city, sizeof(manual_city));
+    if (manual_weather_city_snapshot(manual_city, sizeof(manual_city))) {
         trim_ascii(manual_city);
     }
     if (manual_city[0] != '\0') {

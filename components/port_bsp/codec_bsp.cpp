@@ -2,21 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <esp_log.h>
-#include <freertos/FreeRTOS.h>
 #include "codec_bsp.h"
 #include "i2c_bsp.h"
 
 static const char *TAG = "CodecPort";
 static constexpr const char *kCodecNameEs8311 = "es8311";
 static constexpr const char *kCodecNameEs7210 = "es7210";
-static constexpr const char *kCodecNamePlaybackAndRecord = "es8311 & es7210";
-static constexpr uint32_t kCodecI2cSpeedHz = 400000;
-static constexpr int kCodecEchoSpeakerVolume = 60;
-static constexpr float kCodecEchoMicGainDb = 25.0f;
-static constexpr size_t kCodecEchoBufferSize = 1024;
-static constexpr int kCodecEchoSampleRateHz = 44100;
-static constexpr int kCodecEchoChannelCount = 2;
-static constexpr int kCodecEchoBitsPerSample = 16;
 static constexpr int kCodecTdmChannelCount = 4;
 static constexpr uint32_t kCodecTdmChannelMask = 0x0F;
 static constexpr uint32_t kCodecXiaozhiInputMask = 0x03;
@@ -28,17 +19,6 @@ static constexpr int kCodecPcmPlaybackBitsPerSample = 16;
 static constexpr int kCodecXiaozhiSampleRateHz = 16000;
 static constexpr int kCodecXiaozhiInputSlotCount = 4;
 static constexpr int kCodecXiaozhiSpeakerVolume = 80;
-static constexpr const char *kCodecMusicTaskName = "CodecPort_MusicTask";
-static constexpr const char *kCodecEchoTaskName = "CodecPort_EchoTask";
-static constexpr uint32_t kCodecTaskStackWords = 4 * 1024;
-static constexpr UBaseType_t kCodecTaskPriority = 2;
-static_assert(kCodecI2cSpeedHz > 0, "Codec I2C speed must be positive");
-static_assert(kCodecEchoSpeakerVolume >= 0, "Echo speaker volume must be non-negative");
-static_assert(kCodecEchoMicGainDb >= 0.0f, "Echo mic gain must be non-negative");
-static_assert(kCodecEchoBufferSize > 0, "Echo buffer size must be positive");
-static_assert(kCodecEchoSampleRateHz > 0, "Echo sample rate must be positive");
-static_assert(kCodecEchoChannelCount > 0, "Echo channel count must be positive");
-static_assert(kCodecEchoBitsPerSample > 0, "Echo bits per sample must be positive");
 static_assert(kCodecTdmChannelCount > 0, "Codec TDM channel count must be positive");
 static_assert(kCodecTdmChannelMask != 0, "Codec TDM channel mask must not be empty");
 static_assert(kCodecXiaozhiInputMask != 0, "Xiaozhi input mask must not be empty");
@@ -50,10 +30,6 @@ static_assert(kCodecPcmPlaybackBitsPerSample > 0, "Codec PCM playback bits per s
 static_assert(kCodecXiaozhiSampleRateHz > 0, "Xiaozhi sample rate must be positive");
 static_assert(kCodecXiaozhiSpeakerVolume >= 0 && kCodecXiaozhiSpeakerVolume <= 100,
               "Xiaozhi speaker volume must be in range");
-static_assert(kCodecMusicTaskName[0] != '\0', "Music task name must not be empty");
-static_assert(kCodecEchoTaskName[0] != '\0', "Echo task name must not be empty");
-static_assert(kCodecTaskStackWords > 0, "Codec task stack size must be positive");
-static_assert(kCodecTaskPriority > 0, "Codec task priority must be positive");
 
 extern const uint8_t hourly_chime_pcm_start[] asm("_binary_hourly_chime_pcm_start");
 extern const uint8_t hourly_chime_pcm_end[] asm("_binary_hourly_chime_pcm_end");
@@ -66,47 +42,12 @@ extern const uint8_t chime_3_pcm_end[] asm("_binary_chime_3_pcm_end");
 extern const uint8_t wifi_prompt_pcm_start[] asm("_binary_wifi_prompt_pcm_start");
 extern const uint8_t wifi_prompt_pcm_end[] asm("_binary_wifi_prompt_pcm_end");
 
-void CodecPort::CodecPort_MusicTask(void *arg) {
-	CodecPort *codec = (CodecPort *)arg;
-	codec->CodecPort_SetSpeakerVol(60);
-	for(;;) {
-		size_t bytes_write = 0;
-  	  	size_t bytes_sizt = hourly_chime_pcm_end - hourly_chime_pcm_start;
-  	  	uint8_t *data_ptr = (uint8_t *)hourly_chime_pcm_start;
-		codec->CodecPort_SetInfo(kCodecNameEs8311,1,kCodecPcmPlaybackSampleRateHz,kCodecPcmPlaybackChannelCount,kCodecPcmPlaybackBitsPerSample);
-		do
-		{
-			codec->CodecPort_PlayWrite(data_ptr, 256);
-  	  	  	data_ptr += 256;
-  	  	  	bytes_write += 256;
-		} while (bytes_write < bytes_sizt);
-	}
-}
-
-void CodecPort::CodecPort_EchoTask(void *arg) {
-    CodecPort *codec = (CodecPort *)arg;
-    codec->CodecPort_SetSpeakerVol(kCodecEchoSpeakerVolume);
-    codec->CodecPort_SetMicGain(kCodecEchoMicGainDb);
-    uint8_t *data_ptr = (uint8_t *)heap_caps_malloc(kCodecEchoBufferSize * sizeof(uint8_t), MALLOC_CAP_SPIRAM);
-    if (data_ptr == nullptr) {
-        ESP_LOGW(TAG, "echo buffer alloc failed");
-        vTaskDelete(nullptr);
+CodecPort::CodecPort(I2cMasterBus& i2cbus,const char *strName)
+{
+    if (!i2cbus.IsReady()) {
+        ESP_LOGW(TAG, "codec init failed: %s", esp_err_to_name(ESP_ERR_INVALID_STATE));
         return;
     }
-    codec->CodecPort_SetInfo(kCodecNamePlaybackAndRecord,1,kCodecEchoSampleRateHz,kCodecEchoChannelCount,kCodecEchoBitsPerSample);
-    for(;;)
-    {
-        if(ESP_CODEC_DEV_OK == codec->CodecPort_EchoRead(data_ptr, kCodecEchoBufferSize))
-        {
-            codec->CodecPort_PlayWrite(data_ptr, kCodecEchoBufferSize);
-        }
-    }
-}
-
-
-CodecPort::CodecPort(I2cMasterBus& i2cbus,const char *strName) :
-i2cbus_(i2cbus) 
-{
     set_codec_board_type(strName);
     codec_init_cfg_t codec_cfg = {};
     // 与官方同板卡 BoxAudioCodec 保持一致：ES8311 走标准 TX，ES7210
@@ -123,61 +64,15 @@ i2cbus_(i2cbus)
     playback = get_playback_handle();
     record   = get_record_handle();
     initialized = playback != NULL;
-
-    i2c_master_bus_handle_t I2cMasterBus = i2cbus_.Get_I2cBusHandle();
-    i2c_device_config_t dev_cfg = {};
-    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-    dev_cfg.device_address  = Es8311Address;
-    dev_cfg.scl_speed_hz    = kCodecI2cSpeedHz;
-    err = i2c_master_bus_add_device(I2cMasterBus, &dev_cfg, &I2c_DevEs8311);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "%s i2c add failed: %s", kCodecNameEs8311, esp_err_to_name(err));
-    }
-
-    dev_cfg.device_address  = Es7210Address;
-    err = i2c_master_bus_add_device(I2cMasterBus, &dev_cfg, &I2c_DevEs7210);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "%s i2c add failed: %s", kCodecNameEs7210, esp_err_to_name(err));
-    }
 }
 
 CodecPort::~CodecPort() {
     CodecPort_CloseSpeaker();
     CodecPort_CloseMic();
     deinit_codec();
-    if (I2c_DevEs8311) {
-        esp_err_t err = i2c_master_bus_rm_device(I2c_DevEs8311);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "%s i2c remove failed: %s", kCodecNameEs8311, esp_err_to_name(err));
-        }
-        I2c_DevEs8311 = nullptr;
-    }
-    if (I2c_DevEs7210) {
-        esp_err_t err = i2c_master_bus_rm_device(I2c_DevEs7210);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "%s i2c remove failed: %s", kCodecNameEs7210, esp_err_to_name(err));
-        }
-        I2c_DevEs7210 = nullptr;
-    }
     initialized = false;
     playback = nullptr;
     record = nullptr;
-}
-
-void CodecPort::Codec_SetCodecReg(const char *str, uint8_t reg, uint8_t data) {
-    if (!strcmp(str, kCodecNameEs8311))
-        i2cbus_.i2c_write_buff(I2c_DevEs8311, reg, &data, 1);
-    if (!strcmp(str, kCodecNameEs7210))
-        i2cbus_.i2c_write_buff(I2c_DevEs7210, reg, &data, 1);
-}
-
-uint8_t CodecPort::Codec_GetCodecReg(const char *str, uint8_t reg) {
-    uint8_t data = 0x00;
-    if (!strcmp(str, kCodecNameEs8311))
-        i2cbus_.i2c_read_buff(I2c_DevEs8311, reg, &data, 1);
-    if (!strcmp(str, kCodecNameEs7210))
-        i2cbus_.i2c_read_buff(I2c_DevEs7210, reg, &data, 1);
-    return data;
 }
 
 void CodecPort::CodecPort_SetSpeakerVol(int vol) {
@@ -224,6 +119,10 @@ int CodecPort::CodecPort_EchoRead(void *ptr,int ptr_len) {
 }
 
 bool CodecPort::CodecPort_OpenXiaozhiMic(void) {
+    if (!CodecPort_IsMicrophoneReady()) {
+        ESP_LOGW(TAG, "Xiaozhi microphone handle is unavailable");
+        return false;
+    }
     if (mic_open) {
         return true;
     }
@@ -286,13 +185,22 @@ bool CodecPort::CodecPort_SetInfo(const char *strName,
         }
         int ret = ESP_CODEC_DEV_OK;
         if (!strcmp(strName, kCodecNameEs8311)) {
+            if (!playback) {
+                return false;
+            }
             ret = esp_codec_dev_open(playback, &fs);
             speaker_open = ret == ESP_CODEC_DEV_OK;
             speaker_sample_rate = speaker_open ? sample_rate : 0;
         } else if (!strcmp(strName, kCodecNameEs7210)) {
+            if (!record) {
+                return false;
+            }
             ret = esp_codec_dev_open(record, &fs);
             mic_open = ret == ESP_CODEC_DEV_OK;
         } else {
+            if (!playback || !record) {
+                return false;
+            }
             ret = esp_codec_dev_open(playback, &fs);
             speaker_open = ret == ESP_CODEC_DEV_OK;
             speaker_sample_rate = speaker_open ? sample_rate : 0;
@@ -311,6 +219,10 @@ bool CodecPort::CodecPort_SetInfo(const char *strName,
 
 bool CodecPort::CodecPort_IsReady(void) const {
     return initialized && playback != NULL;
+}
+
+bool CodecPort::CodecPort_IsMicrophoneReady(void) const {
+    return initialized && record != NULL;
 }
 
 static bool play_pcm_to_slot0(CodecPort *codec,
@@ -431,14 +343,6 @@ static bool play_pcm_to_slot0(CodecPort *codec,
     return true;
 }
 
-bool CodecPort::CodecPort_PlayHourlyChime(void) {
-    return CodecPort_PlayHourlyChimeSlot(3);
-}
-
-bool CodecPort::CodecPort_PlayHourlyChimeSlot(int source_slot) {
-    return play_pcm_to_slot0(this, hourly_chime_pcm_start, hourly_chime_pcm_end, source_slot, 90);
-}
-
 bool CodecPort::CodecPort_PlayChimeSound(int sound_index,
                                          int volume_percent,
                                          bool (*stop_requested)()) {
@@ -474,21 +378,4 @@ bool CodecPort::CodecPort_PlayChimeSound(int sound_index,
 
 bool CodecPort::CodecPort_PlayWifiPrompt(void) {
     return play_pcm_to_slot0(this, wifi_prompt_pcm_start, wifi_prompt_pcm_end, 0, 90);
-}
-
-void CodecPort::CodecPort_CreateMusicTask(void) {
-	xTaskCreate(CodecPort_MusicTask, kCodecMusicTaskName, kCodecTaskStackWords, (void *)this, kCodecTaskPriority, NULL);
-}
-
-void CodecPort::CodecPort_CreateEchoTask(void) {
-	xTaskCreate(CodecPort_EchoTask, kCodecEchoTaskName, kCodecTaskStackWords, (void *)this, kCodecTaskPriority, NULL);
-}
-
-uint8_t *CodecPort::CodecPort_GetPcmData(uint32_t *len) {
-    if (len == nullptr) {
-        ESP_LOGW(TAG, "pcm length output is null");
-        return (uint8_t *)hourly_chime_pcm_start;
-    }
-	*len = (hourly_chime_pcm_end - hourly_chime_pcm_start);
-	return (uint8_t *)hourly_chime_pcm_start;
 }

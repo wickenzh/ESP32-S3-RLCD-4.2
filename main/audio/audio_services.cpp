@@ -6,6 +6,7 @@
 #include "checked_size.h"
 #include "sensor_services.h"
 
+#include <atomic>
 #include <cstddef>
 #include <new>
 
@@ -18,6 +19,7 @@
 
 namespace {
 CodecPort *s_audio_codec = nullptr;
+std::atomic<bool> s_audio_codec_present{false};
 portMUX_TYPE s_audio_state_mux = portMUX_INITIALIZER_UNLOCKED;
 bool s_audio_playing = false;
 constexpr float kXiaozhiMicGainDb = 37.5f;
@@ -178,15 +180,21 @@ bool is_audio_playing()
 
 bool audio_codec_active()
 {
-    return s_audio_codec != nullptr;
+    return s_audio_codec_present.load(std::memory_order_acquire);
 }
 
 static CodecPort *ensure_audio_codec()
 {
     if (!s_audio_codec) {
-        s_audio_codec = new (std::nothrow) CodecPort(g_i2c, kAudioCodecBoardName);
-        if (!s_audio_codec) {
+        CodecPort *codec = new (std::nothrow) CodecPort(g_i2c, kAudioCodecBoardName);
+        if (!codec) {
             ESP_LOGW(TAG, "%s", kAudioCodecAllocationFailedLog);
+        } else if (!codec->CodecPort_IsReady()) {
+            ESP_LOGW(TAG, "audio codec playback handle unavailable");
+            delete codec;
+        } else {
+            s_audio_codec = codec;
+            s_audio_codec_present.store(true, std::memory_order_release);
         }
     }
     return s_audio_codec;
@@ -195,6 +203,7 @@ static CodecPort *ensure_audio_codec()
 static void release_audio_codec()
 {
     if (s_audio_codec) {
+        s_audio_codec_present.store(false, std::memory_order_release);
         delete s_audio_codec;
         s_audio_codec = nullptr;
     }

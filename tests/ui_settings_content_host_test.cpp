@@ -3,26 +3,45 @@
 
 #include "alarm_services.h"
 #include "app_state.h"
+#include "manual_weather_city_state.h"
 #include "ui_settings_confirmation_state.h"
 
 #include <assert.h>
 #include <string.h>
 
 const char *const TAG = "test";
-char g_manual_weather_city[kManualWeatherCityLen] = {};
-bool g_has_manual_weather_city = false;
 bool g_offline_mode_ui_enabled = false;
 int g_chime_volume_percent = 60;
 int g_chime_sound_index = 2;
 
 namespace {
 AlarmSnapshot s_alarm = {};
+char s_manual_weather_city[kManualWeatherCityLen] = {};
 
 void expect_text(char items[][kSettingsSecondaryTextSize], int index, const char *expected)
 {
     assert(strcmp(items[index], expected) == 0);
 }
 } // namespace
+
+bool manual_weather_city_snapshot(char *out, size_t out_len)
+{
+    if (!out || out_len < sizeof(s_manual_weather_city)) {
+        return false;
+    }
+    memcpy(out, s_manual_weather_city, sizeof(s_manual_weather_city));
+    return s_manual_weather_city[0] != '\0';
+}
+
+void manual_weather_city_store(const char *city)
+{
+    strlcpy(s_manual_weather_city, city ? city : "", sizeof(s_manual_weather_city));
+}
+
+bool manual_weather_city_is_configured()
+{
+    return s_manual_weather_city[0] != '\0';
+}
 
 void alarm_get_snapshot(AlarmSnapshot *out)
 {
@@ -46,8 +65,7 @@ int main()
     expect_text(items, kNetworkSettingsSayingItem, "更新一言");
     expect_text(items, kNetworkSettingsWeatherCityItem, "天气城市 自动");
 
-    g_has_manual_weather_city = true;
-    strlcpy(g_manual_weather_city, "杭州", sizeof(g_manual_weather_city));
+    manual_weather_city_store("杭州");
     memset(items, 0, sizeof(items));
     populate_settings_secondary_items(kSettingsPrimaryNetwork, items);
     expect_text(items, kNetworkSettingsWeatherCityItem, "天气城市 杭州");

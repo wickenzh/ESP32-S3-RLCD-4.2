@@ -2,6 +2,7 @@
 #include "network_services.h"
 
 #include "app_constexpr.h"
+#include "manual_weather_city_state.h"
 #include "network_diagnostics_state.h"
 #include "wifi_portal_dns.h"
 #include "wifi_portal_pages.h"
@@ -111,12 +112,13 @@ bool stop_http_server_handle()
 
 ManualWeatherCityValidationResult validate_saved_manual_weather_city()
 {
-    if (!g_has_manual_weather_city || g_manual_weather_city[0] == '\0') {
+    char weather_city[kManualWeatherCityLen] = {};
+    if (!manual_weather_city_snapshot(weather_city, sizeof(weather_city))) {
         return kManualWeatherCityValidationOk;
     }
     char city_id[kPortalWeatherCityIdSize] = {};
     char city_name[kPortalWeatherCityNameSize] = {};
-    QweatherCityLookupStatus status = qweather_lookup_city_status(g_manual_weather_city,
+    QweatherCityLookupStatus status = qweather_lookup_city_status(weather_city,
                                                                   city_id,
                                                                   sizeof(city_id),
                                                                   city_name,
@@ -154,7 +156,7 @@ esp_err_t handle_setup_save(httpd_req_t *req, const char *body)
     bool saved = save_credentials_from_body(body);
     bool connected = saved && wait_for_wifi_connected(kPortalSaveWifiConnectWaitMs);
     const char *extra_message = nullptr;
-    if (connected && g_has_manual_weather_city) {
+    if (connected) {
         ManualWeatherCityValidationResult city_result = validate_saved_manual_weather_city();
         if (city_result == kManualWeatherCityValidationInvalid) {
             extra_message = kPortalWeatherCityInvalidMessage;

@@ -3,6 +3,8 @@
 
 #include "app_text_format.h"
 #include "app_state.h"
+#include "manual_weather_city_state.h"
+#include "network_credentials_state.h"
 #include "scoped_heap_buffer.h"
 #include "wifi_portal_state.h"
 
@@ -293,10 +295,14 @@ void append_wifi_scan_list(char *html, size_t html_len)
 
 esp_err_t root_get_handler(httpd_req_t *req)
 {
+    char wifi_ssid[kNetworkWifiSsidLen] = {};
     char safe_ssid[kPortalEscapedSsidSize] = {};
     char safe_weather_city[kPortalEscapedCitySize] = {};
-    html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
-    html_escape(g_manual_weather_city, safe_weather_city, sizeof(safe_weather_city));
+    char weather_city[kManualWeatherCityLen] = {};
+    (void)manual_weather_city_snapshot(weather_city, sizeof(weather_city));
+    (void)network_wifi_ssid_snapshot(wifi_ssid, sizeof(wifi_ssid));
+    html_escape(wifi_ssid, safe_ssid, sizeof(safe_ssid));
+    html_escape(weather_city, safe_weather_city, sizeof(safe_weather_city));
     ScopedHeapBuffer<char> html(kPortalRootHtmlSize, HeapBufferInit::kZeroed);
     if (!html) {
         return send_portal_text_status(req, kPortalHttpStatusInternalError, kPortalErrorNotEnoughMemory);
@@ -332,11 +338,16 @@ esp_err_t root_get_handler(httpd_req_t *req)
 
 esp_err_t send_save_result_page(httpd_req_t *req, bool saved, bool connected, const char *extra_message)
 {
+    char wifi_ssid[kNetworkWifiSsidLen] = {};
     char safe_ssid[kPortalEscapedSsidSize] = {};
     char safe_city[kPortalEscapedCitySize] = {};
     char safe_extra[kPortalSaveExtraTextSize] = {};
-    html_escape(g_wifi_ssid, safe_ssid, sizeof(safe_ssid));
-    html_escape(g_has_manual_weather_city ? g_manual_weather_city : "自动定位", safe_city, sizeof(safe_city));
+    char weather_city[kManualWeatherCityLen] = {};
+    const bool have_weather_city = manual_weather_city_snapshot(
+        weather_city, sizeof(weather_city));
+    (void)network_wifi_ssid_snapshot(wifi_ssid, sizeof(wifi_ssid));
+    html_escape(wifi_ssid, safe_ssid, sizeof(safe_ssid));
+    html_escape(have_weather_city ? weather_city : "自动定位", safe_city, sizeof(safe_city));
     html_escape(extra_message ? extra_message : "", safe_extra, sizeof(safe_extra));
     ScopedHeapBuffer<char> html(kPortalSaveResultHtmlSize, HeapBufferInit::kZeroed);
     if (!html) {

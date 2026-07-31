@@ -21,6 +21,8 @@ Hardware key behavior:
 - **KEY long press:** return from a secondary menu; exit Settings from the primary menu.
 - **Either key during an alarm or Pomodoro completion sound:** stop the remaining sound and consume that key press.
 
+Button wakeups, alarms, Pomodoro events, and UI refreshes use thread-safe task notification internally. Interaction and response timing remain unchanged, while cross-core notification no longer relies on an unsynchronized task handle.
+
 Settings returns to the current work page after about 30 seconds without activity. Valid operations in the page-order screen restart this timeout.
 
 On low-refresh pages such as Gallery Clock, Weather Board, Calendar, and Temperature/Humidity History, the device waits for a key wakeup while idle to reduce power use. BOOT/KEY short-press and long-press behavior is unchanged.
@@ -95,8 +97,9 @@ Shows rolling 24-hour local temperature and humidity curves. Background sensing 
 Provides local wake-word detection, voice conversations, on-screen transcripts, response playback, one-shot alarms, Pomodoro timers, and weather-city configuration.
 
 - High-power voice services start only while entering the Xiaozhi page.
+- While waiting for cloud reply audio, an empty playback queue sleeps until new data arrives instead of polling every few milliseconds. Voice content, initial buffering, and playback order are unchanged.
 - First use may require binding to the Xiaozhi service by following the on-screen prompt.
-- A bound device restores its saved service configuration directly. An unbound device still displays and announces the binding ID first, and activation failures continue to retry automatically.
+- A bound device restores its saved service configuration directly. An unbound device still displays and announces the binding ID first. It is marked announced only after the prompt and all digits finish; if audio is temporarily busy or the task cannot start, a later activation cycle retries without requiring page switching or a reboot.
 - Speak the wake word while waiting. If the page says Xiaozhi is preparing, allow service initialization to finish.
 - If the cloud service recognizes only an incomplete phrase and returns no text or audio reply, the page shows that it did not hear the complete request. Continue or repeat the request; about 12 seconds of silence returns to wake-word standby.
 - User transcripts, assistant replies, emotions, and playback completion use one conversation-state path so multi-turn listening, farewell return, and minimum transcript visibility remain consistent.
@@ -123,9 +126,13 @@ With no saved online configuration and offline mode disabled, setup starts autom
    - **Weather city (optional):** for example Hangzhou. Chinese names ending in `市` are normalized and validated through QWeather. Leave empty for public-IP location.
    - **Offline date and time:** use only when Wi-Fi is intentionally left empty.
 
+In the rare case that the platform cannot configure the captive DNS receive timeout, the page may not open automatically. Open the address above manually; the failed DNS service exits cleanly instead of remaining active after setup.
+
 ### 4.2 Online Mode
 
 Submitting Wi-Fi credentials stores the online configuration and starts connection. QWeather API Key is required only for weather services; NTP and daily text do not use it. If the short boot request obtains current conditions but not forecast or air quality, a staggered background refresh remains scheduled so extended weather-board data is normally ready before first entry.
+
+The device publishes the Wi-Fi name, password, and weather API key to background tasks as one complete configuration. Saving cannot mix old and new credential fields, and serial logs do not print the password or full API key. Setup steps and field formats are unchanged.
 
 After setup, NTP, weather, and daily-text requests are staggered to avoid concurrent HTTPS memory peaks. Enabled network pages receive an initial data prefetch even if they are not the first visible page.
 
@@ -144,6 +151,8 @@ A manual city takes priority over IP location and can be set through:
 **Settings > Network > Weather City** displays Auto or the saved city. In manual mode, press BOOT and confirm again to clear it and return to IP location. Clearing immediately queues a weather refresh.
 
 An unrecognized QWeather city is rejected. If online validation times out, the normalized name is kept and retried during the next weather update.
+
+The city is handed between setup, Xiaozhi, Settings, and weather synchronization as one complete text snapshot. Updating a Chinese city while a sync is running cannot expose a partial or mixed city name.
 
 ### 4.4 Offline Mode
 
@@ -166,6 +175,8 @@ To leave offline mode:
 
 Press **KEY** to enter Settings. The left column is the primary menu; the right side contains secondary items. The selected item is shown with inverted colors.
 
+Settings navigation and confirmation state are handed off safely between input, UI, and OTA tasks. Rapid key use, returning from About Device or Network Diagnostics, and keeping the update panel visible no longer reuse stale focus or confirmation state. Key behavior and the 30-second inactivity timeout are unchanged.
+
 ### 5.1 Network
 
 - **Sync Time:** run NTP now.
@@ -185,11 +196,20 @@ Each network window reports the requests captured when it started. A new request
 When both reminder switches are off, no hourly sound plays. Critical Xiaozhi audio, OTA, and other protected operations avoid concurrent Codec use.
 If the device cannot temporarily reserve the wake and clock resources required for playback, that sound is skipped safely and its playback state is released. Later reminders and previews can try again normally.
 When audio is busy, rapid repeated sound-setting changes keep only one pending preview. Once playback becomes available, the preview uses the latest selection instead of replaying every intermediate choice.
+No vendor audio demo task runs in the background. Audio resources are opened only for actual chimes, previews, alarms, Pomodoro completion, or Xiaozhi sessions and are released through the shared lifecycle afterward.
+Codec and sensor I2C register writes no longer allocate internal heap memory on every call, reducing transient fragmentation during repeated previews or Xiaozhi startup. Audio, sensor, and page controls are unchanged.
+Xiaozhi shutdown diagnostics now use a separately synchronized audio-resource state instead of reading a Codec pointer while another task may create or release it. This improves diagnostic stability without changing sound controls or use.
+The audio layer validates speaker and microphone readiness separately. A partial Codec startup cannot publish an unusable audio resource or pass a missing microphone handle to the driver; the current attempt ends safely and a later reminder or Xiaozhi entry may retry.
+Production audio now reuses the ES8311/ES7210 I2C controls already owned by the board Codec layer instead of registering duplicate, unused device handles for every session. Sound behavior and hardware addresses are unchanged.
+The network transaction lock shared by weather, daily text, Xiaozhi, and OTA is now a static lifetime resource. This removes a cold-start heap allocation and a source of long-lived fragmentation without changing request order, timeouts, or user operation.
+The depth counter mutex used by network and audio power locks is also a static lifetime resource. This reduces startup heap allocation and long-lived fragmentation without changing light sleep, network, or audio behavior.
+The application event group shared by provisioning, synchronization, OTA, and startup is also a static lifetime resource. This removes another cold-start allocation without changing event delivery, wait timeouts, or user operation.
+RTC and SHTC3 setup also rejects an unavailable shared I2C bus, and owned sensor handles are released when their object is destroyed. Sensor addresses, intervals, and displayed readings are unchanged.
 
 ### 5.3 Display
 
-- **Page switches:** enable or disable pages. Network pages are blocked while offline, and the final enabled page cannot be disabled.
-- **Page order:** lists only enabled pages. KEY selects; BOOT exchanges the selected page with the next one. The first item becomes the boot home page.
+- **Page switches:** enable or disable pages. Network pages are blocked while offline, and the final enabled page cannot be disabled. Changes are handed safely to page switching and background network decisions without changing display or sync rules.
+- **Page order:** lists only enabled pages. KEY selects; BOOT exchanges the selected page with the next one. The first item becomes the boot home page. The firmware reads and saves the complete order as one snapshot, so rapid sorting or page switching cannot observe a half-finished exchange.
 - **Alarm:** displays the one-shot alarm and allows manual disable when active.
 - **Xiaozhi AI auto return:** after five minutes without valid activity, return from Xiaozhi to the first page. Auto-return pauses while a Pomodoro runs.
 
@@ -198,7 +218,7 @@ Xiaozhi AI cannot be the first page because its high-power service is unsuitable
 ### 5.4 System
 
 - **Offline Mode**
-- **Network Diagnostics**
+- **Network Diagnostics**: checks local IP, public IP, IP location, DNS, QWeather, NTP, Daily Saying, internet access, and the OTA manifest. The local IP is updated as one complete address during connection, lease renewal, or disconnection, so a partial address is never shown.
 - **Factory Reset** (requires confirmation)
 - **About Device** (version, battery, voltage, last-charge time, device information, and source repository)
 - **Check Update**
@@ -231,9 +251,13 @@ The single alarm can be set, changed, or disabled through Xiaozhi voice.
 
 ## 7. OTA and Flashing
 
-For each public source release, GitHub Actions automatically attaches two build outputs to the matching GitHub Release: `weather_clock_vX.X.X.bin` for OTA or app-partition flashing, and `weather_clock_vX.X.X_merged.bin` for a complete flash from address `0x0`. The automated build only adds firmware assets and does not rewrite the existing release notes.
+For each public source release, GitHub Actions automatically attaches two build outputs to the matching GitHub Release: `weather_clock_vX.X.X.bin` for OTA or app-partition flashing, and `weather_clock_vX.X.X_merged.bin` for a complete flash from address `0x0`. The automated build only adds firmware assets and does not rewrite the existing release notes. Release notes use a numbered list to summarize all user-visible fixes and maintenance changes since the previous formal release.
 
-After the GitHub build completes, the Cloudflare OTA service imports and verifies both files automatically. It publishes the new online manifests only after both firmware images are available.
+After the GitHub build completes, the Cloudflare OTA service imports and verifies both files automatically. If the automatic notification is delayed, the maintenance release flow requests a protected retry. The previous online manifest remains active until both new firmware images pass validation.
+
+Internally, provisioning, offline mode, chime, volume, and Xiaozhi auto-return settings are safely published to background tasks. This maintenance does not change where settings are edited, how they are saved, or how they are restored after restart.
+
+The online manifest may include release notes for publishing tools and the desktop client. The device retains only the version, download URL, file size, and SHA256 metadata required for installation instead of keeping unused release-note text in memory.
 
 Open **Settings > System > Check Update**:
 
@@ -303,6 +327,8 @@ The device then enters setup as an unconfigured clock.
 
 Stay connected to the `WeatherClock-` AP, disable automatic mobile-data switching, and browse to `http://192.168.4.1/`.
 
+If portal startup fails, the device removes the incomplete AP and restores its previous Wi-Fi mode instead of leaving an unusable high-power hotspot active. Retry setup after a short wait.
+
 ### Weather remains “Waiting for data”
 
 Verify Wi-Fi, QWeather API Key, and city. Run **Network > Sync Weather** or use **System > Network Diagnostics** to inspect QWeather, DNS, and Internet access.
@@ -322,14 +348,26 @@ After Wi-Fi startup or connection timeout, the device retries in about 15 second
 An occasional microphone read error is retried briefly. If reads remain unavailable for about one second, the device exits that failing capture loop and automatically rebuilds voice listening instead of staying in a high-frequency error state.
 When an abnormal listener is stopped, its capture buffer is also released centrally, so repeated automatic recovery does not keep consuming additional PSRAM.
 If temporary memory pressure prevents a Xiaozhi tool response from being built, the device discards that response and releases its temporary data safely. Retry the request after the service recovers; a reboot is not required.
+If a speaker write fails, the current voice session ends immediately, queued audio is released, and listening is rebuilt automatically instead of remaining in the speaking state until timeout.
+After Xiaozhi changes the weather city, the device releases real-time voice resources before refreshing all weather data. A network fault cannot leave Xiaozhi waiting forever; the queued refresh remains owned by the background network task.
 
 ### A just-published OTA version is not found
 
 Check access to the primary manifest. The GitHub backup is synchronized on a schedule and may temporarily remain on the previous version.
 
+If the serial log shows both `OTA manifest source skipped: R2` and `OTA manifest source skipped: GitHub`, the firmware was built without production OTA endpoints and did not make an HTTP request. This is not caused by Wi-Fi or manifest length. Recover by flashing a corrected App image over serial while preserving NVS, or by provisioning a valid custom OTA endpoint with the desktop client.
+
 ### Time was lost and data is initially blank
 
 With an implausible RTC time, the device first shows placeholders and attempts NTP. Local sensors sample immediately when no cached value exists. Date and network data recover after synchronization.
+
+### Startup screen does not continue
+
+In the rare event of a display startup failure, the firmware releases any acquired SPI bus, panel interface, reset GPIO, display buffers, lookup tables, LVGL buffers, timer, and lock instead of rebooting repeatedly or continuing periodic wake-ups in an unusable state. Power-cycle the device; if it still cannot enter a work page, inspect the serial log for `RLCD display resources unavailable` or `LVGL initialization failed` and the preceding specific error.
+
+If the shared I2C master bus itself cannot be created, startup stops before RTC, sensor, audio, networking, and application tasks are initialized instead of entering a reset loop. Power-cycle the device and inspect the serial log for `I2C master bus unavailable` and the preceding driver error. A missing individual RTC or temperature/humidity sensor remains a separate recoverable device error and does not by itself stop the clock.
+
+During normal operation, a temporary SPI display allocation or timeout error is retried within a fixed limit. If it still fails, only that frame is skipped and `RLCD command/data tx failed` is logged instead of rebooting the device. Repeated messages warrant checking power stability and the logged DMA headroom.
 
 ## 12. Safety and Use Restrictions
 
