@@ -9,6 +9,8 @@
 #include "input_tasks.h"
 #include "network_services.h"
 #include "ota_services.h"
+#include "radio_services.h"
+#include "music_player.h"
 #include "sensor_services.h"
 #include "startup_state.h"
 #include "ui_display_flush.h"
@@ -264,6 +266,8 @@ extern "C" void app_main(void)
     }
     init_wifi();
     park_unused_audio_peripherals();
+    radio_init();
+    music_init();
     xiaozhi_ai_init();
     alarm_services_init();
     pomodoro_services_init();

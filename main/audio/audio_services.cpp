@@ -3,6 +3,7 @@
 
 #include "audio_power_lock_ownership.h"
 #include "audio_services_internal.h"
+#include "display_bsp.h"
 #include "checked_size.h"
 #include "sensor_services.h"
 
@@ -241,6 +242,8 @@ bool start_xiaozhi_audio_session()
     }
     codec->CodecPort_SetMicGain(kXiaozhiMicGainDb);
     reset_xiaozhi_speaker_state();
+    // I2S TDM全双工占用大量DMA内存，启用SPI保守模式避免LCD刷新失败
+    Display_AcquireDmaConservativeMode();
     return true;
 }
 
@@ -268,6 +271,7 @@ void stop_xiaozhi_audio_session()
         s_audio_codec->CodecPort_CloseMic();
     }
     reset_xiaozhi_speaker_state();
+    Display_ReleaseDmaConservativeMode();
     audio_finish_playback();
 }
 

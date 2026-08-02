@@ -41,7 +41,7 @@ lv_obj_t **const kBatterySegmentsByWorkPage[kWorkPageCount] = {
     g_battery_segments,
     g_gallery_battery_segments,
     g_weather_board_battery_segments,
-    g_flip_clock_battery_segments,
+    g_radio_battery_segments,
     g_calendar_battery_segments,
     g_history_battery_segments,
     g_xiaozhi_battery_segments,

@@ -39,10 +39,8 @@ idf_component_register(
         "ui/ui_history_window.cpp"
         "ui/ui_gallery.cpp"
         "ui/ui_gallery_selection.cpp"
-        "ui/ui_flip_clock.cpp"
-        "ui/ui_flip_clock_runtime.cpp"
+        "ui/ui_radio.cpp"
         "ui/ui_inverted_clock_card.cpp"
-        "ui/ui_flip_sensor_mood.cpp"
         "ui/ui_xiaozhi.cpp"
         "ui/ui_xiaozhi_face.cpp"
         "ui/ui_xiaozhi_subtitle.cpp"
@@ -160,6 +158,8 @@ idf_component_register(
         "xiaozhi/xiaozhi_tts_playback.cpp"
         "xiaozhi/xiaozhi_voice.cpp"
         "xiaozhi/xiaozhi_voice_codec.cpp"
+        "radio/radio_services.cpp"
+        "music/music_player.cpp"
         "xiaozhi/xiaozhi_websocket_session.cpp"
         "input/input_tasks.cpp"
         "assets/boot_anim.c"
@@ -179,6 +179,8 @@ idf_component_register(
         "pomodoro"
         "xiaozhi"
         "input"
+        "radio"
+        "music"
         "storage"
         "assets"
     REQUIRES
@@ -201,6 +203,8 @@ idf_component_register(
         esp_driver_gpio
         json
         mbedtls
+        espressif__esp_audio_codec
+        helix_mp3
         tcp_transport)
 
 string(TIMESTAMP WEATHER_CLOCK_BUILD_DATE "%Y-%m-%d")

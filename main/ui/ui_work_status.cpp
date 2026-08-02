@@ -299,8 +299,8 @@ WorkPageStatusLabels get_work_page_status_labels(int page)
         return {g_weather_board_date_label,
                 g_weather_board_summary_label,
                 g_weather_board_status_time_label};
-    case kWorkPageFlipClock:
-        return {g_flip_clock_date_label, nullptr, nullptr};
+    case kWorkPageRadio:
+        return {g_radio_date_label, nullptr, nullptr};
     case kWorkPageCalendar:
         return {g_calendar_date_label, g_calendar_summary_label, g_calendar_status_time_label};
     case kWorkPageHistory:
@@ -350,8 +350,8 @@ bool update_work_page_sensor_summary(lv_obj_t *label)
 
 bool update_non_clock_work_page_sensor_status(int page)
 {
-    if (page == kWorkPageFlipClock) {
-        return update_flip_clock_sensor_status();
+    if (page == kWorkPageRadio) {
+        return false;  // 电台页面不需要传感器状态
     }
     return update_work_page_sensor_summary(get_work_page_status_labels(page).summary);
 }

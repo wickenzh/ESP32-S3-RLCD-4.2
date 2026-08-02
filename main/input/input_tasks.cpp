@@ -4,10 +4,13 @@
 #include "alarm_services.h"
 #include "audio_services.h"
 #include "input_button_wait_policy.h"
+#include "music_player.h"
 #include "network_diagnostics_state.h"
 #include "ota_services.h"
 #include "pomodoro_services.h"
+#include "radio_services.h"
 #include "task_notification_target.h"
+#include "xiaozhi_voice.h"
 #include "ui_info_page_state.h"
 #include "ui_settings_activity_state.h"
 #include "ui_settings_navigation.h"
@@ -236,9 +239,15 @@ void button_task(void *)
                        !battery_low_mode_load()) {
                 TickType_t held = now - boot_pressed_since;
                 if (button_press_is_short(held)) {
-                    int next_page = next_enabled_work_page(active_work_page_load());
-                    active_work_page_store(next_page);
-                    ESP_LOGI(TAG, BUTTON_SWITCH_WORK_PAGE_LOG_FORMAT, next_page + 1);
+                    // 音乐模式下BOOT键先退出音乐模式
+                    if (active_work_page_load() == kWorkPageGallery &&
+                        g_gallery_music_mode.load()) {
+                        gallery_set_music_mode(false);
+                    } else {
+                        int next_page = next_enabled_work_page(active_work_page_load());
+                        active_work_page_store(next_page);
+                        ESP_LOGI(TAG, BUTTON_SWITCH_WORK_PAGE_LOG_FORMAT, next_page + 1);
+                    }
                     notify_ui_task();
                 }
             }
@@ -258,9 +267,25 @@ void button_task(void *)
                 }
                 if (!key_press_stopped_alert &&
                     !settings_page_requested() && !info_page_requested() && !network_diag_page_requested()) {
-                    ESP_LOGI(TAG, BUTTON_SHOW_SETTINGS_LOG_FORMAT);
-                    enter_settings_primary_menu(now);
-                    key_press_opened_settings = true;
+                    if (active_work_page_load() == kWorkPageRadio) {
+                        radio_next_station();
+                        key_press_opened_settings = false;
+                    } else if (active_work_page_load() == kWorkPageXiaozhiAI) {
+                        xiaozhi_voice_trigger_wake();
+                        key_press_opened_settings = false;
+                    } else if (active_work_page_load() == kWorkPageGallery) {
+                        // Gallery页面：默认模式KEY键进入音乐模式，音乐模式KEY键切下一首
+                        if (!g_gallery_music_mode.load()) {
+                            gallery_set_music_mode(true);
+                        } else {
+                            music_next_song();
+                        }
+                        key_press_opened_settings = false;
+                    } else {
+                        ESP_LOGI(TAG, BUTTON_SHOW_SETTINGS_LOG_FORMAT);
+                        enter_settings_primary_menu(now);
+                        key_press_opened_settings = true;
+                    }
                     notify_ui_task();
                 }
             } else if (!key_press_stopped_alert &&

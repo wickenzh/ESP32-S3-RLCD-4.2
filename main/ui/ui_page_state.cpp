@@ -31,7 +31,7 @@ PageRootList current_page_roots()
         g_gallery_root,
         g_calendar_root,
         g_weather_board_root,
-        g_flip_clock_root,
+        g_radio_root,
         g_xiaozhi_root,
         g_info_root,
         g_network_diag_root,
@@ -57,9 +57,9 @@ lv_obj_t *build_work_page_root(int page)
     case kWorkPageWeatherBoard:
         build_weather_board_page();
         return work_page_root_or_fallback(g_weather_board_root);
-    case kWorkPageFlipClock:
-        build_flip_clock_page();
-        return work_page_root_or_fallback(g_flip_clock_root);
+    case kWorkPageRadio:
+        build_radio_page();
+        return work_page_root_or_fallback(g_radio_root);
     case kWorkPageXiaozhiAI:
         build_xiaozhi_page();
         return work_page_root_or_fallback(g_xiaozhi_root);

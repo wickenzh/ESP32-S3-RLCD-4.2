@@ -1,0 +1,22 @@
+# Helix MP3 Decoder component for ESP-IDF
+idf_component_register(
+    SRCS
+        "mp3dec.c"
+        "mp3tabs.c"
+        "real/bitstream.c"
+        "real/buffers.c"
+        "real/dct32.c"
+        "real/dequant.c"
+        "real/dqchan.c"
+        "real/huffman.c"
+        "real/hufftabs.c"
+        "real/imdct.c"
+        "real/polyphase.c"
+        "real/scalfact.c"
+        "real/stproc.c"
+        "real/subband.c"
+        "real/trigtabs.c"
+    INCLUDE_DIRS
+        "pub"
+        "real"
+)

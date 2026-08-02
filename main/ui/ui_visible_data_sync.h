@@ -9,7 +9,7 @@ struct ActiveWorkPageState {
     bool gallery = false;
     bool calendar = false;
     bool weather_board = false;
-    bool flip_clock = false;
+    bool radio = false;
     bool xiaozhi = false;
     bool weather_clock = false;
     bool uses_weather_data = false;

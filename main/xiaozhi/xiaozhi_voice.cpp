@@ -226,7 +226,8 @@ bool create_model()
         release_model();
         return false;
     }
-    (void)s_afe_iface->set_wakenet_threshold(s_afe_data, 1, kWakeNetThreshold);
+    // 阈值越低越灵敏，0.3 比模型默认值更容易触发
+    (void)s_afe_iface->set_wakenet_threshold(s_afe_data, 1, 0.20f);
     s_afe_iface->print_pipeline(s_afe_data);
     ESP_LOGI(kTag,
              "MR AEC WakeNet ready: %s (%d Hz, feed=%d, fetch=%d, channels=%d)",
@@ -402,6 +403,7 @@ void detect_task(void *)
             }
         }
         if (result->wakeup_state == WAKENET_DETECTED) {
+            s_afe_iface->disable_wakenet(s_afe_data);
             ESP_LOGI(kTag,
                      "Wake word detected: channel=%d volume=%.1f dB",
                      result->trigger_channel_id,
@@ -562,6 +564,21 @@ void xiaozhi_voice_stop()
 bool xiaozhi_voice_take_wake_word()
 {
     return s_detected.exchange(false);
+}
+
+void xiaozhi_voice_trigger_wake()
+{
+    if (!s_running.load()) {
+        return;
+    }
+    bool was_false = s_detected.exchange(true);
+    if (!was_false) {
+        ESP_LOGI(kTag, "KEY button triggered wake");
+        XiaozhiVoiceEventCallback cb = s_event_callback.load(std::memory_order_acquire);
+        if (cb) {
+            cb();
+        }
+    }
 }
 
 bool xiaozhi_voice_is_listening()

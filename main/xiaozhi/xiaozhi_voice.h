@@ -21,6 +21,7 @@ void xiaozhi_voice_set_event_callback(XiaozhiVoiceEventCallback callback);
 bool xiaozhi_voice_start();
 void xiaozhi_voice_stop();
 bool xiaozhi_voice_take_wake_word();
+void xiaozhi_voice_trigger_wake();
 bool xiaozhi_voice_is_listening();
 void xiaozhi_voice_get_runtime_snapshot(XiaozhiVoiceRuntimeSnapshot *out);
 void xiaozhi_voice_set_streaming(bool enabled);

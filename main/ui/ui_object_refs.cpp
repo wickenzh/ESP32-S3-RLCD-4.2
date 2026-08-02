@@ -21,7 +21,7 @@ void clear_work_page_root_refs()
     g_gallery_root = nullptr;
     g_calendar_root = nullptr;
     g_weather_board_root = nullptr;
-    g_flip_clock_root = nullptr;
+    g_radio_root = nullptr;
     g_xiaozhi_root = nullptr;
 }
 
@@ -32,7 +32,7 @@ void clear_work_status_refs()
     g_gallery_date_label = nullptr;
     g_calendar_date_label = nullptr;
     g_weather_board_date_label = nullptr;
-    g_flip_clock_date_label = nullptr;
+    g_radio_date_label = nullptr;
     g_xiaozhi_date_label = nullptr;
     g_history_summary_label = nullptr;
     g_gallery_summary_label = nullptr;
@@ -84,26 +84,14 @@ void clear_weather_clock_refs()
     g_second_progress_canvas = nullptr;
 }
 
-void clear_flip_clock_refs()
+void clear_radio_refs()
 {
-    clear_pointer_array(g_flip_clock_card_canvas);
-    g_flip_clock_sensor_label = nullptr;
-    g_flip_clock_sensor_bold_label = nullptr;
-    g_flip_clock_sensor_bold_y_label = nullptr;
-    g_flip_clock_humidity_label = nullptr;
-    g_flip_clock_humidity_bold_label = nullptr;
-    g_flip_clock_humidity_bold_y_label = nullptr;
-    g_flip_clock_temp_mood_canvas = nullptr;
-    g_flip_clock_humi_mood_canvas = nullptr;
-    g_flip_clock_temp_trend_canvas = nullptr;
-    g_flip_clock_humi_trend_canvas = nullptr;
-    g_flip_clock_day_label = nullptr;
-    g_flip_clock_day_bold_label = nullptr;
-    g_flip_clock_day_bold_y_label = nullptr;
-    g_flip_clock_lunar_label = nullptr;
-    g_flip_clock_lunar_bold_x_label = nullptr;
-    g_flip_clock_lunar_bold_y_label = nullptr;
-    g_flip_clock_lunar_bold_xy_label = nullptr;
+    g_radio_station_label = nullptr;
+    g_radio_station_bold_label = nullptr;
+    g_radio_status_label = nullptr;
+    g_radio_uptime_label = nullptr;
+    g_radio_index_label = nullptr;
+    g_radio_hint_label = nullptr;
 }
 
 void clear_xiaozhi_refs()
@@ -120,7 +108,7 @@ void clear_battery_segment_refs()
     clear_pointer_array(g_gallery_battery_segments);
     clear_pointer_array(g_calendar_battery_segments);
     clear_pointer_array(g_weather_board_battery_segments);
-    clear_pointer_array(g_flip_clock_battery_segments);
+    clear_pointer_array(g_radio_battery_segments);
     clear_pointer_array(g_xiaozhi_battery_segments);
 }
 
@@ -143,7 +131,7 @@ void clear_ui_draw_cache_state()
     invalidate_clock_time_draw_cache();
     invalidate_clock_second_progress_draw_cache();
     invalidate_status_gif_draw_cache();
-    invalidate_flip_clock_draw_cache();
+
     invalidate_work_status_draw_cache();
     invalidate_history_draw_cache();
 }
@@ -185,7 +173,7 @@ void clear_clock_object_refs()
     clear_work_status_refs();
     clear_gallery_calendar_refs();
     clear_weather_clock_refs();
-    clear_flip_clock_refs();
+    clear_radio_refs();
     clear_xiaozhi_refs();
     clear_work_page_day_progress_refs();
     clear_battery_segment_refs();

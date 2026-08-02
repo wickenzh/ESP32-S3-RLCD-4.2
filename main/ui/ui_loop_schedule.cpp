@@ -10,8 +10,8 @@ constexpr uint32_t kNextSecondDelayMaxMs = kMsPerSecond + kUiLoopBoundaryWakeSla
 
 static_assert(kUsPerSecond == 1000LL * kMsPerSecond,
               "UI microsecond and millisecond constants must stay consistent");
-static_assert(kUiLoopFlipClockPollMs > 0 && kUiLoopFlipClockPollMs <= kMsPerSecond,
-              "flip clock poll interval must stay within one second");
+static_assert(kUiLoopRadioPollMs > 0 && kUiLoopRadioPollMs <= kMsPerSecond,
+              "radio poll interval must stay within one second");
 static_assert(kUiLoopBoundaryWakeSlackMs <= kMsPerSecond,
               "UI boundary wake slack must stay within one second");
 static_assert(kNextSecondDelayMinMs > 0,

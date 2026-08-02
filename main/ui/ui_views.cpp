@@ -22,6 +22,8 @@
 #include "ui_settings_activity_state.h"
 #include "ui_visible_data_sync.h"
 #include "xiaozhi_ai.h"
+#include "radio_services.h"
+#include "music_player.h"
 
 #include <stdint.h>
 
@@ -86,8 +88,8 @@ bool update_visible_work_page_body(const struct tm &local,
     if (state.weather_board) {
         changed |= update_weather_board_page(local);
     }
-    if (state.flip_clock) {
-        changed |= update_flip_clock_page(local);
+    if (state.radio) {
+        changed |= update_radio_page(local);
     }
     if (state.xiaozhi) {
         changed |= update_xiaozhi_page(local);
@@ -216,9 +218,18 @@ void ui_task(void *)
         }
         int active_page = active_work_page_load();
         xiaozhi_ai_set_page_active(active_page == kWorkPageXiaozhiAI &&
-                                   !battery.low_battery_mode &&
-                                   !setup_portal_active_load() &&
-                                   !ui_runtime_auxiliary_page_requested());
+                                    !battery.low_battery_mode &&
+                                    !setup_portal_active_load() &&
+                                    !ui_runtime_auxiliary_page_requested());
+        radio_set_page_active(active_page == kWorkPageRadio &&
+                              !battery.low_battery_mode &&
+                              !setup_portal_active_load() &&
+                              !ui_runtime_auxiliary_page_requested());
+        // 音乐模式由Gallery子模式控制，离开Gallery页面时停用并重置标志
+        if (active_page != kWorkPageGallery) {
+            g_gallery_music_mode.store(false);
+            music_set_page_active(false);
+        }
 
         TickType_t tick_now = xTaskGetTickCount();
         if (active_page == kWorkPageXiaozhiAI &&
@@ -464,11 +475,16 @@ void ui_task(void *)
                 show_active_work_page();
                 visible_work_page = active_page;
                 xiaozhi_ai_set_page_active(visible_work_page == kWorkPageXiaozhiAI);
+                radio_set_page_active(visible_work_page == kWorkPageRadio);
+                if (visible_work_page != kWorkPageGallery) {
+                    g_gallery_music_mode.store(false);
+                    music_set_page_active(false);
+                }
                 status_due = true;
                 battery_due = true;
                 battery_blink_due = true;
                 invalidate_history_draw_cache();
-                invalidate_flip_clock_time_sensor_draw_cache();
+
                 invalidate_clock_date_draw_cache();
                 refresh_now = true;
             }

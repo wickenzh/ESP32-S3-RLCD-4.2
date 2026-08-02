@@ -52,7 +52,7 @@ constexpr uint8_t kPageMaskV4KnownBits = network_page_storage::kLegacyV4KnownPag
 constexpr uint8_t kPageMaskV5KnownBits = network_page_storage::kCurrentKnownPageMask;
 constexpr uint8_t kDefaultWorkPageMask = kPageMaskV5KnownBits;
 constexpr uint8_t kWeatherBoardPageMask = work_page_mask_bit(kWorkPageWeatherBoard);
-constexpr uint8_t kFlipClockPageMask = work_page_mask_bit(kWorkPageFlipClock);
+constexpr uint8_t kRadioPageMask = work_page_mask_bit(kWorkPageRadio);
 constexpr EventBits_t kNetworkRequestClearBits = kProvisioningSyncBit |
                                                  kManualNtpSyncBit |
                                                  kManualWeatherSyncBit |
@@ -121,8 +121,8 @@ static_assert((kDefaultWorkPageMask & kPageMaskV5KnownBits) == kDefaultWorkPageM
               "default work page mask must enable at least one known page");
 static_assert((kPageMaskV5KnownBits & kWeatherBoardPageMask) == kWeatherBoardPageMask,
               "weather board page must be covered by the current page mask");
-static_assert((kPageMaskV5KnownBits & kFlipClockPageMask) == kFlipClockPageMask,
-              "flip clock page must be covered by the current page mask");
+static_assert((kPageMaskV5KnownBits & kRadioPageMask) == kRadioPageMask,
+              "radio page must be covered by the current page mask");
 
 uint8_t normalize_chime_sound_index(uint8_t sound)
 {

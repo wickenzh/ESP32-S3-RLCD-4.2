@@ -131,7 +131,7 @@ ActiveWorkPageState active_work_page_state(int active_page)
     state.gallery = normal_mode && active_page == kWorkPageGallery;
     state.calendar = normal_mode && active_page == kWorkPageCalendar;
     state.weather_board = normal_mode && active_page == kWorkPageWeatherBoard;
-    state.flip_clock = normal_mode && active_page == kWorkPageFlipClock;
+    state.radio = normal_mode && active_page == kWorkPageRadio;
     state.xiaozhi = normal_mode && active_page == kWorkPageXiaozhiAI;
     // Low-battery and setup overlays historically retain the weather clock as
     // their active base page; keep that distinction outside normal-page gates.

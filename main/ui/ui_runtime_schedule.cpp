@@ -48,17 +48,15 @@ bool low_refresh_work_page_idle(const struct tm &local,
            is_tm_plausible(local);
 }
 
-bool flip_clock_fast_poll_active(const struct tm &local)
+bool radio_fast_poll_active(const struct tm &local)
 {
-    return active_work_page_load() == kWorkPageFlipClock &&
+    return active_work_page_load() == kWorkPageRadio &&
            !battery_low_mode_load() &&
            !setup_portal_active_load() &&
            !ui_runtime_auxiliary_page_requested() &&
            is_tm_plausible(local);
 }
 
-static_assert(kUiLoopFlipClockPollMs > 0,
-              "flip clock UI polling interval must be positive");
 static_assert(sizeof(TickType_t) == sizeof(uint32_t),
               "UI delay candidates require 32-bit FreeRTOS ticks");
 static_assert(array_count(kUiRuntimeLogTexts) > 0,
@@ -99,8 +97,8 @@ TickType_t ui_runtime_next_loop_delay_ticks(const struct tm &local,
     delay_candidates[0] = (low_idle || low_refresh_page_idle)
                               ? next_minute_delay_ticks(local)
                               : next_second_delay_ticks();
-    if (flip_clock_fast_poll_active(local)) {
-        delay_candidates[1] = pdMS_TO_TICKS(kUiLoopFlipClockPollMs);
+    if (radio_fast_poll_active(local)) {
+        delay_candidates[1] = pdMS_TO_TICKS(kUiLoopRadioPollMs);
     }
     if (normal_work_page_active(kWorkPageXiaozhiAI)) {
         PomodoroSnapshot pomodoro = {};

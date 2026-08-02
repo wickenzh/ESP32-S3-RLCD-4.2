@@ -16,7 +16,7 @@ constexpr uint8_t kDefaultWorkPageOrder[kWorkPageCount] = {
     kWorkPageWeatherClock,
     kWorkPageGallery,
     kWorkPageWeatherBoard,
-    kWorkPageFlipClock,
+    kWorkPageRadio,
     kWorkPageCalendar,
     kWorkPageHistory,
     kWorkPageXiaozhiAI,
@@ -26,7 +26,7 @@ uint8_t s_work_page_order[kWorkPageCount] = {
     kWorkPageWeatherClock,
     kWorkPageGallery,
     kWorkPageWeatherBoard,
-    kWorkPageFlipClock,
+    kWorkPageRadio,
     kWorkPageCalendar,
     kWorkPageHistory,
     kWorkPageXiaozhiAI,
@@ -35,7 +35,7 @@ constexpr int kDisplaySettingPages[kDisplaySettingsPageItemCount] = {
     kWorkPageWeatherClock,
     kWorkPageGallery,
     kWorkPageWeatherBoard,
-    kWorkPageFlipClock,
+    kWorkPageRadio,
     kWorkPageCalendar,
     kWorkPageHistory,
     kWorkPageXiaozhiAI,
@@ -44,7 +44,7 @@ constexpr const char *kWorkPageNames[kWorkPageCount] = {
     "天气时钟",
     "图片时钟",
     "天气看板",
-    "温湿时钟",
+    "网络电台",
     "日历",
     "温湿历史",
     "小智AI",
@@ -291,7 +291,7 @@ uint8_t work_page_mask_for_offline_mode(uint8_t page_mask)
             }
         }
     }
-    return work_page_mask(kWorkPageFlipClock);
+    return work_page_mask(kWorkPageRadio);
 }
 
 const char *work_page_name(int page)

@@ -15,6 +15,7 @@
 #include "sensor_services.h"
 #include "ui_views.h"
 #include "xiaozhi_ai.h"
+#include "radio_services.h"
 
 #include <atomic>
 
@@ -418,6 +419,10 @@ void stop_wifi_radio(bool force_setup_portal)
         ESP_LOGI(TAG, WIFI_STOP_SKIPPED_XIAOZHI_LOG);
         return;
     }
+    if (radio_network_keepalive_active() && !force_setup_portal) {
+        ESP_LOGI(TAG, "wifi stop skipped: radio streaming");
+        return;
+    }
     if (setup_portal_active_load() && !force_setup_portal) {
         return;
     }
@@ -466,6 +471,7 @@ void service_wifi_radio_stop_when_idle()
     policy.ota_active = ota_state == kOtaChecking || ota_state == kOtaUpdating;
     policy.xiaozhi_keepalive_active = xiaozhi_ai_network_keepalive_active();
     policy.network_lock_active = network_awake_lock_active();
+    policy.radio_keepalive_active = radio_network_keepalive_active();
     if (!wifi_idle_stop_allowed(policy)) {
         return;
     }
@@ -501,6 +507,15 @@ void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, v
             return;
         }
         ESP_LOGI(TAG, WIFI_GOT_IP_FORMAT, IP2STR(&event->ip_info.ip));
+
+        // 设置备用DNS（114.114.114.114），解决部分国内域名路由器DNS无法解析的问题
+        if (s_sta_netif) {
+            esp_netif_dns_info_t backup_dns = {};
+            backup_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("114.114.114.114");
+            backup_dns.ip.type = ESP_IPADDR_TYPE_V4;
+            esp_netif_set_dns_info(s_sta_netif, ESP_NETIF_DNS_BACKUP, &backup_dns);
+        }
+
         format_sta_ip_or_clear(&event->ip_info.ip);
         set_wifi_connected_event(true);
         notify_ui_task();

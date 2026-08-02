@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-inline constexpr uint32_t kUiLoopFlipClockPollMs = 200;
+inline constexpr uint32_t kUiLoopRadioPollMs = 1000;
 inline constexpr uint32_t kUiLoopBoundaryWakeSlackMs = 5;
 
 uint32_t ui_next_second_delay_ms(int64_t monotonic_us);
