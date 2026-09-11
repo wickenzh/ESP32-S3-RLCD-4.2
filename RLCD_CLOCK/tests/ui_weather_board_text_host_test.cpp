@@ -89,10 +89,28 @@ int main()
     assert(strcmp(out, "日落 18:47") == 0);
 
     WeatherForecastData forecast = {};
-    assert(strcmp(weather_board_advice_text(forecast), kWeatherBoardAdvicePlaceholder) == 0);
+    struct tm today={}; today.tm_year=126;today.tm_mon=6;today.tm_mday=12;
+    assert(strcmp(weather_board_advice_text(forecast,today), kWeatherBoardAdvicePlaceholder) == 0);
     forecast.ready = true;
-    strcpy(forecast.advice, "天气平稳，适合轻装出行。");
-    assert(strcmp(weather_board_advice_text(forecast), forecast.advice) == 0);
+    forecast.count=2;
+    forecast.days[0].valid=true;
+    strcpy(forecast.days[0].date,"2026-07-11");
+    strcpy(forecast.days[0].text,"小雨");
+    strcpy(forecast.advice,"过期的带伞提醒");
+    forecast.days[1].valid=true;
+    strcpy(forecast.days[1].date,"2026-07-12");
+    strcpy(forecast.days[1].text,"晴");
+    strcpy(forecast.days[1].temp_max,"26");
+    strcpy(forecast.days[1].temp_min,"20");
+    assert(strcmp(weather_board_advice_text(forecast,today),"天气平稳，适合轻装出行。")==0);
+    strcpy(forecast.days[1].text,"雷阵雨");
+    assert(strcmp(weather_board_advice_text(forecast,today),"今日预报有雨雪，建议带伞。")==0);
+    today.tm_mday=13;
+    assert(strcmp(weather_board_advice_text(forecast,today),kWeatherBoardAdvicePlaceholder)==0);
+    today.tm_mday=11;
+    assert(strcmp(weather_board_advice_text(forecast,today),"今日预报有雨雪，建议带伞。")==0);
+    today.tm_year=70;
+    assert(strcmp(weather_board_advice_text(forecast,today),kWeatherBoardAdvicePlaceholder)==0);
 
     format_today_range(day, nullptr, 0);
     format_forecast_date_line(day, nullptr, 0);

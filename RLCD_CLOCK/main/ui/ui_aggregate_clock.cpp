@@ -1,6 +1,7 @@
 // 复用天气、传感器和农历快照刷新聚合时钟，隐藏时不更新页面对象。
 #include "ui_aggregate_clock.h"
 #include "ui_aggregate_clock_view.h"
+#include "ui_aggregate_weather_policy.h"
 #include "ui_page_state.h"
 #include "ui_battery.h"
 #include "ui_work_status.h"
@@ -122,6 +123,7 @@ bool update_aggregate_clock_page(const struct tm &local) {
             changed |= aggregate_clock_set_text(s_view.temperature,temp);
             changed |= aggregate_clock_set_text(s_view.icon,weather_icon_text(weather.icon).c_str());
             changed |= aggregate_clock_set_text(s_view.range,range);
+            changed |= aggregate_clock_weather_theme(s_view,aggregate_weather_kind(weather.icon));
             s_weather_version=weather_version; s_weather_valid=true;
         }
     }

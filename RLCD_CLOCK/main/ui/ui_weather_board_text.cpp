@@ -1,5 +1,6 @@
 // 实现天气看板不依赖 LVGL 的日期、温度范围和预警文本格式化。
 #include "ui_weather_board_text.h"
+#include "weather_advice.h"
 
 #include "app_constexpr.h"
 #include "app_time_constants.h"
@@ -223,9 +224,15 @@ void format_weather_board_sunset_line(const WeatherForecastDay *today,
                                     : kWeatherBoardTimePlaceholder);
 }
 
-const char *weather_board_advice_text(const WeatherForecastData &forecast)
+const char *weather_board_advice_text(const WeatherForecastData &forecast, const struct tm &local)
 {
-    return forecast.ready && forecast.advice[0]
-               ? forecast.advice
-               : kWeatherBoardAdvicePlaceholder;
+    if(!forecast.ready || local.tm_year<100 || local.tm_mon<0 || local.tm_mon>11 ||
+       local.tm_mday<1 || local.tm_mday>31) return kWeatherBoardAdvicePlaceholder;
+    char date[12]={};
+    if(!strftime(date,sizeof(date),"%Y-%m-%d",&local))return kWeatherBoardAdvicePlaceholder;
+    for(int i=0;i<forecast.count && i<kWeatherForecastDays;++i) {
+        const auto &day=forecast.days[i];
+        if(day.valid && strcmp(day.date,date)==0) return weather_advice_for_day(day);
+    }
+    return kWeatherBoardAdvicePlaceholder;
 }

@@ -2,8 +2,8 @@
 #pragma once
 
 #include "weather_types.h"
+#include "weather_advice.h"
 
 #include "cJSON.h"
 
-const char *weather_advice_for_day(const WeatherForecastDay &today);
 bool parse_qweather_forecast_days(const cJSON *daily, WeatherForecastData *forecast);

@@ -7,14 +7,6 @@
 #include <string.h>
 
 namespace {
-constexpr int kWeatherAdviceHotTempC = 30;
-constexpr int kWeatherAdviceColdTempC = 8;
-constexpr int kWeatherAdviceLargeTempGapC = 10;
-constexpr const char *kWeatherAdviceRainOrSnow = "有雨雪，出门记得带伞。";
-constexpr const char *kWeatherAdviceHot = "天气较热，注意防晒补水。";
-constexpr const char *kWeatherAdviceCold = "气温偏低，注意保暖。";
-constexpr const char *kWeatherAdviceLargeTempGap = "早晚温差大，建议备外套。";
-constexpr const char *kWeatherAdviceCalm = "天气平稳，适合轻装出行。";
 constexpr const char *kQweatherDailyJsonDateField = "fxDate";
 constexpr const char *kQweatherDailyJsonTextDayField = "textDay";
 constexpr const char *kQweatherDailyJsonIconDayField = "iconDay";
@@ -25,11 +17,6 @@ constexpr const char *kQweatherDailyJsonWindDirDayField = "windDirDay";
 constexpr const char *kQweatherDailyJsonWindScaleDayField = "windScaleDay";
 constexpr const char *kQweatherDailyJsonSunriseField = "sunrise";
 constexpr const char *kQweatherDailyJsonSunsetField = "sunset";
-
-int weather_text_to_int(const char *text, int fallback = 0)
-{
-    return text && text[0] ? atoi(text) : fallback;
-}
 
 void build_weather_advice(WeatherForecastData *forecast)
 {
@@ -73,30 +60,7 @@ int weather_forecast_parse_count(const cJSON *daily)
     return count > kWeatherForecastDays ? kWeatherForecastDays : count;
 }
 
-static_assert(kWeatherAdviceColdTempC < kWeatherAdviceHotTempC,
-              "weather advice cold threshold must be below hot threshold");
-static_assert(kWeatherAdviceLargeTempGapC > 0, "weather advice temperature gap must be positive");
 } // namespace
-
-const char *weather_advice_for_day(const WeatherForecastDay &today)
-{
-    int temp_max = weather_text_to_int(today.temp_max);
-    int temp_min = weather_text_to_int(today.temp_min, temp_max);
-    const char *text = today.text;
-    if (text && (strstr(text, "雨") || strstr(text, "雪"))) {
-        return kWeatherAdviceRainOrSnow;
-    }
-    if (temp_max >= kWeatherAdviceHotTempC) {
-        return kWeatherAdviceHot;
-    }
-    if (temp_min <= kWeatherAdviceColdTempC) {
-        return kWeatherAdviceCold;
-    }
-    if (temp_max - temp_min >= kWeatherAdviceLargeTempGapC) {
-        return kWeatherAdviceLargeTempGap;
-    }
-    return kWeatherAdviceCalm;
-}
 
 bool parse_qweather_forecast_days(const cJSON *daily, WeatherForecastData *forecast)
 {

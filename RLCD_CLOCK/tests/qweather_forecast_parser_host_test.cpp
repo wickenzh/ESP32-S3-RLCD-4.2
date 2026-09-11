@@ -34,7 +34,7 @@ void expect_advice(const WeatherForecastDay &day, const char *expected)
 
 int main()
 {
-    expect_advice(weather_day("小雨", "20", "12"), "有雨雪，出门记得带伞。");
+    expect_advice(weather_day("小雨", "20", "12"), "今日预报有雨雪，建议带伞。");
     expect_advice(weather_day("晴", "30", "20"), "天气较热，注意防晒补水。");
     expect_advice(weather_day("晴", "18", "8"), "气温偏低，注意保暖。");
     expect_advice(weather_day("晴", "25", "15"), "早晚温差大，建议备外套。");
@@ -63,7 +63,7 @@ int main()
     assert(strcmp(forecast.days[0].wind_scale, "3") == 0);
     assert(strcmp(forecast.days[0].sunrise, "05:10") == 0);
     assert(strcmp(forecast.days[0].sunset, "19:02") == 0);
-    assert(strcmp(forecast.advice, "有雨雪，出门记得带伞。") == 0);
+    assert(strcmp(forecast.advice, "今日预报有雨雪，建议带伞。") == 0);
     assert(forecast.updated_at > 0);
     cJSON_Delete(daily);
 

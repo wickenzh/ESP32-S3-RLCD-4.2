@@ -107,6 +107,8 @@ Shows a local image, large time, daily text, and local temperature/humidity summ
 
 ### 3.3 Weather Board
 
+The bottom advice uses today's daytime forecast, not current conditions. A rain/snow advisory may therefore appear while it is sunny now. Without a valid forecast for today, the panel shows a waiting message rather than yesterday's advice.
+
 Shows city, current temperature and condition, air quality, humidity, wind, sunrise/sunset, time until the next sunrise or sunset, weather alerts, and a six-day forecast.
 
 - Missing or stale data causes a full weather refresh when entering the page.
@@ -181,6 +183,10 @@ Provides local wake-word detection, voice conversations, on-screen transcripts, 
 - This page consumes substantially more power and warms the PCB, which may make the onboard temperature/humidity reading higher than the surrounding air.
 
 ### 3.8 Aggregate Clock
+
+Sunny weather uses an arc and dotted rays; rain uses a scalloped cloud band and diagonal streaks. These are static accents selected by weather results, not continuously animated effects.
+
+The test build switches sunny/rainy accents with hourly weather results. Unchanged styles do not redraw, and failed requests retain cached content. There is no sunrise/sunset transition or additional animation timer. Hidden pages do not draw; clock digits still update by second. Existing manual synchronization and missing-data requests are unchanged.
 
 Weather uses a reverse-video header and a white reading area. A thin border frames the date; static edge and footer dot patterns simulate gray without extra refresh timers.
 

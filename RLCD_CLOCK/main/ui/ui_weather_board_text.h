@@ -35,4 +35,4 @@ void format_weather_board_sunrise_line(const WeatherForecastDay *today,
 void format_weather_board_sunset_line(const WeatherForecastDay *today,
                                       char *out,
                                       size_t out_len);
-const char *weather_board_advice_text(const WeatherForecastData &forecast);
+const char *weather_board_advice_text(const WeatherForecastData &forecast, const struct tm &local);
