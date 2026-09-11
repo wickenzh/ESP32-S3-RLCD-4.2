@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.2",
+  "latest": "v1.6.3",
   "items": [
+    {
+      "version": "v1.6.3",
+      "notes": "v1.6.3：共 3 项更新。\n1. 修复天气看板建议可能沿用过期日期天气的问题，改为按当天日期匹配有效预报；雨雪天气明确提…\n2. 优化聚合时钟晴雨视觉：晴天显示弧形光晕与放射点线，雨天显示不等宽深波浪云层与斜雨线；靠…\n3. 聚合天气图案仅随已有整点天气结果切换，状态不变不额外重绘，不增加联网或动画任务。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.3/weather_clock_v1.6.3.bin",
+        "sha256": "7210008ba77e7b50a5edb2246ff2d40c6e43b7a3990c00256911a150cd670ff8",
+        "size": 6288000
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.3/weather_clock_v1.6.3_merged.bin",
+        "sha256": "d62c596eb158aa695e746e62c02fc499e486a3e284d5af410919d2062ec7efcc",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.2",
       "notes": "v1.6.2：共 2 项更新。\n1. 优化设置页视觉层次：所有选项采用 1px 圆角框，分类选中使用框内短竖条标记，操作项继…\n2. 优化设置页分类选中反馈：选中文字轻微右移 2px，取消选中后恢复原位置，外框和菜单坐标…\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.36/weather_clock_v1.5.36_merged.bin",
         "sha256": "ffc683afa70bc05c79366e08b067a34277acc9c01e2eb0d4b41953bd095cb5ea",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.5.35",
-      "notes": "v1.5.35：共 1 项更新。\n1. 修复关于本机“最近充电时间”可能被未插入充电器时的短时电压反弹误改的问题；只有持续至少…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.35/weather_clock_v1.5.35.bin",
-        "sha256": "2b437a4d96bfa913940e1d4726bb7bbe3c73643377047903c4fe81a9bdf43463",
-        "size": 6260784
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.35/weather_clock_v1.5.35_merged.bin",
-        "sha256": "0a9aafd67eed59cfb0e416322a3b5d8e7ae5bdb364313133543085dd9e6a143b",
         "size": 16509951
       }
     }
