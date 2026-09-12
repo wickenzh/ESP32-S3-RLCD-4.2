@@ -4,6 +4,11 @@ This document is for future AI agents or developers taking over `host_web/`.
 
 ## Interactive Simulator
 
+Keep the simulator aligned to the page content edges. Use 18px page headings,
+15px subsection headings, 12px muted metadata, and 16px control spacing. The
+portal toggle has a fixed width to avoid moving when its text changes. Portal
+form styling intentionally follows the firmware, not the dark host UI.
+
 Device view is the default. The portal button next to the source link toggles
 between device and portal without resetting either. Portal HTML loads on first
 open; hidden device rendering and pending key holds are paused/cancelled.

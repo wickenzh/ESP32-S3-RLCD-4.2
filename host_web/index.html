@@ -157,6 +157,8 @@
         <div class="simulator-layout">
           <section class="virtual-device" aria-label="虚拟设备" tabindex="0">
             <div class="sim-section-title"><h3>虚拟设备</h3><button id="simReset" class="secondary-button" type="button" disabled>重置设备</button></div>
+            <div class="device-workspace">
+            <div class="device-display">
             <div class="device-keys">
               <div class="device-key-control">
                 <p id="simKeyHelp">短按：进入设置 / 选择<br>长按 1.2 秒：返回</p>
@@ -168,6 +170,8 @@
               </div>
             </div>
             <canvas id="simulatorCanvas" width="400" height="300" aria-label="虚拟设备400×300显示屏"></canvas>
+            </div>
+            <div class="device-settings">
             <p id="simulatorStatus" class="sim-status" role="status">模拟器加载中</p>
             <div class="form-grid">
               <label><span>显示场景</span><select id="simScene" disabled>
@@ -176,6 +180,8 @@
               <label><span>聚合天气场景</span><select id="simWeather" disabled><option value="20">多云</option><option value="21">晴</option><option value="22">雨</option><option value="23">雪</option></select></label>
             </div>
             <div class="action-strip"><button id="simDialogue" class="secondary-button" type="button" disabled>模拟对话</button><button id="simPomodoro" class="secondary-button" type="button" disabled>开始 / 取消番茄钟</button></div>
+            </div>
+            </div>
           </section>
           <section id="simPortalPanel" class="virtual-portal" aria-label="虚拟配网表单" hidden>
             <div class="sim-section-title"><h3>虚拟配网</h3><span>独立假数据演示</span></div>

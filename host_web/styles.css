@@ -239,12 +239,24 @@ h1 {
 
 .screen-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .simulator-heading, .sim-section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.simulator-heading h2, .sim-section-title h3 { margin: 0; font-size: 18px; }
+.simulator-heading h2 { margin: 0; font-size: 18px; line-height: 1.25; font-weight: 760; }
+.sim-section-title h3 { margin: 0; font-size: 15px; line-height: 1.4; font-weight: 700; }
 .simulator-heading p, .sim-build, .sim-status, .sim-section-title span { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .simulator-heading p { margin: 8px 0; }
-.sim-build { margin: 8px 0 16px; overflow-wrap: anywhere; }
+.sim-build { margin: 8px 0 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .simulator-actions { display: flex; align-items: center; gap: 12px; }
-.simulator-layout { max-width: 640px; margin: 0 auto; }
+.simulator-actions > * { flex-shrink: 0; }
+#simPortalToggle { width: 140px; }
+#simPortalToggle[aria-pressed="true"] { background: var(--accent-soft); border-color: #3e668e; }
+.simulator-layout { width: 100%; }
+.virtual-portal { max-width: 640px; margin: 0 auto; }
+.device-workspace { display: grid; grid-template-columns: minmax(0, 440px) minmax(280px, 1fr); gap: 32px; align-items: center; }
+.device-display, .device-settings { min-width: 0; }
+.device-settings { padding-left: 24px; border-left: 1px solid var(--line); }
+.device-settings .sim-status { margin: 0 0 16px; min-height: 18px; }
+.device-settings .form-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.device-settings .action-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.device-settings .action-strip button { min-width: 0; white-space: normal; line-height: 1.4; padding: 8px 12px; }
 .simulator-layout > [hidden] { display: none; }
 .virtual-device, .virtual-portal { min-width: 0; }
 .device-keys { display: flex; justify-content: space-between; gap: 24px; max-width: 440px; margin: 16px auto 8px; }
@@ -259,7 +271,7 @@ h1 {
 .virtual-device:focus-visible { outline: 2px solid #87bfff; outline-offset: 4px; }
 .screen-gallery figure { margin: 0; min-width: 0; }
 .screen-gallery figcaption { margin-bottom: 12px; font-size: 16px; font-weight: 650; }
-.screen-gallery img { display: block; width: 100%; max-width: 400px; height: auto; aspect-ratio: 4 / 3; object-fit: contain; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.screen-gallery img { display: block; width: 100%; max-width: 400px; height: auto; aspect-ratio: 4 / 3; object-fit: contain; background: white; border: 1px solid var(--line); border-radius: 8px; }
 
 .work-summary {
   display: grid;
