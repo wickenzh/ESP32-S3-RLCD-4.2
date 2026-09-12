@@ -49,6 +49,15 @@ try {
   assert.equal(manifest.items[0].app.sha256, digest);
   assert(!(await readdir(process.argv[2])).includes('scripts'));
   assert(!(await readdir(process.argv[2])).includes('AI_HOST_WEB_GUIDE.md'));
+  const html = await readFile(path.join(process.argv[2], 'index.html'), 'utf8');
+  const previews = [...html.matchAll(/src="(\.\/assets\/screens\/[^"?]+\.png)"/g)].map(match => match[1]);
+  assert.equal(new Set(previews).size, 8);
+  const sw = await readFile(path.join(process.argv[2], 'sw.js'), 'utf8');
+  for (const preview of previews) {
+    const image = await readFile(path.join(process.argv[2], preview));
+    assert.equal(image.subarray(1, 4).toString(), 'PNG');
+    assert(sw.includes(`"${preview}"`), `Preview absent from offline cache: ${preview}`);
+  }
   badHash = true;
   process.argv[2] = path.join(directory, 'failed-site');
   await assert.rejects(import('./build_pages_site.mjs?bad'), /SHA256 mismatch/);

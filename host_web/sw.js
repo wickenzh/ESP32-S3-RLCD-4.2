@@ -1,10 +1,19 @@
 const CACHE_PREFIX = `weather-clock-unified:${self.location.pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v50`;
+const SDL_PREVIEW_REVISION = "local";
+const CACHE_NAME = `${CACHE_PREFIX}v52-${SDL_PREVIEW_REVISION}`;
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./assets/screens/weather_clock_main.png",
+  "./assets/screens/weather_clock_weather_board.png",
+  "./assets/screens/weather_clock_gallery.png",
+  "./assets/screens/weather_clock_flip_clock.png",
+  "./assets/screens/weather_clock_history.png",
+  "./assets/screens/weather_clock_calendar.png",
+  "./assets/screens/weather_clock_xiaozhi.png",
+  "./assets/screens/weather_clock_aggregate_clock.png",
   "./assets/weather_clock_main.png",
   "./assets/weather_clock_preview_sheet_1.png",
   "./vendor/esptool-js/0.5.6/bundle.js",

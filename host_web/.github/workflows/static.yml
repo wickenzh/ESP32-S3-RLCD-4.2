@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'host_web/**'
+      - 'previews/**'
       - '.github/workflows/pages.yml'
   workflow_run:
     workflows: ['构建固件并附加到 Release']
@@ -41,6 +42,7 @@ jobs:
         run: node host_web/scripts/build_pages_site.mjs "$RUNNER_TEMP/site"
         env:
           GH_API_TOKEN: ${{ github.token }}
+          SDL_PREVIEW_SOURCE: ${{ github.workspace }}/previews
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -64,6 +64,8 @@ The browser app builds the header, entry table, payload, header CRC32, payload C
 
 ## Current UI
 
+Six tabs include `界面预览` (`screens`) after serial and before settings. Eight 400x300 SDL snapshots are served from assets/screens. GitHub deployment MUST use repository-root previews via SDL_PREVIEW_SOURCE; previews/** pushes trigger Pages. build_sdl_previews.mjs selects the eight names referenced by index.html, validates and copies the canonical PNGs, then embeds their aggregate SHA256 in SW v52's cache name. Missing/corrupt images fail deployment instead of falling back to stale bundled files. Local full-repo builds default to assets/previews; sync_sdl_previews.py is only for standalone local preview copies. Run test_sdl_preview_sync.mjs to verify upstream changes and cache invalidation. These are snapshots, not live device telemetry; normal page reopen after deployment loads the updated worker.
+
 Next-step guidance uses one transient target and one 2400ms timer. Only enabled, visible controls are hinted after successful operations. User click/input/change, tab changes and package invalidation clear the hint. CSS pulses an outline-like shadow three times; reduced-motion uses a static outline. No autonomous serial connection, write or tab navigation is allowed. Run scripts/test_next_step_hint.mjs for eligibility/replacement/expiry. Cache v50 includes this change; ordinary development keeps the displayed/firmware versions unchanged. The privacy notice covers local image/GIF/config processing, not offline availability of remote firmware downloads.
 
 Web v0.0.29 / cache v47 removes the ESP Web Tools fallback entry, loader, bundled dependency and example manifest. Main esptool-js flashing remains. Number only primary steps: resource creation 1 select, 2 convert, 3 build (BIN download optional); resource writing 1 inspect device, 2 write; firmware 1 source/version, 2 inspect partitions, 3 download/verify or select custom file, 4 flash. Refresh and clearing are unnumbered alternatives, never required steps.
@@ -72,12 +74,13 @@ Since web v0.0.30 / cache v48, successful WCA1 generation stays on the creation 
 
 Version v0.0.27 uses a default dark desktop theme. Validate at 1440x900 and 1024x768; mobile is not a supported acceptance target per the user's scope. Keep preview pixels unchanged: light canvas backgrounds represent device output, not missing dark styling. Keep hover geometry stable, visible keyboard focus, reduced-motion support, and table overflow inside its own wrapper. Business code in app.js is unchanged by this theme update. The isolated Service Worker cache suffix is v45; its prefix and cleanup ownership remain unchanged.
 
-The app has five tabs, ordered as 资源制作, 资源写入, 固件烧录, 串口日志, 设置 since web v0.0.28 (isolated cache v46):
+The app has six tabs, ordered as 资源制作, 资源写入, 固件烧录, 串口日志, 界面预览, 设置:
 
 - `资源制作`: Primary tab and default view. Handles GIF and still-image conversion.
 - `资源写入`: Selects a Web Serial device, reads the ESP-IDF partition table from `0x8000`, verifies `assets` as `data / subtype 0x40`, then writes generated `custom_assets.bin` to the actual `assets` address from the device partition table.
 - `固件烧录`: Auxiliary serial flashing. `merged` firmware is written only to `0x0`. OTA App firmware is written only to dynamically discovered `ota_0` / `ota_1` partitions after reading the device partition table. Never use a fixed App slot address.
 - `串口日志`: Auxiliary serial log and manual command console.
+- `界面预览`: The eight primary SDL page snapshots.
 - `设置`: Optional fallback config written into `custom_assets.bin` as WCA1 text entries. Weather city is used only when device NVS has no manual city. OTA manifest URL is a fallback after firmware built-in OTA sources. These settings do not write NVS.
 
 Do not reintroduce Wi-Fi provisioning, default AP/IP panels, device info sidebars, OTA manifest reading, or notes pages unless the user asks.

@@ -194,7 +194,7 @@ h1 {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   padding: 8px;
   border-bottom: 1px solid var(--line);
@@ -236,6 +236,11 @@ h1 {
 .tab-panel.is-active {
   display: block;
 }
+
+.screen-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.screen-gallery figure { margin: 0; min-width: 0; }
+.screen-gallery figcaption { margin-bottom: 12px; font-size: 16px; font-weight: 650; }
+.screen-gallery img { display: block; width: 100%; max-width: 400px; height: auto; aspect-ratio: 4 / 3; object-fit: contain; background: white; border: 1px solid var(--line); border-radius: 6px; }
 
 .work-summary {
   display: grid;
@@ -923,7 +928,7 @@ progress {
   }
 
   .tabs {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0;
     padding: 4px;
   }

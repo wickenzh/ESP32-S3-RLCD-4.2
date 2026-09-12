@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildSdlPreviews } from "./build_sdl_previews.mjs";
 
 const SOURCE_REPOSITORY = "wickenzh/ESP32-S3-RLCD-4.2";
 const SOURCE_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -137,5 +138,9 @@ async function buildFirmwareMirror() {
 }
 
 await copyStaticSite();
+await buildSdlPreviews(
+  process.env.SDL_PREVIEW_SOURCE || path.resolve(SOURCE_ROOT, "../assets/previews"),
+  OUTPUT_ROOT
+);
 await buildFirmwareMirror();
 process.stdout.write(`Pages site ready: ${OUTPUT_ROOT}\n`);
