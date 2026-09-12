@@ -1,4 +1,4 @@
-# WeatherClock GitHub Pages 上位机
+# WeatherClock Studio
 
 这是一个纯静态网页上位机，可直接通过 GitHub Pages 使用，用于给 WeatherClock 制作并写入自定义首页 GIF 动图、图库静图资源，也可辅助进行固件烧录和串口日志查看。
 
