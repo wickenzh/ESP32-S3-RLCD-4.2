@@ -34,6 +34,21 @@ This browser adapter does not change physical firmware button handling.
 
 ## Scope
 
+Quick configuration stays on the `settings` hash and uses `quick-config.js` to
+generate a fixed `http://192.168.4.1/save` URL with URLSearchParams. It never
+fetches, navigates, logs credentials or persists input. The inert dialog-method
+form and initially disabled submit button prevent native network submission if
+the module fails. Editing invalidates output; page exit/reset clears it.
+Match firmware field capacities (UTF-8), the 159-byte encoded field limit and
+512-byte request URI limit. API key/host blanks require existing device values;
+city and backup SSID blanks clear those settings. Empty main SSID selects fixed
+offline time (2024–2035). Do not change firmware or WCA1 for this feature.
+Run `node host_web/scripts/test_quick_config.mjs` and verify zero network traffic
+and script-failure behavior with dummy data only.
+The two groups share five subgrid rows (heading plus four inputs), keeping
+corresponding inputs aligned despite different help lengths. Safety notices
+use three separate complete sentences, not forced line breaks inside a paragraph.
+
 Work in this branch is limited to `host_web/`.
 
 Read the repository-root AGENTS.md, TASK.md, HANDOFF.md and docs/DECISIONS.md before development. Ordinary changes follow the same rules as firmware: validate, commit and push Gitea only. Keep firmware versions unchanged for web-only work.

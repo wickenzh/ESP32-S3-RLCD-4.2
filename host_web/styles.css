@@ -758,6 +758,20 @@ input[type="range"] {
   gap: 14px;
 }
 
+.quick-title { margin: 0 0 16px; font-size: 18px; }
+.quick-notice { border-left: 3px solid var(--warn); padding: 0 0 0 12px; margin-bottom: 20px; color: var(--warn); line-height: 1.6; }
+.quick-notice p { margin: 0; text-wrap: pretty; }
+.quick-notice p + p { margin-top: 6px; }
+.quick-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(5, auto); gap: 16px 32px; }
+.quick-field-group { min-width: 0; display: grid; grid-row: span 5; grid-template-rows: subgrid; }
+.quick-field-group h3 { font-size: 15px; font-weight: 700; line-height: 1.4; margin: 0; }
+.quick-fields label { display: grid; grid-template-rows: 15px 40px auto; gap: 6px; min-width: 0; align-content: start; }
+.quick-fields small, .quick-status { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.quick-result-label { display: block; margin-top: 16px; color: var(--muted); font-size: 12px; }
+#quickResult { min-height: 84px; margin-top: 6px; font-family: monospace; overflow-wrap: anywhere; }
+.quick-fallback { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
+.quick-fallback summary { cursor: pointer; margin-bottom: 16px; }
+
 .settings-card {
   display: block;
 }

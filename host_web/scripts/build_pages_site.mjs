@@ -86,7 +86,7 @@ async function downloadVerifiedAsset(asset, destination) {
 async function copyStaticSite() {
   await rm(OUTPUT_ROOT, { recursive: true, force: true });
   await mkdir(OUTPUT_ROOT, { recursive: true });
-  for (const name of ["index.html", "app.js", "simulator-ui.js", "styles.css", "sw.js", "assets", "vendor", ".nojekyll"]) {
+  for (const name of ["index.html", "app.js", "simulator-ui.js", "quick-config.js", "styles.css", "sw.js", "assets", "vendor", ".nojekyll"]) {
     await cp(path.join(SOURCE_ROOT, name), path.join(OUTPUT_ROOT, name), { recursive: true });
   }
   await mkdir(path.join(OUTPUT_ROOT, "firmware"), { recursive: true });

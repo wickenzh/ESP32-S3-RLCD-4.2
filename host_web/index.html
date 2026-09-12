@@ -36,7 +36,7 @@
         <button class="tab" data-tab="firmware" type="button">固件烧录</button>
         <button class="tab" data-tab="serial" type="button">串口日志</button>
         <button class="tab" data-tab="screens" type="button">界面预览</button>
-        <button class="tab" data-tab="settings" type="button">设置</button>
+        <button class="tab" data-tab="settings" type="button">快捷配置</button>
       </nav>
 
       <section id="assets" class="tab-panel is-active">
@@ -201,6 +201,37 @@
       </section>
 
       <section id="settings" class="tab-panel">
+        <h2 class="quick-title">快捷配置链接</h2>
+        <div class="quick-notice">
+          <p>先让设备进入配网模式并连接设备热点，再在浏览器访问链接。访问即保存并尝试联网，不保证连接成功。</p>
+          <p>信息仅在本地生成，不上传服务器、不自动保存输入。链接包含明文 Wi-Fi 密码和 API Key，编码不是加密。</p>
+          <p>请妥善保管链接，切勿泄露或公开分享。浏览器历史、剪贴板及分享记录可能留存这些信息。</p>
+        </div>
+        <form id="quickConfigForm" method="dialog" autocomplete="off">
+          <div class="quick-fields">
+            <div class="quick-field-group" role="group" aria-labelledby="quickWifiHeading"><h3 id="quickWifiHeading">联网配置</h3>
+              <label><span>主 Wi-Fi 名称（SSID，联网时必填）</span><input name="ssid" type="text" autocomplete="off"></label>
+              <label><span>主 Wi-Fi 密码</span><input name="pass" type="password" autocomplete="new-password"><small>同名网络已有密码时可留空沿用；开放网络可留空。</small></label>
+              <label><span>备用 Wi-Fi 名称（选填）</span><input name="backup_ssid" type="text" autocomplete="off"><small>留空会取消备用 Wi-Fi，不是保留原值。</small></label>
+              <label><span>备用 Wi-Fi 密码（选填）</span><input name="backup_pass" type="password" autocomplete="new-password"><small>备用同名网络已有密码时可留空沿用。</small></label>
+            </div>
+            <div class="quick-field-group" role="group" aria-labelledby="quickWeatherHeading"><h3 id="quickWeatherHeading">天气服务</h3>
+              <label><span>和风天气 API Key（首次配置必填）</span><input name="api_key" type="password" autocomplete="new-password"><small>设备已有 API Key 时可留空沿用，上位机无法核实设备是否已保存。</small></label>
+              <label><span>和风天气 API Host（首次配置必填）</span><input name="api_host" type="text" placeholder="abc123.re.qweatherapi.com" autocomplete="off"><small>只填写专属域名，不含 https:// 或路径；设备已有 Host 时可留空沿用。</small></label>
+              <label><span>天气城市（选填）</span><input name="weather_city" type="text" placeholder="例如：杭州" autocomplete="off"><small>自动定位不准时填写城市名；留空会恢复 IP 自动定位。</small></label>
+              <label><span>离线日期和时间（仅离线使用时必填）</span><input name="manual_time" type="datetime-local" min="2024-01-01T00:00" max="2035-12-31T23:59"><small>不填写主 Wi-Fi 时使用；联网时忽略此项。链接保存的是固定时间，不会随访问时间更新。</small></label>
+            </div>
+          </div>
+          <div class="action-strip">
+            <button id="quickGenerate" class="primary-button" type="submit" disabled>生成链接</button>
+            <button id="quickCopy" class="secondary-button" type="button" disabled>复制链接</button>
+            <button class="secondary-button" type="reset">清空</button>
+          </div>
+          <label class="quick-result-label" for="quickResult">配置链接（含明文凭据）</label>
+          <textarea id="quickResult" readonly spellcheck="false" autocomplete="off" placeholder="生成后显示链接；不会自动打开或连接设备。"></textarea>
+          <p id="quickStatus" class="quick-status" role="status">仅生成链接，不会直接修改设备。</p>
+        </form>
+        <details class="quick-fallback"><summary>资源包兜底配置</summary>
         <div class="settings-grid">
           <div class="asset-card settings-card">
             <h2>天气城市兜底</h2>
@@ -220,6 +251,7 @@
           </div>
         </div>
         <output class="output-box">设置会随 custom_assets.bin 写入 assets 分区，只作为固件兜底配置，不改写 NVS。</output>
+        </details>
       </section>
 
       <section id="serial" class="tab-panel">
@@ -372,5 +404,6 @@
 
   <script src="./app.js" type="module"></script>
   <script src="./simulator-ui.js" type="module"></script>
+  <script src="./quick-config.js" type="module"></script>
 </body>
 </html>
