@@ -143,7 +143,7 @@ void aggregate_clock_view_build(lv_obj_t *root,AggregateClockView &v,lv_color_t 
             const int left=88,right=92+v.texture_read_width;
             const int distance=x<left?left-x:x>right?x-right:0;
             const int cloud_bottom=distance>=10?40:35+distance/2;
-            if(!aggregate_weather_texture_pixel(v.weather_kind,x,y,cloud_bottom))continue;
+            if(!aggregate_weather_texture_pixel(v.weather_kind,x,y,cloud_bottom,right))continue;
             const int px=a.x1+x,py=a.y1+y;
             lv_area_t p={(lv_coord_t)px,(lv_coord_t)py,(lv_coord_t)px,(lv_coord_t)py};
             lv_draw_rect(lv_event_get_draw_ctx(e),&ink,&p);
@@ -194,11 +194,15 @@ bool aggregate_clock_set_text(lv_obj_t *label,const char *text) {
 }
 
 bool aggregate_clock_weather_theme(AggregateClockView &v,int kind) {
-    if(!v.weather_panel)return false;
+    if(!v.weather_panel || !v.temperature)return false;
+    if(kind<0 || kind>3)kind=0;
     lv_point_t size={};
     lv_txt_get_size(&size,lv_label_get_text(v.temperature),
                     lv_obj_get_style_text_font(v.temperature,0),0,0,400,LV_TEXT_FLAG_NONE);
-    if(v.weather_kind==kind && v.texture_read_width==size.x)return false;
+    if(v.weather_kind==kind && (kind==0 || v.texture_read_width==size.x)) {
+        v.texture_read_width=size.x;
+        return false;
+    }
     v.weather_kind=kind;
     v.texture_read_width=size.x;
     lv_obj_invalidate(v.weather_panel);

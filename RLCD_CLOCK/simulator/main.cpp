@@ -1,4 +1,5 @@
 // 运行天气时钟 LVGL SDL 预览并生成各页面截图。
+#include "sdl_preview_sample_data.h"
 #include <SDL.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,7 +31,7 @@ using sdl_preview_widgets::make_label_with_font;
 static constexpr int kDisplayWidth = 400;
 static constexpr int kDisplayHeight = 300;
 static constexpr int kWindowScale = 2;
-static const char *APP_VERSION = "v1.6.3";
+static const char *APP_VERSION = "v1.6.4";
 
 static SdlPreviewBackend g_sdl_preview(kDisplayWidth, kDisplayHeight);
 static sdl_preview_progress::Canvas g_work_page_day_progress;
@@ -172,7 +173,7 @@ static void build_aggregate_clock_preview_ui()
     static AggregateClockView view;
     aggregate_clock_view_build(screen,view,buffers);
     aggregate_clock_view_time(view,local.tm_hour,local.tm_min,local.tm_sec);
-    aggregate_clock_set_text(view.city,"杭州");
+    aggregate_clock_set_text(view.city,kPreviewCityLabel);
     aggregate_clock_set_text(view.weather,"多云");
     aggregate_clock_set_text(view.icon,weather_icon_text("101").c_str());
     aggregate_clock_set_text(view.temperature,"26 C");
@@ -184,11 +185,16 @@ static void build_aggregate_clock_preview_ui()
     aggregate_clock_set_text(view.humidity,"58%");
     const char *theme=getenv("WEATHER_CLOCK_SDL_WEATHER_THEME");
     aggregate_clock_weather_theme(view,0);
-    if(theme && (strcmp(theme,"day")==0 || strcmp(theme,"rain")==0)) {
+    if(theme && (strcmp(theme,"day")==0 || strcmp(theme,"rain")==0 || strcmp(theme,"snow")==0)) {
         const bool rain=strcmp(theme,"rain")==0;
-        aggregate_clock_weather_theme(view,rain?2:1);
-        aggregate_clock_set_text(view.icon,weather_icon_text(rain?"305":"100").c_str());
-        aggregate_clock_set_text(view.weather,rain?"小雨":"晴");
+        const bool snow=strcmp(theme,"snow")==0;
+        if(snow) {
+            aggregate_clock_set_text(view.temperature,"-2 C");
+            aggregate_clock_set_text(view.range,"最高 1 C  最低 -5 C");
+        }
+        aggregate_clock_weather_theme(view,snow?3:rain?2:1);
+        aggregate_clock_set_text(view.icon,weather_icon_text(snow?"400":rain?"305":"100").c_str());
+        aggregate_clock_set_text(view.weather,snow?"小雪":rain?"小雨":"晴");
     }
 }
 

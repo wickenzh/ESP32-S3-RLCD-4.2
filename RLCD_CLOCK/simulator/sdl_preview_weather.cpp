@@ -1,4 +1,5 @@
 // 实现 SDL 天气看板主体和 QWeather 图标码到字体字符的转换。
+#include "sdl_preview_sample_data.h"
 #include "sdl_preview_weather.h"
 
 #include <stdlib.h>
@@ -70,7 +71,7 @@ void build_weather_board_preview_body(lv_obj_t *screen)
                kWeatherBoardCurrentCityY,
                kWeatherBoardCurrentCityW,
                kWeatherBoardCurrentCityH,
-               "杭州");
+               kPreviewCityLabel);
     make_label_with_font(screen,
                          kWeatherBoardCurrentTempX,
                          kWeatherBoardCurrentTempY,

@@ -20,14 +20,36 @@ int main() {
         if(y<28 || y>98) assert(!aggregate_weather_texture_pixel(2,x,y));
     }
     assert(sun_pixels>50 && rain_pixels>300);
+    for(const auto &origin:{std::pair<int,int>{204,43},{184,57},{202,73},{185,85}}) {
+        int pixels=0;
+        for(int y=0;y<kAggregateSnowflakeSize;++y) for(int x=0;x<kAggregateSnowflakeSize;++x)
+            pixels+=aggregate_weather_texture_pixel(3,origin.first+x,origin.second+y,35,180);
+        assert(pixels>20);
+    }
+    for(int y=43;y<59;++y) for(int x=203;x<219;++x)
+        assert(!aggregate_weather_texture_pixel(3,x,y,35,215));
+    for(int y=85;y<99;++y) for(int x=185;x<199;++x)
+        assert(!aggregate_weather_texture_pixel(3,x,y,35,192));
     for(int x=2;x<192;++x) for(int y=36;y<44;++y)
         assert(!aggregate_weather_texture_pixel(2,x,y,35));
     assert(aggregate_weather_kind("100")==1);
-    assert(aggregate_weather_kind("150")==1);
+    assert(aggregate_weather_kind("150")==0);
+    for(int code=300;code<=399;++code) {
+        char text[4]; std::snprintf(text,sizeof(text),"%d",code);
+        const bool rain=code<=318 || code==350 || code==351 || code==399;
+        assert(aggregate_weather_kind(text)==(rain?2:0));
+    }
+    assert(aggregate_weather_kind("101")==0);
+    assert(aggregate_weather_kind("104")==0);
+    assert(aggregate_weather_kind("501")==0);
+    assert(aggregate_weather_kind("9999")==0);
     assert(aggregate_weather_kind(nullptr)==0);
     assert(aggregate_weather_kind("30x")==0);
     assert(aggregate_weather_kind("305")==2);
-    assert(aggregate_weather_kind("400")==0);
+    for(int code=400;code<=499;++code) {
+        char text[4]; std::snprintf(text,sizeof(text),"%d",code);
+        assert(aggregate_weather_kind(text)==((code<=410 || code==456 || code==457 || code==499)?3:0));
+    }
     assert(aggregate_weather_kind("999")==0);
     lv_init();
     static lv_color_t display_pixels[400*300];
@@ -59,6 +81,12 @@ int main() {
     areas.clear();
     assert(!aggregate_clock_view_time(view,14,36,0));
     lv_refr_now(nullptr); assert(areas.empty());
+    assert(aggregate_clock_weather_theme(view,aggregate_weather_kind("150")));
+    assert(view.weather_kind==0);
+    aggregate_clock_set_text(view.temperature,"-40 C");
+    assert(!aggregate_clock_weather_theme(view,0));
+    assert(!aggregate_clock_weather_theme(view,99));
+    lv_refr_now(nullptr); areas.clear();
     assert(aggregate_clock_view_time(view,14,36,1));
     lv_refr_now(nullptr); assert(!areas.empty());
     for(const auto &area:areas) {

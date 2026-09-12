@@ -1,4 +1,5 @@
 // 实现 SDL 天气时钟主页的静态构建、状态切换和差分刷新。
+#include "sdl_preview_sample_data.h"
 #include "sdl_preview_clock.h"
 
 #include <stdio.h>
@@ -427,7 +428,7 @@ void SdlPreviewClock::populate_sample_data()
 {
     set_label_text_if_changed(temp_label_, "24.6℃");
     set_label_text_if_changed(humi_label_, "58.0%");
-    set_label_text_if_changed(weather_city_label_, "杭州");
+    set_label_text_if_changed(weather_city_label_, kPreviewCityLabel);
     set_label_text_if_changed(weather_info_label_, "晴");
     set_label_text_if_changed(weather_temp_label_, "26℃");
     set_label_text_if_changed(weather_humi_label_, "58%");

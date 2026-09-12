@@ -2,7 +2,7 @@
 #include "app_metadata.h"
 
 const char *const TAG = "WeatherClock";
-const char *const APP_VERSION = "v1.6.3";
+const char *const APP_VERSION = "v1.6.4";
 #ifndef WEATHER_CLOCK_BUILD_DATE
 #define WEATHER_CLOCK_BUILD_DATE "unknown"
 #endif

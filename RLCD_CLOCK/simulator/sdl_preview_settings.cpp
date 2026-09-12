@@ -159,7 +159,7 @@ void build_settings_preview_page(const char *mode)
         }
         feedback_label = make_label(screen, 24, 246, 352, 20, "长按 KEY 保存返回");
     } else if (primary == 0) {
-        static const char *network_items[] = {"同步时间", "同步天气", "更新一言", "天气城市 杭州"};
+        static const char *network_items[] = {"同步时间", "同步天气", "更新一言", "天气城市 已设置"};
         for (int i = 0; i < 4; ++i) {
             make_settings_item(screen,
                                settings_layout::kSettingsSecondaryX,

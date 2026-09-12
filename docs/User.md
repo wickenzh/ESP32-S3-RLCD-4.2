@@ -184,6 +184,8 @@ Provides local wake-word detection, voice conversations, on-screen transcripts, 
 
 ### 3.8 Aggregate Clock
 
+Clear nights retain the service's moon icon without solar rays. Cloudy, overcast, fog, and unknown conditions use the neutral background. Rain uses the cloud band with diagonal streaks; snow retains the cloud band with small snowflakes. Accents follow existing hourly updates, without day/night timers or continuous snowfall animation.
+
 Sunny weather uses an arc and dotted rays; rain uses a scalloped cloud band and diagonal streaks. These are static accents selected by weather results, not continuously animated effects.
 
 The test build switches sunny/rainy accents with hourly weather results. Unchanged styles do not redraw, and failed requests retain cached content. There is no sunrise/sunset transition or additional animation timer. Hidden pages do not draw; clock digits still update by second. Existing manual synchronization and missing-data requests are unchanged.

@@ -177,7 +177,7 @@ void build_xiaozhi_preview_body(lv_obj_t *screen,
         mode.preparing
             ? "正在初始化网络和语音服务"
             : latest_xiaozhi_preview_subtitle(
-                  "杭州今天白天多云，气温会逐渐升高，午后体感偏热。外出时建议带好饮用水并注意防晒，如果傍晚出门散步，最新预报显示风力会减弱，体感会更舒适。"),
+                  "当地今天白天多云，气温会逐渐升高，午后体感偏热。外出时建议带好饮用水并注意防晒，如果傍晚出门散步，最新预报显示风力会减弱，体感会更舒适。"),
         &zh_font_16);
     lv_obj_set_style_text_color(state, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_color(detail, lv_color_white(), LV_PART_MAIN);

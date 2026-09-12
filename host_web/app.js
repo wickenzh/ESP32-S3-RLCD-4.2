@@ -1992,16 +1992,24 @@ async function writeFirmware() {
   }
 }
 
-function activateTab(tabId) {
+function activateTab(tabId, updateAddress = true) {
+  if (!$$(".tab").some(tab => tab.dataset.tab === tabId)) tabId = "assets";
   clearNextStepHint();
   $$(".tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabId));
   $$(".tab-panel").forEach((panel) => panel.classList.toggle("is-active", panel.id === tabId));
+  if (updateAddress && window.location.hash !== `#${tabId}`) {
+    window.history.pushState(null, "", `#${tabId}`);
+  }
 }
 
 function bindTabs() {
   $$(".tab").forEach((tab) => {
     tab.addEventListener("click", () => activateTab(tab.dataset.tab));
   });
+  const restoreTab = () => activateTab(window.location.hash.slice(1), false);
+  window.addEventListener("hashchange", restoreTab);
+  window.addEventListener("popstate", restoreTab);
+  restoreTab();
 }
 
 function bindInstall() {

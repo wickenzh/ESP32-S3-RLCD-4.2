@@ -1,6 +1,6 @@
 const CACHE_PREFIX = `weather-clock-unified:${self.location.pathname}:`;
 const SDL_PREVIEW_REVISION = "local";
-const CACHE_NAME = `${CACHE_PREFIX}v52-${SDL_PREVIEW_REVISION}`;
+const CACHE_NAME = `${CACHE_PREFIX}v53-${SDL_PREVIEW_REVISION}`;
 const ASSETS = [
   "./",
   "./index.html",
