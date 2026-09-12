@@ -15,7 +15,7 @@
 - [第三方开源许可说明](THIRD_PARTY_NOTICES.md)
 - [项目许可证](LICENSE)
 - [最低功耗 Power Demo](docs/Power%20Demo/README.md)
-- [查看全部详细页面预览](previews/)
+- [实机模拟预览](https://wickenzh.github.io/ESP32-S3-RLCD-4.2/#screens)
 
 ## 关联项目
 
