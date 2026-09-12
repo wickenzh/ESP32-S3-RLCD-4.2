@@ -759,7 +759,7 @@ input[type="range"] {
 }
 
 .quick-title { margin: 0 0 16px; font-size: 18px; }
-.quick-notice { border-left: 3px solid var(--warn); padding: 0 0 0 12px; margin-bottom: 20px; color: var(--muted); line-height: 1.6; }
+.quick-notice { border-left: 3px solid var(--warn); padding: 0 0 0 12px; margin-bottom: 20px; color: var(--warn); line-height: 1.6; }
 .quick-notice p { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; margin: 0; text-wrap: pretty; }
 .quick-notice strong { color: var(--ink); font-weight: 750; white-space: nowrap; }
 .quick-notice p > span { min-width: 0; overflow-wrap: anywhere; }
