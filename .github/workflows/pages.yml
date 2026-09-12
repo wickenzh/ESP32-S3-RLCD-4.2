@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'host_web/**'
+      - 'RLCD_CLOCK/**'
       - 'previews/**'
       - '.github/workflows/pages.yml'
   workflow_run:
@@ -38,11 +39,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Build LVGL SDL WebAssembly simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          test "$(git -C "$RUNNER_TEMP/emsdk" rev-parse HEAD)" = c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
+          "$RUNNER_TEMP/emsdk/emsdk" install 4.0.23
+          "$RUNNER_TEMP/emsdk/emsdk" activate 4.0.23
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          curl --fail --location --retry 3 https://github.com/lvgl/lvgl/archive/refs/tags/v8.4.0.tar.gz -o "$RUNNER_TEMP/lvgl.tar.gz"
+          echo "3b454d602e1667b9bd2c434f5e8156753d92cf3e71fc40a0cb0d99fca9a605be  $RUNNER_TEMP/lvgl.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/lvgl"
+          tar -xzf "$RUNNER_TEMP/lvgl.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/lvgl"
+          python3 host_web/scripts/build_web_simulator.py --lvgl "$RUNNER_TEMP/lvgl" --output "$RUNNER_TEMP/simulator" --build "$RUNNER_TEMP/wasm-build"
       - name: Build site and mirror verified firmware
         run: node host_web/scripts/build_pages_site.mjs "$RUNNER_TEMP/site"
         env:
           GH_API_TOKEN: ${{ github.token }}
           SDL_PREVIEW_SOURCE: ${{ github.workspace }}/previews
+          SIMULATOR_BUILD_DIR: ${{ runner.temp }}/simulator
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

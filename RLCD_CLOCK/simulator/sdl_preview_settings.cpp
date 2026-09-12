@@ -4,6 +4,8 @@
 
 #include "sdl_preview_widgets.h"
 #include "ui_settings_layout.h"
+#include "web_demo_state.h"
+#include <cstdio>
 
 #include <string.h>
 
@@ -262,4 +264,62 @@ void build_settings_preview_page(const char *mode)
 
     lv_obj_t *hint = make_label(screen, 24, 270, 352, 22, "KEY选择  长按返回  BOOT确认");
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+}
+
+void build_web_settings_page(const WebDemoState &state, const char *version)
+{
+    auto *screen=lv_scr_act();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen,lv_color_white(),0);
+    lv_obj_clear_flag(screen,LV_OBJ_FLAG_SCROLLABLE);
+    auto *title=make_label(screen,24,18,352,28,"设置");
+    lv_obj_set_style_text_align(title,LV_TEXT_ALIGN_CENTER,0);
+    make_black_bar(screen,24,52,352,3); make_black_bar(screen,136,62,2,174);
+    const char *primary[]={"网络","声音","显示","系统"};
+    for(int i=0;i<4;++i) make_settings_item(screen,settings_layout::kSettingsPrimaryX,settings_layout::kSettingsListRowY[i],settings_layout::kSettingsPrimaryW,settings_layout::kSettingsSecondaryH,primary[i],i==state.primary);
+    const char *pages[]={"天气时钟","图片时钟","天气看板","温湿时钟","日历","温湿历史","小智AI","聚合时钟"};
+    char items[8][96]{};
+    int count=state.count();
+    bool grid=state.primary>=2||state.scene==WebDemoState::Pages||state.scene==WebDemoState::Order;
+    if(state.scene==WebDemoState::Pages) {
+        for(int i=0;i<8;++i) std::snprintf(items[i],96,"%s %s",pages[i],state.enabled&(1<<i)?"开":"关");
+    } else if(state.scene==WebDemoState::Order) {
+        for(int i=0;i<count;++i) std::snprintf(items[i],96,"%d %s",i+1,pages[state.ordered_page(i)]);
+    } else if(state.primary==0) {
+        const char *text[]={"同步时间","同步天气","更新一言",state.manual_city?"天气城市 已设置":"天气城市 自动"};
+        for(int i=0;i<4;++i) std::snprintf(items[i],96,"%s",text[i]);
+    } else if(state.primary==1) {
+        std::snprintf(items[0],96,"音量 %d%%",state.volume);
+        std::snprintf(items[1],96,"声音选择 %d",state.sound+1);
+        std::snprintf(items[2],96,"整点提醒 %s",state.hourly?"开":"关");
+        std::snprintf(items[3],96,"全天提醒 %s",state.all_day?"开":"关");
+    } else if(state.primary==2) {
+        std::snprintf(items[0],96,"页面开关");std::snprintf(items[1],96,"页面顺序");
+        std::snprintf(items[2],96,"小智节能 %s",state.auto_return?"开":"关");
+        std::snprintf(items[3],96,"闹钟 %s",state.alarm?"07:30":"关");
+        std::snprintf(items[4],96,"图片切换 24h");
+    } else {
+        std::snprintf(items[0],96,"离线模式 %s",state.offline?"开":"关");
+        std::snprintf(items[1],96,"网络检测");std::snprintf(items[2],96,"恢复出厂设置");
+        std::snprintf(items[3],96,"关于本机");std::snprintf(items[4],96,"检查更新");
+    }
+    for(int i=0;i<count;++i) {
+        bool selected=state.secondary&&i==state.selection;
+        if(state.scene==WebDemoState::Settings&&state.primary==3&&i==4) {
+            make_settings_item(screen,settings_layout::kSettingsSecondaryX,settings_layout::kSettingsSystemLongItemY,settings_layout::kSettingsSecondaryW,30,items[i],selected);
+        } else if(grid) {
+            auto cell=settings_layout::settings_grid_cell(i);
+            make_settings_grid_item(screen,cell.x,cell.y,items[i],selected);
+        } else {
+            make_settings_item(screen,settings_layout::kSettingsSecondaryX,settings_layout::kSettingsListRowY[i],settings_layout::kSettingsSecondaryW,30,items[i],selected);
+        }
+    }
+    if(state.primary==3) {
+        char text[80];std::snprintf(text,sizeof(text),"当前版本 %s",version);
+        auto *label=make_label(screen,150,182,228,22,text);lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);
+    }
+    auto *feedback=make_label(screen,18,240,364,28,state.feedback);
+    lv_obj_set_style_text_align(feedback,LV_TEXT_ALIGN_CENTER,0);
+    auto *hint=make_label(screen,24,274,352,22,"KEY选择  长按返回  BOOT确认");
+    lv_obj_set_style_text_align(hint,LV_TEXT_ALIGN_CENTER,0);
 }

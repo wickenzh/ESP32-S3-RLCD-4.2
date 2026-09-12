@@ -21,6 +21,7 @@ public:
     void update_date(const struct tm &local);
     void update_battery(int percent);
     void set_status_icons_visible(bool visible);
+    void set_simulated_status(bool wifi, bool chime, bool alarm);
 
 private:
     void build_battery(lv_obj_t *parent);

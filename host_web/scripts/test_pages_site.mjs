@@ -1,6 +1,6 @@
 // 验证 Pages 同源镜像、哈希失败关闭和 Service Worker 缓存隔离。
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -32,6 +32,15 @@ globalThis.fetch = async (url) => {
   throw new Error('Unexpected mock request URL');
 };
 try {
+  const simulator = path.join(directory, 'simulator');
+  await mkdir(simulator);
+  const artifacts = {};
+  for (const name of ['weather-clock.js', 'weather-clock.wasm', 'portal.html']) {
+    await writeFile(path.join(simulator, name), bytes);
+    artifacts[name] = digest;
+  }
+  process.env.SIMULATOR_BUILD_DIR = simulator;
+  await writeFile(path.join(simulator, 'build-info.json'), JSON.stringify({ firmwareVersion: 'v1.0.0', sourceCommit: 'a'.repeat(40), sourceDigest: 'b'.repeat(64), artifacts }));
   for (const url of [
     'https://api.github.com.example.invalid/releases',
     'https://example.invalid/api.github.com',
@@ -53,6 +62,10 @@ try {
   const previews = [...html.matchAll(/src="(\.\/assets\/screens\/[^"?]+\.png)"/g)].map(match => match[1]);
   assert.equal(new Set(previews).size, 8);
   const sw = await readFile(path.join(process.argv[2], 'sw.js'), 'utf8');
+  for (const name of [...Object.keys(artifacts), 'build-info.json']) {
+    assert(sw.includes(`./simulator/${name}`));
+    assert((await readFile(path.join(process.argv[2], 'simulator', name))).length);
+  }
   for (const preview of previews) {
     const image = await readFile(path.join(process.argv[2], preview));
     assert.equal(image.subarray(1, 4).toString(), 'PNG');
@@ -76,5 +89,6 @@ try {
   assert.deepEqual(deleted, [prefix + 'old']);
   console.log('Pages mirror and cache isolation tests passed');
 } finally {
+  delete process.env.SIMULATOR_BUILD_DIR;
   await rm(directory, { recursive: true, force: true });
 }

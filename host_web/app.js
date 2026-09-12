@@ -2000,6 +2000,7 @@ function activateTab(tabId, updateAddress = true) {
   if (updateAddress && window.location.hash !== `#${tabId}`) {
     window.history.pushState(null, "", `#${tabId}`);
   }
+  window.dispatchEvent(new CustomEvent("host-tab-change", { detail: tabId }));
 }
 
 function bindTabs() {

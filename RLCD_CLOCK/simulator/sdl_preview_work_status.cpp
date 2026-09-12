@@ -2,11 +2,21 @@
 #include "sdl_preview_work_status.h"
 
 #include <stdio.h>
+#include <utility>
 
 #include "sdl_preview_widgets.h"
 #include "ui_icons.h"
 
 namespace sdl_preview_work_status {
+void Bar::set_simulated_status(bool wifi, bool chime, bool alarm)
+{
+    for (auto entry : {std::pair<lv_obj_t *, bool>{wifi_status_icon_canvas_, wifi},
+                       {chime_status_icon_canvas_, chime}, {alarm_status_icon_canvas_, alarm}}) {
+        if (!entry.first) continue;
+        if (entry.second) lv_obj_clear_flag(entry.first, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(entry.first, LV_OBJ_FLAG_HIDDEN);
+    }
+}
 namespace {
 
 constexpr int kTmYearOffset = 1900;

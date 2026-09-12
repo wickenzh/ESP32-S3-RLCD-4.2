@@ -3,6 +3,7 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSdlPreviews } from "./build_sdl_previews.mjs";
+import { copyWebSimulator } from "./copy_web_simulator.mjs";
 
 const SOURCE_REPOSITORY = "wickenzh/ESP32-S3-RLCD-4.2";
 const SOURCE_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -85,7 +86,7 @@ async function downloadVerifiedAsset(asset, destination) {
 async function copyStaticSite() {
   await rm(OUTPUT_ROOT, { recursive: true, force: true });
   await mkdir(OUTPUT_ROOT, { recursive: true });
-  for (const name of ["index.html", "app.js", "styles.css", "sw.js", "assets", "vendor", ".nojekyll"]) {
+  for (const name of ["index.html", "app.js", "simulator-ui.js", "styles.css", "sw.js", "assets", "vendor", ".nojekyll"]) {
     await cp(path.join(SOURCE_ROOT, name), path.join(OUTPUT_ROOT, name), { recursive: true });
   }
   await mkdir(path.join(OUTPUT_ROOT, "firmware"), { recursive: true });
@@ -138,6 +139,7 @@ async function buildFirmwareMirror() {
 }
 
 await copyStaticSite();
+await copyWebSimulator(process.env.SIMULATOR_BUILD_DIR || path.join(SOURCE_ROOT, "simulator"), OUTPUT_ROOT);
 await buildSdlPreviews(
   process.env.SDL_PREVIEW_SOURCE || path.resolve(SOURCE_ROOT, "../assets/previews"),
   OUTPUT_ROOT

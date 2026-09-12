@@ -84,6 +84,10 @@ void build_xiaozhi_preview_body(lv_obj_t *screen,
         mode.pomodoro_running ? 24 : (mode.pomodoro_final || mode.pomodoro_completed ? 0 : local->tm_min),
         mode.pomodoro_running ? 59 : (mode.pomodoro_final ? 37 : (mode.pomodoro_completed ? 0 : local->tm_sec)),
     };
+    if(mode.remaining_seconds>=0 && pomodoro_visible) {
+        values[1]=mode.remaining_seconds/60;
+        values[2]=mode.remaining_seconds%60;
+    }
     for (int index = 0; index < 3; ++index) {
         lv_obj_t *card = sdl_preview_flip_cards::create_preview_flip_card(
             screen, index, card_x[index], 66);
@@ -146,7 +150,7 @@ void build_xiaozhi_preview_body(lv_obj_t *screen,
                                                                 196,
                                                                 248,
                                                                 28,
-                                                                mode.preparing
+                                                                mode.status ? mode.status : mode.preparing
                                                                     ? "小智准备中"
                                                                     : "小智正在说话",
                                                                 &zh_font_16);
@@ -174,7 +178,7 @@ void build_xiaozhi_preview_body(lv_obj_t *screen,
         224,
         248,
         58,
-        mode.preparing
+        mode.subtitle ? mode.subtitle : mode.preparing
             ? "正在初始化网络和语音服务"
             : latest_xiaozhi_preview_subtitle(
                   "当地今天白天多云，气温会逐渐升高，午后体感偏热。外出时建议带好饮用水并注意防晒，如果傍晚出门散步，最新预报显示风力会减弱，体感会更舒适。"),

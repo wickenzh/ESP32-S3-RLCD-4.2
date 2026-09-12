@@ -2,3 +2,6 @@
 #pragma once
 
 void build_settings_preview_page(const char *mode);
+
+struct WebDemoState;
+void build_web_settings_page(const WebDemoState &state, const char *version);

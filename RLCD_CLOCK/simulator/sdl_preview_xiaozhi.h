@@ -6,6 +6,9 @@
 #include "lvgl.h"
 
 struct XiaozhiPreviewMode {
+    int remaining_seconds = -1;
+    const char *subtitle = nullptr;
+    const char *status = nullptr;
     bool pomodoro_running = false;
     bool pomodoro_final = false;
     bool pomodoro_completed = false;

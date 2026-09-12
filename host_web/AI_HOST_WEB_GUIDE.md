@@ -2,6 +2,27 @@
 
 This document is for future AI agents or developers taking over `host_web/`.
 
+## Interactive Simulator
+
+`simulator-ui.js` lazily loads the WASM target built from `RLCD_CLOCK/simulator`.
+The firmware renderer is shared where available; `web_demo_state.h` supplies
+fake state and does not mutate NVS or call production services. The independent
+portal reuses the firmware HTML/CSS with a demo-only script, an opaque sandbox,
+and CSP blocking network and form navigation. Its trusted build artifact is
+fetched through the parent service worker for offline use, then assigned to
+srcdoc. Never interpolate user input into that document.
+
+Pages requires generated artifacts with matching hashes; missing/corrupt files
+fail the build. `test_simulator_artifacts.mjs`, `test_pages_site.mjs`, native
+`web_demo_state_test` and browser offline/key checks cover this boundary.
+
+The device toolbar places KEY on the left and BOOT on the right. Holding KEY
+for 1.2 seconds dispatches one long-press event before release; release must not
+also dispatch a short press. Mouse capture cancellation, focus loss and tab
+changes cancel pending holds. Keyboard K/B uses the same timing. Run
+`node host_web/scripts/test_simulator_keys.mjs` for the input regression checks.
+This browser adapter does not change physical firmware button handling.
+
 ## Scope
 
 Work in this branch is limited to `host_web/`.
