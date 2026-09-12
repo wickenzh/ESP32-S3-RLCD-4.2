@@ -765,7 +765,14 @@ input[type="range"] {
 .quick-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(5, auto); gap: 16px 32px; }
 .quick-field-group { min-width: 0; display: grid; grid-row: span 5; grid-template-rows: subgrid; }
 .quick-field-group h3 { font-size: 15px; font-weight: 700; line-height: 1.4; margin: 0; }
-.quick-fields label { display: grid; grid-template-rows: 15px 40px auto; gap: 6px; min-width: 0; align-content: start; }
+.quick-fields label, .quick-password-field { display: grid; grid-template-rows: 15px 40px auto; gap: 6px; min-width: 0; align-content: start; }
+.quick-password-field > label { display: block; }
+.quick-password-control { position: relative; min-width: 0; height: 40px; }
+.quick-password-control input { padding-right: 44px; }
+.quick-password-toggle { position: absolute; right: 1px; top: 1px; width: 38px; height: 38px; min-height: 38px; padding: 0; background: transparent; color: var(--muted); border-radius: 6px; }
+.quick-password-toggle:hover { color: var(--ink); background: #262c33; }
+.quick-password-toggle span { width: 18px; height: 18px; background: currentColor; mask: url('./assets/icons/eye.svg') center / contain no-repeat; }
+.quick-password-toggle[aria-pressed="true"] span { mask-image: url('./assets/icons/eye-off.svg'); }
 .quick-fields small, .quick-status { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .quick-result-label { display: block; margin-top: 16px; color: var(--muted); font-size: 12px; }
 #quickResult { min-height: 84px; margin-top: 6px; font-family: monospace; overflow-wrap: anywhere; }

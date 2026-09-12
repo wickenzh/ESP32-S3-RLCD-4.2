@@ -25,6 +25,9 @@ export function makeQuickConfigLink(input) {
     selected = { manual_time: values.manual_time };
     warnings.push('此链接仅设置离线固定时间，不保存 Wi-Fi 或天气字段；使用前核对时间。');
   } else {
+    if (Boolean(values.api_key) !== Boolean(values.api_host)) {
+      throw new Error('API Key 和 API Host 必须同时填写，或同时留空以沿用设备已有配置。');
+    }
     if (values.backup_ssid && values.backup_ssid === values.ssid) throw new Error('主 Wi-Fi 和备用 Wi-Fi 名称不能相同。');
     if (values.backup_pass && !values.backup_ssid) throw new Error('填写备用密码时必须同时填写备用 Wi-Fi 名称。');
     const host = values.api_host.toLowerCase();
@@ -35,7 +38,7 @@ export function makeQuickConfigLink(input) {
     values.api_host = host;
     if (/[&=?#%/\\<>"'\x00-\x1f]/.test(values.weather_city)) throw new Error('天气城市包含设备不支持的特殊字符。');
     selected = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'manual_time'));
-    if (!values.api_key || !values.api_host) warnings.push('API Key / Host 有留空项，只有设备已保存对应信息时才能成功；首次配置请填写。');
+    if (!values.api_key) warnings.push('API Key 和 API Host 均留空，将沿用设备已有天气配置；首次配置请同时填写。');
     if (!values.pass) warnings.push('Wi-Fi 密码留空，仅适用于开放网络或同名网络已有密码。');
     if (!values.weather_city) warnings.push('天气城市留空，设备将恢复 IP 自动定位。');
     if (!values.backup_ssid) warnings.push('备用 Wi-Fi 留空，设备将取消备用网络。');
@@ -61,6 +64,17 @@ if (typeof document !== 'undefined') {
   const result = document.getElementById('quickResult');
   const status = document.getElementById('quickStatus');
   const copy = document.getElementById('quickCopy');
+  const passwordButtons = [...form.querySelectorAll('[data-password]')];
+  function showPassword(button, visible) {
+    document.getElementById(button.dataset.password).type = visible ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(visible));
+    const label = `${visible ? '隐藏' : '显示'}${button.dataset.label}`;
+    button.setAttribute('aria-label', label);
+    button.title = label;
+  }
+  passwordButtons.forEach(button => button.addEventListener('click', () => {
+    showPassword(button, document.getElementById(button.dataset.password).type === 'password');
+  }));
   function invalidate(message = '信息已修改，请重新生成链接。') {
     result.value = ''; copy.disabled = true; status.textContent = message;
   }
@@ -84,7 +98,10 @@ if (typeof document !== 'undefined') {
       if (result.value === link) { result.focus(); result.select(); status.textContent = '无法自动复制，链接已选中，请手动复制并妥善保管。'; }
     }
   });
-  form.addEventListener('reset', () => invalidate('已清空本页信息；此前复制的链接仍可能保留在剪贴板或历史中。'));
+  form.addEventListener('reset', () => {
+    invalidate('已清空本页信息；此前复制的链接仍可能保留在剪贴板或历史中。');
+    passwordButtons.forEach(button => showPassword(button, true));
+  });
   window.addEventListener('pagehide', () => form.reset());
   window.addEventListener('pageshow', event => { if (event.persisted) form.reset(); });
   document.getElementById('quickGenerate').disabled = false;

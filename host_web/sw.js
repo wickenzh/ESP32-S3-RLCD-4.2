@@ -2,7 +2,7 @@ const CACHE_PREFIX = `weather-clock-unified:${self.location.pathname}:`;
 const SDL_PREVIEW_REVISION = "local";
 const SIMULATOR_REVISION = "local";
 const SIMULATOR_ASSETS = [];
-const CACHE_NAME = `${CACHE_PREFIX}v61-${SDL_PREVIEW_REVISION}-${SIMULATOR_REVISION}`;
+const CACHE_NAME = `${CACHE_PREFIX}v62-${SDL_PREVIEW_REVISION}-${SIMULATOR_REVISION}`;
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,6 +10,8 @@ const ASSETS = [
   "./app.js",
   "./simulator-ui.js",
   "./quick-config.js",
+  "./assets/icons/eye.svg",
+  "./assets/icons/eye-off.svg",
   ...SIMULATOR_ASSETS,
   "./assets/screens/weather_clock_main.png",
   "./assets/screens/weather_clock_weather_board.png",
