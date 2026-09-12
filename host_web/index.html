@@ -160,14 +160,12 @@
             <div class="device-workspace">
             <div class="device-display">
             <div class="device-keys">
-              <div class="device-key-control">
-                <p id="simKeyHelp">短按：进入设置 / 选择<br>长按 1.2 秒：返回</p>
-                <button id="simKey" class="secondary-button" type="button" aria-describedby="simKeyHelp" title="KEY：短按选择，按住 1.2 秒返回（K）" disabled>KEY</button>
+              <button id="simKey" class="secondary-button" type="button" aria-describedby="simKeyHelp" title="KEY：短按选择，按住 1.2 秒返回（K）" disabled>KEY</button>
+              <div class="device-key-help">
+                <p id="simKeyHelp">KEY：短按选择，长按 1.2 秒返回</p>
+                <p id="simBootHelp">BOOT：短按切页 / 确认</p>
               </div>
-              <div class="device-key-control">
-                <p id="simBootHelp">主页短按：切换页面<br>菜单短按：确认</p>
-                <button id="simBoot" class="secondary-button" type="button" aria-describedby="simBootHelp" title="BOOT：短按切页或确认（B）" disabled>BOOT</button>
-              </div>
+              <button id="simBoot" class="secondary-button" type="button" aria-describedby="simBootHelp" title="BOOT：短按切页或确认（B）" disabled>BOOT</button>
             </div>
             <canvas id="simulatorCanvas" width="400" height="300" aria-label="虚拟设备400×300显示屏"></canvas>
             </div>
