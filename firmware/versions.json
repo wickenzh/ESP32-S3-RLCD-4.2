@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.3",
+  "latest": "v1.6.4",
   "items": [
+    {
+      "version": "v1.6.4",
+      "notes": "v1.6.4：共 4 项更新。\n1. 聚合天气新增四枚用户提供的 14px 雪花素材，按雨雪天气错落显示并复用既有云层与整点…\n2. Host Web 新增界面预览直达与页签哈希导航，支持刷新、前进后退及离线回退。\n3. 修复聚合天气晴天、夜晴和雨雪代码分类边界：夜晴代码回归普通样式，雨纹仅用于支持的雨雪代…\n4. 优化雨雪天气图案与温度读数的空间避让，保持四枚雪花位置稳定，不增加动画或额外联网。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.4/weather_clock_v1.6.4.bin",
+        "sha256": "9e65b3d4f006638103088eab86538bb9f7be6c53b16dcd75fea6be1d26e28db1",
+        "size": 6288368
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.4/weather_clock_v1.6.4_merged.bin",
+        "sha256": "0eb3c694b64a37069b10babfb3a3913fca2801faa65a58f4940b99da6e9f63f0",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.3",
       "notes": "v1.6.3：共 3 项更新。\n1. 修复天气看板建议可能沿用过期日期天气的问题，改为按当天日期匹配有效预报；雨雪天气明确提…\n2. 优化聚合时钟晴雨视觉：晴天显示弧形光晕与放射点线，雨天显示不等宽深波浪云层与斜雨线；靠…\n3. 聚合天气图案仅随已有整点天气结果切换，状态不变不额外重绘，不增加联网或动画任务。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.37/weather_clock_v1.5.37_merged.bin",
         "sha256": "ba086ac7365540141a9588ad68fd2c0afb17f09ba877ea771fe77510773a3a61",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.5.36",
-      "notes": "v1.5.36：共 3 项更新。\n1. 配网页新增可选备用 Wi-Fi，可同时保存主、备两个热点；已有单 Wi-Fi 配置会继…\n2. 主 Wi-Fi 连续不可用时会有界切换到备用 Wi-Fi；备用连接成功后自动晋升为首选…\n3. 主、备 Wi-Fi 均不可用时停止本轮重复重连：正常工作进入既有退避，配网模式保留设备…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.36/weather_clock_v1.5.36.bin",
-        "sha256": "4c0e1f6b9f34922f931d70ec7cc3031b753257efe773622de86bc2f23ebce58f",
-        "size": 6264768
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.36/weather_clock_v1.5.36_merged.bin",
-        "sha256": "ffc683afa70bc05c79366e08b067a34277acc9c01e2eb0d4b41953bd095cb5ea",
         "size": 16509951
       }
     }
