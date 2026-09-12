@@ -10,11 +10,12 @@ let now = 0;
 const timers = new Map();
 const calls = [];
 const target = () => ({
-  listeners: {}, disabled: false,
+  listeners: {}, disabled: false, hidden: false,
+  setAttribute(name, value) { this[name] = value; },
   addEventListener(name, handler) { this.listeners[name] = handler; },
   setPointerCapture() {}, contains() { return false; },
 });
-const buttons = { simBoot: target(), simKey: target() };
+const buttons = { simBoot: target(), simKey: target(), simPortalToggle: target(), simPortalPanel: target() };
 const device = target();
 const window = target();
 const context = vm.createContext({
@@ -23,6 +24,7 @@ const context = vm.createContext({
   setTimeout(fn, delay) { const id = {}; timers.set(id, { fn, at: now + delay }); return id; },
   clearTimeout(id) { timers.delete(id); },
   press: (key, long) => calls.push([key, long]), window,
+  loadPortal: () => {}, refreshVisibility: () => {},
   document: { getElementById: id => buttons[id], querySelector: () => device },
 });
 vm.runInContext(source.slice(source.indexOf('function cancelKey('), source.indexOf("document.getElementById('simReset').addEventListener")), context);
@@ -49,4 +51,12 @@ device.listeners.keydown(keyEvent); advance(600); device.listeners.keydown(keyEv
 advance(600); assert.deepEqual(calls.at(-1), [1, true]);
 device.listeners.keyup(keyEvent); advance(2000);
 assert.equal(calls.length, 4, 'keyboard repeat and keyup must not repeat long press');
-console.log('Simulator key order, short/long press, cancellation and keyboard tests passed.');
+buttons.simPortalToggle.listeners.click({currentTarget: buttons.simPortalToggle});
+assert.equal(device.hidden, true);
+assert.equal(buttons.simPortalPanel.hidden, false);
+assert.equal(buttons.simPortalToggle.textContent, '返回设备模拟');
+buttons.simPortalToggle.listeners.click({currentTarget: buttons.simPortalToggle});
+assert.equal(device.hidden, false);
+assert.equal(buttons.simPortalPanel.hidden, true);
+assert.equal(buttons.simPortalToggle['aria-pressed'], 'false');
+console.log('Simulator input and portal toggle tests passed.');

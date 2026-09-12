@@ -11,7 +11,7 @@ let lastFrame = 0;
 let lastState = '';
 let failed = false;
 const heldKeys = new Map();
-const running = () => panel.classList.contains('is-active') && !document.hidden;
+const running = () => panel.classList.contains('is-active') && !document.hidden && !document.querySelector('.virtual-device').hidden;
 const sceneNames = ['工作页面', '设置', '页面开关', '页面顺序', '关于本机', '网络检测', '检查更新', '配网提示', '天气预警', '低电量', '启动页'];
 const pageNames = ['天气时钟', '图片时钟', '天气看板', '温湿时钟', '日历', '温湿历史', '小智 AI', '聚合时钟'];
 
@@ -42,16 +42,25 @@ function tick(now) {
   frame = requestAnimationFrame(tick);
 }
 
-async function load() {
-  if (loading) return loading;
-  loading = (async () => {
+let portalLoading;
+function loadPortal() {
+  if (portalLoading) return portalLoading;
     // Load the trusted build artifact through the parent service worker, then
     // keep all form code isolated in the opaque-origin sandbox, also offline.
-    fetch('./simulator/portal.html').then(response => {
+  portalLoading = fetch('./simulator/portal.html').then(response => {
       if (!response.ok) throw new Error('Portal artifact unavailable');
       return response.text();
     }).then(html => { document.getElementById('portalSimulator').srcdoc = html; })
-      .catch(() => { document.querySelector('.virtual-portal .sim-section-title span').textContent = '虚拟配网加载失败，请联网刷新重试'; });
+      .catch(() => {
+        portalLoading = undefined;
+        document.querySelector('.virtual-portal .sim-section-title span').textContent = '虚拟配网加载失败，请联网后重新打开';
+      });
+  return portalLoading;
+}
+
+async function load() {
+  if (loading) return loading;
+  loading = (async () => {
     try {
       const { default: create } = await import('./simulator/weather-clock.js');
       const title = document.title;
@@ -115,6 +124,15 @@ for (const [id, key] of [['simBoot', 0], ['simKey', 1]]) {
   button.addEventListener('click', event => { if (event.detail === 0) press(key, false); });
 }
 const device = document.querySelector('.virtual-device');
+document.getElementById('simPortalToggle').addEventListener('click', event => {
+  const showPortal = !device.hidden;
+  device.hidden = showPortal;
+  document.getElementById('simPortalPanel').hidden = !showPortal;
+  event.currentTarget.textContent = showPortal ? '返回设备模拟' : '配网模拟';
+  event.currentTarget.setAttribute('aria-pressed', String(showPortal));
+  if (showPortal) loadPortal();
+  refreshVisibility();
+});
 device.addEventListener('keydown', event => {
   if (event.target.matches('input,select,textarea')) return;
   const key = event.code === 'KeyB' ? 0 : event.code === 'KeyK' ? 1 : -1;

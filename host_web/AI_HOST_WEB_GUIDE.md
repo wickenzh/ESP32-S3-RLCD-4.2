@@ -4,6 +4,10 @@ This document is for future AI agents or developers taking over `host_web/`.
 
 ## Interactive Simulator
 
+Device view is the default. The portal button next to the source link toggles
+between device and portal without resetting either. Portal HTML loads on first
+open; hidden device rendering and pending key holds are paused/cancelled.
+
 `simulator-ui.js` lazily loads the WASM target built from `RLCD_CLOCK/simulator`.
 The firmware renderer is shared where available; `web_demo_state.h` supplies
 fake state and does not mutate NVS or call production services. The independent
