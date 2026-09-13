@@ -6,6 +6,7 @@
 #include <cstring>
 #include <vector>
 #include <cstdio>
+LV_FONT_DECLARE(qweather_icons_36);
 
 static std::vector<lv_area_t> areas;
 static void flush(lv_disp_drv_t *driver,const lv_area_t *area,lv_color_t *) {
@@ -52,6 +53,9 @@ int main() {
     }
     assert(aggregate_weather_kind("999")==0);
     lv_init();
+    lv_font_glyph_dsc_t weather_glyph;
+    assert(lv_font_get_glyph_dsc(&qweather_icons_36,&weather_glyph,0xF106,0));
+    assert(weather_glyph.box_w>0 && weather_glyph.box_h>0);
     static lv_color_t display_pixels[400*300];
     static lv_disp_draw_buf_t draw;
     lv_disp_draw_buf_init(&draw,display_pixels,nullptr,400*300);
@@ -100,6 +104,19 @@ int main() {
     assert(aggregate_clock_view_time(view,23,59,59));
     assert(aggregate_clock_view_time(view,0,0,0));
     assert(!aggregate_clock_view_time(view,0,0,0));
+    // Simulate repeated hourly weather commits and second ticks on one long-lived page.
+    lv_mem_monitor_t before,after;
+    lv_mem_monitor(&before);
+    for(int i=0;i<5000;++i) {
+        aggregate_clock_set_text(view.temperature,i%2?"-2 C":"26 C");
+        aggregate_clock_set_text(view.weather,i%2?"晴":"小雨");
+        aggregate_clock_weather_theme(view,i%4);
+        aggregate_clock_view_time(view,(i/3600)%24,(i/60)%60,i%60);
+    }
+    lv_refr_now(nullptr);
+    lv_mem_monitor(&after);
+    assert(after.free_size+1024>=before.free_size);
+    assert(lv_mem_test()==LV_RES_OK);
     areas.clear();
     lv_refr_now(nullptr); areas.clear();
     assert(aggregate_clock_weather_theme(view,2));

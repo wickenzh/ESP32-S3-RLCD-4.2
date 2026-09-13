@@ -1,5 +1,7 @@
 # WeatherClock User Guide
 
+The test build adds recovery for severe UI stalls: if the LVGL lock makes no progress for 60 seconds, or a task watchdog detects a severe stall, the device attempts a restart without clearing saved settings. This does not cover every display fault; retain logs and the active-page details if a freeze recurs.
+
 The Aggregate Clock date panel shows the Gregorian day number and the lunar month/day, including leap months. Single-digit dates have no leading zero. Upgrading preserves the existing page settings and appends the new page; no factory reset is required.
 
 Version v1.6.0 adds an Aggregate Clock page: hours/minutes/seconds, today's weather, date/lunar day, and local temperature/humidity. It is appended to the page order and can be toggled or reordered in Display settings. Weather shares the existing hourly cache; sensor sampling remains every minute by day and every two minutes at night. Offline mode disables this network-dependent page. Static black-and-white patterns simulate gray backgrounds.

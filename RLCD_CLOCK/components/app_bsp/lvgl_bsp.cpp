@@ -6,6 +6,8 @@
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include "lvgl_memory_pool.h"
+#include "lvgl_lock_health.h"
+#include <esp_system.h>
 #include <esp_attr.h>
 #include <assert.h>
 
@@ -26,6 +28,7 @@ static lv_disp_draw_buf_t disp_buf; 		// contains internal graphic buffer(s) cal
 static lv_disp_drv_t disp_drv;      		// contains callback functions
 static StaticSemaphore_t lvgl_mux_storage = {};
 static SemaphoreHandle_t lvgl_mux = NULL;
+static LvglLockHealth lvgl_lock_health;
 static portMUX_TYPE lvgl_task_handle_mux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t lvgl_task_handle = NULL;
 static int64_t lvgl_tick_last_us = 0;
@@ -170,11 +173,19 @@ bool Lvgl_lock(int timeout_ms)
         ESP_LOGW(TAG, "%s", kLvglLockBeforeInitLog);
         return false;
     }
-    const TickType_t timeout_ticks =
-        (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    if (xSemaphoreTake(lvgl_mux, timeout_ticks) != pdTRUE) {
-        return false;
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms<0?1000:timeout_ms);
+    while (xSemaphoreTake(lvgl_mux, timeout_ticks) != pdTRUE) {
+        if(lvgl_lock_health.failed(xTaskGetTickCount(),pdMS_TO_TICKS(60000))) {
+            const TaskHandle_t owner=xSemaphoreGetMutexHolder(lvgl_mux);
+            ESP_LOGE(TAG,"LVGL stalled 60s: caller=%s owner=%s internal=%u dma_largest=%u; restarting",
+                     pcTaskGetName(nullptr),owner?pcTaskGetName(owner):"none",
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+            esp_restart();
+        }
+        if(timeout_ms>=0)return false;
     }
+    lvgl_lock_health.progress();
     UpdateLvglTickLocked();
     return true;
 }

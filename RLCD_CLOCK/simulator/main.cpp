@@ -42,7 +42,7 @@ static time_t g_web_time = 0;
 #else
 static constexpr int kWindowScale = 2;
 #endif
-static const char *APP_VERSION = "v1.6.4";
+static const char *APP_VERSION = "v1.6.5";
 
 static SdlPreviewBackend g_sdl_preview(kDisplayWidth, kDisplayHeight);
 static sdl_preview_progress::Canvas g_work_page_day_progress;

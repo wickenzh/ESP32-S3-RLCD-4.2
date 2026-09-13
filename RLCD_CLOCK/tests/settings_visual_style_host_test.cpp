@@ -1,8 +1,20 @@
 // 验证设置皮肤切换只修改样式，不改变对象几何和控件状态。
 #include "ui_settings_visual_style.h"
+#include "lvgl_lock_health.h"
 #include <cassert>
 
 int main() {
+    LvglLockHealth health;
+    assert(!health.failed(100,60000));
+    assert(!health.failed(60099,60000));
+    assert(health.failed(60100,60000));
+    assert(!health.failed(90000,60000));
+    health.progress();
+    assert(!health.failed(500000,60000));
+    health.progress();
+    assert(!health.failed(UINT32_MAX-100,200));
+    assert(!health.failed(50,200));
+    assert(health.failed(100,200));
     lv_init();
     static lv_color_t pixels[400*10];
     lv_disp_draw_buf_t buffer;

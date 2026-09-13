@@ -155,7 +155,7 @@ bool get_weather_full_snapshot(WeatherData *weather,
                                WeatherForecastData *forecast,
                                WeatherAirData *air)
 {
-    ScopedSemaphoreLock lock(s_weather_state_mutex);
+    ScopedSemaphoreLock lock(s_weather_state_mutex,pdMS_TO_TICKS(50));
     if (!lock) {
         return false;
     }
@@ -190,7 +190,7 @@ bool weather_cache_status_snapshot_load(WeatherCacheStatusSnapshot *out)
     if (!out) {
         return false;
     }
-    ScopedSemaphoreLock lock(s_weather_state_mutex);
+    ScopedSemaphoreLock lock(s_weather_state_mutex,pdMS_TO_TICKS(50));
     if (!lock) {
         return false;
     }

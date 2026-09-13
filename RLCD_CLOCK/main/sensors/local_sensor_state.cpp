@@ -76,7 +76,7 @@ bool local_sensor_state_snapshot_load(LocalSensorStateSnapshot *snapshot)
     if (!snapshot) {
         return false;
     }
-    ScopedSemaphoreLock lock(s_local_sensor_mutex.handle());
+    ScopedSemaphoreLock lock(s_local_sensor_mutex.handle(),pdMS_TO_TICKS(50));
     if (!lock) {
         *snapshot = {};
         return false;
