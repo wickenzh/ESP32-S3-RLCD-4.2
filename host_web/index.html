@@ -45,7 +45,8 @@
             <div><span>GIF 动图</span><strong>84 x 84 / 60 帧</strong></div>
             <div><span>静图</span><strong>220 x 208 / 最多 24 张</strong></div>
           </div>
-          <p id="summaryNote" class="summary-note">资源包可同时包含 GIF 动图和静图；写入设备后重启，固件会优先加载自定义资源。</p>
+          <p id="summaryNote" class="summary-note">资源包支持 GIF、静图和兜底配置。
+写入并重启后，优先加载自定义资源。</p>
           <div class="summary-actions">
             <button id="buildAssetsBtn" class="primary-button" type="button">③ 生成资源包</button>
             <button id="downloadAssetsBtn" class="secondary-button" type="button" disabled>下载 BIN（可选）</button>
@@ -57,7 +58,7 @@
         </div>
         <div class="asset-grid">
           <div class="asset-card gif-asset-card">
-            <h2>GIF 动图</h2>
+            <h2>GIF 动图（适用天气时钟）</h2>
             <label class="file-picker">
               <span>① 选择 GIF（只支持 GIF 文件）</span>
               <input id="gifInput" type="file" accept="image/gif">
@@ -95,7 +96,7 @@
           </div>
 
           <div class="asset-card image-asset-card">
-            <h2>静图</h2>
+            <h2>静图（适用图片时钟）</h2>
             <label class="file-picker">
               <span>① 选择静图（JPG / PNG / WebP / BMP 等）</span>
               <input id="imageInput" type="file" accept="image/*" multiple>

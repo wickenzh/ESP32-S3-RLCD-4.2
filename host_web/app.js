@@ -18,7 +18,7 @@ const MAX_OTA_MANIFEST_URL_BYTES = 255;
 const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
-const DEFAULT_SUMMARY_NOTE = "资源包可同时包含 GIF 动图、静图和兜底配置；写入设备后重启，固件会优先加载自定义资源。";
+const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
   label: "0x0：完整 merged 固件",

@@ -318,6 +318,7 @@ label span,
 }
 
 .summary-note {
+  white-space: pre-line;
   min-width: 0;
   margin: 0;
   align-self: center;
