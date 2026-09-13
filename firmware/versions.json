@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.4",
+  "latest": "v1.6.5",
   "items": [
+    {
+      "version": "v1.6.5",
+      "notes": "v1.6.5：共 3 项更新。\n1. 修复天气与传感器状态读取可能无限等待的问题，增加 50ms 有界读取并保留调用方重试。\n2. 修复 LVGL 锁持续阻塞时缺少恢复路径的问题，采用分段等待；连续 60 秒无成功取锁…\n3. 优化任务看门狗异常处理：由仅报警调整为 panic/reboot，在长期阻塞时触发自动…\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.5/weather_clock_v1.6.5.bin",
+        "sha256": "bf997cb9f218099a26576353c124ef83548b95e912cf2b0b093c7f05f55bcc5b",
+        "size": 6288688
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.5/weather_clock_v1.6.5_merged.bin",
+        "sha256": "a26bf0bc7505dd5628e9f615ce0ee9c0ffc45ca083b775cde434a856ea174818",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.4",
       "notes": "v1.6.4：共 4 项更新。\n1. 聚合天气新增四枚用户提供的 14px 雪花素材，按雨雪天气错落显示并复用既有云层与整点…\n2. Host Web 新增界面预览直达与页签哈希导航，支持刷新、前进后退及离线回退。\n3. 修复聚合天气晴天、夜晴和雨雪代码分类边界：夜晴代码回归普通样式，雨纹仅用于支持的雨雪代…\n4. 优化雨雪天气图案与温度读数的空间避让，保持四枚雪花位置稳定，不增加动画或额外联网。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.38/weather_clock_v1.5.38_merged.bin",
         "sha256": "03c777128f44315234ae96183efe3ac4921e8bb52c695d4fd1c6d65252067812",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.5.37",
-      "notes": "v1.5.37：共 4 项更新。\n1. GitHub 公开源码首页新增完整英文版本和中英文切换入口，并补充微雪官方产品、硬件文…\n2. 修复电池实际充满时“上次满电时间”不更新的问题；现在仅在确认充电、会话从 96% 以下…\n3. 修复关机重启后的电压恢复可能被误记为一次满电的问题；拔线、高电量开机和普通电压回落不再…\n4. 统一中英文用户手册、开发规范和项目指南中的满电判定说明，明确无充电状态引脚时采用保守…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.37/weather_clock_v1.5.37.bin",
-        "sha256": "65b46b262c9354660e2b3f91ae6530c28d415e0c754d23c37c11fd327e29270f",
-        "size": 6265952
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.37/weather_clock_v1.5.37_merged.bin",
-        "sha256": "ba086ac7365540141a9588ad68fd2c0afb17f09ba877ea771fe77510773a3a61",
         "size": 16509951
       }
     }
