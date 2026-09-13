@@ -155,6 +155,11 @@ h1 {
   justify-content: flex-end;
 }
 
+.top-meta .top-version { font-size: 12px; white-space: nowrap; }
+.top-meta .hosting-note { color: var(--muted); }
+#sourceRepoLink { height: 38px; flex: 0 0 38px; }
+.source-plus { display: block; width: 20px; height: 20px; background: currentColor; mask: url('./assets/icons/plus.svg') center / contain no-repeat; }
+
 .status-pill {
   min-height: 34px;
   display: inline-flex;

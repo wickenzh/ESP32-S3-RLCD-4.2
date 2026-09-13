@@ -40,14 +40,12 @@ const serialCommand = $("#serialCommand");
 const rxBytes = $("#rxBytes");
 const lastLineTime = $("#lastLineTime");
 const cacheState = $("#cacheState");
-const installAppBtn = $("#installAppBtn");
 
 let port;
 let reader;
 let writer;
 let keepReading = false;
 let receivedBytes = 0;
-let deferredInstallPrompt;
 let convertedGif;
 let convertedImages = [];
 let generatedAssetPackage;
@@ -2013,20 +2011,6 @@ function bindTabs() {
   restoreTab();
 }
 
-function bindInstall() {
-  window.addEventListener("beforeinstallprompt", (event) => {
-    event.preventDefault();
-    deferredInstallPrompt = event;
-    installAppBtn.disabled = false;
-  });
-  installAppBtn.addEventListener("click", async () => {
-    if (!deferredInstallPrompt) return;
-    deferredInstallPrompt.prompt();
-    await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = undefined;
-  });
-}
-
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
     cacheState.textContent = "当前浏览器不支持离线缓存";
@@ -2045,7 +2029,6 @@ bindTabs();
 document.addEventListener("click", clearNextStepHint, true);
 document.addEventListener("input", clearNextStepHint, true);
 document.addEventListener("change", clearNextStepHint, true);
-bindInstall();
 renderFirmwareTargets();
 setSerialSupport();
 registerServiceWorker();
