@@ -5,11 +5,16 @@ const fields = {
   backup_ssid: ['备用 Wi-Fi 名称', 32], backup_pass: ['备用 Wi-Fi 密码', 64],
   api_key: ['API Key', 95], api_host: ['API Host', 127],
   weather_city: ['天气城市', 31], manual_time: ['离线时间', 31],
+  weather_provider: ['天气服务', 15],
 };
 const asciiTrim = value => value.replace(/^[\t\n\v\f\r ]+|[\t\n\v\f\r ]+$/g, '');
 
 export function makeQuickConfigLink(input) {
   const values = Object.fromEntries(Object.keys(fields).map(key => [key, String(input[key] ?? '')]));
+  values.weather_provider = input.weather_provider || (input.use_open_meteo === '1' ? 'open_meteo' : 'qweather');
+  if (!['qweather', 'open_meteo'].includes(values.weather_provider)) throw new LocalizedError(() => tr('天气服务选项无效。'));
+  const openMeteo = values.weather_provider === 'open_meteo';
+  if (openMeteo) { values.api_key = ''; values.api_host = ''; }
   for (const key of ['api_key', 'api_host', 'weather_city', 'manual_time']) values[key] = asciiTrim(values[key]);
   const offline = !asciiTrim(values.ssid);
   const warnings = [];
@@ -44,7 +49,8 @@ export function makeQuickConfigLink(input) {
     values.api_host = host;
     if (/[&=?#%/\\<>"'\x00-\x1f]/.test(values.weather_city)) throw new LocalizedError(() => tr('天气城市包含设备不支持的特殊字符。'));
     selected = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'manual_time'));
-    if (!values.api_key) warnings.push(tr('API Key 和 API Host 均留空，将沿用设备已有天气配置；首次配置请同时填写。'));
+    if (!openMeteo && !values.api_key) warnings.push(tr('API Key 和 API Host 均留空，将沿用设备已有天气配置；首次配置请同时填写。'));
+    if (openMeteo) warnings.push(tr('需要支持 Open-Meteo 的新版固件；旧固件可能忽略天气源选项。'));
     if (!values.pass) warnings.push(tr('Wi-Fi 密码留空，仅适用于开放网络或同名网络已有密码。'));
     if (!values.weather_city) warnings.push(tr('天气城市留空，设备将恢复 IP 自动定位。'));
     if (!values.backup_ssid) warnings.push(tr('备用 Wi-Fi 留空，设备将取消备用网络。'));
@@ -71,6 +77,16 @@ if (typeof document !== 'undefined') {
   const status = document.getElementById('quickStatus');
   const copy = document.getElementById('quickCopy');
   const passwordButtons = [...form.querySelectorAll('[data-password]')];
+  const providerToggle = document.getElementById('quickOpenMeteo');
+  function updateProviderFields() {
+    for (const name of ['api_key', 'api_host']) {
+      const field = form.elements.namedItem(name);
+      field.disabled = providerToggle.checked;
+      field.closest('label').hidden = providerToggle.checked;
+    }
+  }
+  providerToggle.addEventListener('change', updateProviderFields);
+  updateProviderFields();
   function showPassword(button, visible) {
     document.getElementById(button.dataset.password).type = visible ? 'text' : 'password';
     button.setAttribute('aria-pressed', String(visible));
@@ -106,6 +122,7 @@ if (typeof document !== 'undefined') {
     }
   });
   form.addEventListener('reset', () => {
+    queueMicrotask(updateProviderFields);
     invalidate('已清空本页信息；此前复制的链接仍可能保留在剪贴板或历史中。');
     passwordButtons.forEach(button => showPassword(button, true));
   });

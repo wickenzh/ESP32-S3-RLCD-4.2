@@ -105,7 +105,7 @@ Translation covers web-tool buttons, descriptions and application status. Firmwa
 
 [Open WeatherClock Studio](https://wickenzh.github.io/ESP32-S3-RLCD-4.2/). Desktop Chrome or Edge is recommended for serial operations. Grant serial access and close other programs using the same port.
 
-The browser tool prepares GIFs and image galleries, previews pages, checks and flashes firmware, and reads logs. Asset conversion and configuration generation run locally; loading the site and downloading firmware still use the network. The preview is not a full hardware simulator.
+The browser tool prepares GIFs and image galleries, previews pages, checks and flashes firmware, and reads logs. Asset conversion and configuration generation run locally; loading the site and downloading firmware still use the network. The preview is not a full hardware simulator. The web UI supports narrow-screen viewing and stacks the simulator vertically; asset writing, firmware flashing and serial operations still require desktop Chrome/Edge with Web Serial.
 
 Quick configuration generates a link to the device's save endpoint. Connect to the device hotspot first. Opening the link submits settings rather than merely prefilling a form. It contains plaintext credentials and must be treated like a password.
 
@@ -138,3 +138,11 @@ Charging, AI use, and nearby heat sources may bias the onboard sensor. Keep the 
 
 Remove credentials, tokens, location, and private addresses before sharing logs. Repository license, third-party notices, contribution guide, and security policy remain authoritative.
 Time and day/night sampling use the firmware's fixed UTC+8 timezone; there is no timezone selector. Night sampling runs from 22:00 through 05:59. Lunar dates and holiday labels use the built-in Chinese calendar data, not a region-specific holiday service.
+
+## Optional weather provider
+
+Setup and WeatherClock Studio quick configuration now offer a Use Open-Meteo switch, off by default. Off selects QWeather and its existing Key/Host requirements. On uses Open-Meteo without those credentials; saved QWeather credentials are retained, and no automatic provider fallback occurs. Switching back requires valid QWeather credentials.
+
+Open-Meteo provides model-based weather and explicitly labelled US AQI, not China's AQI. This integration does not provide weather alerts and says so on screen. The public API is for non-commercial use and still depends on network availability. Quick-configuration links require firmware supporting both providers; older firmware may ignore the choice. Offline setup still needs only a valid date and time.
+
+Data: [Open-Meteo](https://open-meteo.com/) and [CAMS](https://atmosphere.copernicus.eu/). Location lookup: [GeoNames](https://www.geonames.org/).

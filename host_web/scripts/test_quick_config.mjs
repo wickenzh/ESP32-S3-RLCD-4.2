@@ -5,6 +5,13 @@ import { makeQuickConfigLink } from '../quick-config.js';
 
 const base = { ssid: 'Demo &+中文', pass: 'Test+#?&=123', api_key: 'DEMO_KEY', api_host: 'ABC.re.qweatherapi.com', weather_city: '杭州' };
 const result = makeQuickConfigLink(base);
+const open = new URL(makeQuickConfigLink({...base, use_open_meteo:'1', api_host:'ignored', api_key:'ignored'}).url);
+assert.equal(open.searchParams.get('weather_provider'), 'open_meteo');
+assert.equal(open.searchParams.has('api_key'), false);
+assert.equal(open.searchParams.has('api_host'), false);
+assert.equal(new URL(makeQuickConfigLink({ssid:'Demo',use_open_meteo:'1'}).url).searchParams.get('weather_provider'),'open_meteo');
+assert.throws(() => makeQuickConfigLink({...base,weather_provider:'unknown'}), /天气服务/);
+assert.equal(new URL(result.url).searchParams.get('weather_provider'),'qweather');
 const url = new URL(result.url);
 assert.equal(url.origin, 'http://192.168.4.1');
 assert.equal(url.pathname, '/save');

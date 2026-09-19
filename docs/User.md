@@ -32,6 +32,7 @@ AI tools can set a one-shot alarm, focus timer, and weather city. Check the on-s
 
 - In System settings, check for updates with BOOT, then confirm an available update within 60 seconds.
 - Use [WeatherClock Studio](https://wickenzh.github.io/ESP32-S3-RLCD-4.2/) on a desktop browser for assets, previews, flashing, and logs.
+- The web UI supports narrow-screen viewing and stacks the simulator vertically. Asset writing, firmware flashing and serial operations still require desktop Chrome/Edge with Web Serial.
 - The top-right language selector supports English, Japanese, Simplified Chinese and Traditional Chinese (Taiwan). Your choice is remembered; firmware screens and the Wi-Fi setup demo keep their original language.
 - Missing weather: check Key, Host, permissions, and network. Cached values are not proof of a successful refresh.
 - The Wi-Fi icon shows radio activity. Battery and charging indicators are estimates; USB connection does not mean continuous charging.
@@ -41,3 +42,11 @@ AI tools can set a one-shot alarm, focus timer, and weather city. Check the on-s
 
 Keep credentials and private addresses out of public logs, screenshots, and quick-configuration links. See the [detailed guide](User_Detailed.md) for complete instructions.
 The firmware currently uses UTC+8 with no timezone selector. A translated guide does not change the device timezone.
+
+## Optional weather provider
+
+Setup and WeatherClock Studio quick configuration now offer a Use Open-Meteo switch, off by default. Off selects QWeather and its existing Key/Host requirements. On uses Open-Meteo without those credentials; saved QWeather credentials are retained, and no automatic provider fallback occurs. Switching back requires valid QWeather credentials.
+
+Open-Meteo provides model-based weather and explicitly labelled US AQI, not China's AQI. This integration does not provide weather alerts and says so on screen. The public API is for non-commercial use and still depends on network availability. Quick-configuration links require firmware supporting both providers; older firmware may ignore the choice. Offline setup still needs only a valid date and time.
+
+Data: [Open-Meteo](https://open-meteo.com/) and [CAMS](https://atmosphere.copernicus.eu/). Location lookup: [GeoNames](https://www.geonames.org/).

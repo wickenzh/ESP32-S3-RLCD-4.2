@@ -1,5 +1,7 @@
 // [Simplified Chinese, Traditional Chinese (Taiwan), Japanese, English]
 export const dynamicMessages = [
+['天气服务选项无效。','天氣服務選項無效。','天気サービスの選択が無効です。','Invalid weather provider.'],
+['需要支持 Open-Meteo 的新版固件；旧固件可能忽略天气源选项。','需要支援 Open-Meteo 的新版韌體；舊版可能忽略天氣來源選項。','Open-Meteo対応ファームウェアが必要です。旧版では天気サービスの指定が無視される場合があります。','Requires firmware with Open-Meteo support; older firmware may ignore the provider option.'],
 ['已授权串口设备','已授權的序列埠裝置','許可済みシリアルデバイス','Authorized serial device'],
 ['GIF 预览图片元素不可用。','GIF 預覽圖片元件無法使用。','GIFプレビュー要素を利用できません。','GIF preview element is unavailable.'],
 ['文件内容不是有效的 GIF，请重新选择 GIF 动图。','檔案內容不是有效的 GIF，請重新選擇 GIF 動畫。','有効なGIFではありません。GIFファイルを選び直してください。','The file is not a valid GIF. Choose another GIF file.'],

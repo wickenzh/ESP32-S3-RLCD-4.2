@@ -32,6 +32,12 @@ checks cover four locales × six tabs × 1024/1280/1440 desktop widths, state an
 BIN hash preservation, serial mocks, hash failures, persistence and offline
 switching. Update all eight User manuals for user-facing behavior changes.
 
+Mobile layout rules are scoped to `max-width: 800px`: simulator columns stack,
+KEY/help/BOOT remain a stable three-column row above the canvas, and at 480px
+the six tabs become a visible two-column grid. Do not shrink the 400x300 canvas
+below its aspect ratio or allow controls to overlap. Mobile support is for
+viewing and editing; Web Serial operations still require desktop Chrome/Edge.
+
 ## Interactive Simulator
 
 Keep the simulator aligned to the page content edges. Use 18px page headings,
@@ -203,3 +209,6 @@ Do not add local HTTP/HTTPS preview servers back into `host_web/` unless the use
 - The resource writer must keep the partition-table preflight: read flash `0x8000..0x8FFF`, parse 32-byte ESP-IDF partition entries, and only enable resource write/erase after finding `assets` with type `data`, subtype `0x40`, and enough space for the generated resource package.
 - Firmware flashing uses GitHub Release assets from `wickenzh/ESP32-S3-RLCD-4.2` as the sole online source. GitHub's final Release asset CDN does not expose CORS headers for JavaScript byte access, so the page must never fetch Release binaries directly. `.github/workflows/static.yml` runs `scripts/build_pages_site.mjs` to mirror the latest 10 complete releases into the ephemeral Pages artifact, after checking size and GitHub asset `digest` (`sha256:...`); do not commit mirrored bin files to Git history. The deployed page reads same-origin `firmware/releases.json` and same-origin firmware bytes, then verifies size and SHA256 again in browser memory before enabling flashing. Online firmware remains fully automatic; only the separate custom-firmware source uses a file picker. Accept the merged asset only for the `0x0` target and the App asset only for dynamically discovered App targets.
 - WeatherClock v1.5.x adds a `model` partition. The web host must not write App binaries to `assets`, `model`, `nvs`, bootloader, partition-table, or any fixed legacy address. Future standalone model flashing must also discover `model` address and size from the device partition table.
+## 双天气源快捷配置
+
+weather_provider协议值为qweather/open_meteo，开关默认关。Open-Meteo忽略并不输出api_key/api_host，保留DOM输入方便切回；离线链接不输出天气字段。四语词库同步动态警告和静态说明，语言切换不重新生成、不修改参数或用户输入。表单右栏使用同一subgrid，新增开关说明须放在标题容器，不能额外挤占既有五行导致后续字段重叠。

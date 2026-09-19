@@ -777,8 +777,8 @@ input[type="range"] {
 .quick-notice strong { color: var(--ink); font-weight: 750; white-space: nowrap; }
 .quick-notice p > span { min-width: 0; overflow-wrap: anywhere; }
 .quick-notice p + p { margin-top: 8px; }
-.quick-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(5, auto); gap: 16px 32px; }
-.quick-field-group { min-width: 0; display: grid; grid-row: span 5; grid-template-rows: subgrid; }
+.quick-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; align-items: start; }
+.quick-field-group { min-width: 0; display: grid; gap: 16px; align-content: start; }
 .quick-field-group h3 { font-size: 15px; font-weight: 700; line-height: 1.4; margin: 0; }
 .quick-fields label, .quick-password-field { display: grid; grid-template-rows: 15px 40px auto; gap: 6px; min-width: 0; align-content: start; }
 html:not([lang="zh-CN"]) .topbar { grid-template-columns: minmax(210px, .9fr) minmax(0, 1.4fr) auto; }
@@ -1136,4 +1136,81 @@ progress::-moz-progress-bar { background: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+.quick-field-group label[hidden] { display: none; }
+.quick-fields .quick-provider-toggle { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.quick-provider-heading small { display: block; margin-top: 5px; }
+
+/* Narrow desktop-class layouts: stack the simulator and keep every control reachable. */
+@media (max-width: 800px) {
+  .work-summary,
+  .form-grid,
+  .metrics,
+  .preview-grid,
+  .preview-stage,
+  .flash-table,
+  .asset-grid,
+  .settings-grid,
+  .image-preview-row,
+  .quick-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .tabs {
+    display: flex;
+    justify-content: flex-start;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .tab { flex: 0 0 auto; min-width: 92px; }
+  .simulator-heading { align-items: flex-start; flex-direction: column; }
+  .simulator-actions { width: 100%; }
+  .simulator-actions > * { flex: 1 1 0; }
+  .simulator-actions #simPortalToggle { width: auto; }
+  .device-workspace { grid-template-columns: 1fr; gap: 18px; align-items: stretch; }
+  .device-settings { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .virtual-portal { max-width: none; }
+}
+
+@media (max-width: 640px) {
+  .tabs { padding: 4px; }
+  .topbar { grid-template-columns: 1fr; }
+  .top-meta { gap: 6px; }
+  .top-actions { gap: 6px; }
+  .top-actions .status-pill,
+  .top-actions .language-select { flex: 1 1 auto; min-width: 0; }
+  .top-actions .language-select { width: auto; }
+  .simulator-actions { gap: 8px; }
+  .device-keys { grid-template-columns: minmax(72px, 88px) minmax(0, 1fr) minmax(72px, 88px); gap: 6px; margin-top: 12px; }
+  .device-keys button { min-width: 0; width: 100%; padding-left: 8px; padding-right: 8px; }
+  .device-key-help { font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+  .device-key-help p { white-space: normal; }
+  .device-settings .action-strip { grid-template-columns: 1fr; }
+  .quick-notice p { grid-template-columns: 82px minmax(0, 1fr); gap: 6px; }
+  .quick-fields { gap: 24px; }
+  .quick-field-group { gap: 14px; }
+  .screen-gallery { grid-template-columns: 1fr; gap: 20px; }
+  .screen-gallery img { max-width: none; }
+}
+
+@media (max-width: 480px) {
+  .layout, .topbar { width: calc(100vw - 16px); }
+  .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; gap: 4px; }
+  .tab { min-width: 0; font-size: 11px; white-space: normal; line-height: 1.25; }
+  .tab-panel { padding: 10px; }
+  .brand { align-items: flex-start; }
+  .brand-mark { width: 38px; height: 38px; font-size: 18px; }
+  h1 { font-size: 19px; }
+  .brand p { font-size: 11px; }
+  .top-meta > span:first-child { white-space: normal; }
+  .top-version { line-height: 1.45; }
+  .quick-notice p { grid-template-columns: 1fr; gap: 2px; }
+  .quick-notice strong { display: block; }
+  .mini-settings { grid-template-columns: 1fr; }
+  .image-asset-card .control-threshold,
+  .image-asset-card .control-edge-fade { grid-column: 1 / -1; }
+  .device-key-help { font-size: 10px; }
+  #portalSimulator { height: 620px; }
 }

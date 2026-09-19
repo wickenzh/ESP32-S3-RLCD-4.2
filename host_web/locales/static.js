@@ -1,5 +1,8 @@
 // [Simplified Chinese, Traditional Chinese (Taiwan), Japanese, English]
 export const staticMessages = [
+['使用 Open-Meteo','使用 Open-Meteo','Open-Meteoを使う','Use Open-Meteo'],
+['开启后无需和风密钥；不提供天气预警，空气质量使用 US AQI。公共接口仅限非商业使用。','啟用後不需和風金鑰；不提供天氣警報，空氣品質採 US AQI。公共介面僅供非商業使用。','有効にするとQWeatherのキーは不要です。気象警報は非対応、大気質はUS AQIです。無料APIは非商用に限ります。','No QWeather key is required. Weather alerts are unavailable; air quality uses US AQI. The public API is for non-commercial use only.'],
+['数据来源：Open-Meteo / CAMS；城市查询：GeoNames。','資料來源：Open-Meteo / CAMS；城市查詢：GeoNames。','データ提供：Open-Meteo / CAMS、都市検索：GeoNames。','Data: Open-Meteo / CAMS. City lookup: GeoNames.'],
 ['语言','語言','言語','Language'],
 ['切换语言','切換語言','言語を切り替え','Change language'],
 ['选择文件','選擇檔案','ファイルを選択','Choose file'],
