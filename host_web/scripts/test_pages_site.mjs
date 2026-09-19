@@ -62,6 +62,10 @@ try {
   const previews = [...html.matchAll(/src="(\.\/assets\/screens\/[^"?]+\.png)"/g)].map(match => match[1]);
   assert.equal(new Set(previews).size, 8);
   const sw = await readFile(path.join(process.argv[2], 'sw.js'), 'utf8');
+  for (const name of ['i18n.js', 'locales/static.js', 'locales/dynamic.js']) {
+    assert((await readFile(path.join(process.argv[2], name))).length);
+    assert(sw.includes(`./${name}`), `Language module missing from offline cache: ${name}`);
+  }
   for (const name of [...Object.keys(artifacts), 'build-info.json']) {
     assert(sw.includes(`./simulator/${name}`));
     assert((await readFile(path.join(process.argv[2], 'simulator', name))).length);

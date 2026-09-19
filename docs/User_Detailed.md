@@ -99,6 +99,10 @@ Do not disconnect power during flashing or resource writes. Record errors before
 
 ## 8. WeatherClock Studio and custom assets
 
+The selector between Web Serial status and the source shortcut offers English, Japanese, Simplified Chinese and Traditional Chinese (Taiwan); Simplified Chinese is the default. Changes apply immediately without clearing files, converted assets, configuration fields or connections. Only the language preference is stored; switching still works for the session if storage is blocked. All four languages work offline after the site is successfully cached.
+
+Translation covers web-tool buttons, descriptions and application status. Firmware simulator screens, the Wi-Fi setup demo interior, raw serial output, third-party logs and original Release notes remain unchanged. Browser-native file and date controls may follow the system language. Website language selection does not add multilingual firmware support.
+
 [Open WeatherClock Studio](https://wickenzh.github.io/ESP32-S3-RLCD-4.2/). Desktop Chrome or Edge is recommended for serial operations. Grant serial access and close other programs using the same port.
 
 The browser tool prepares GIFs and image galleries, previews pages, checks and flashes firmware, and reads logs. Asset conversion and configuration generation run locally; loading the site and downloading firmware still use the network. The preview is not a full hardware simulator.

@@ -22,6 +22,12 @@
     </div>
     <div class="top-actions">
       <span id="serialSupport" class="status-pill">检测中</span>
+      <select id="languageSelect" class="language-select" aria-label="切换语言" title="切换语言" translate="no">
+        <option value="zh-CN">简体中文</option>
+        <option value="zh-TW">繁體中文</option>
+        <option value="ja">日本語</option>
+        <option value="en">English</option>
+      </select>
       <a id="sourceRepoLink" class="icon-button link-button" href="https://github.com/wickenzh/ESP32-S3-RLCD-4.2" target="_blank" rel="noopener noreferrer" title="打开 GitHub 源码主页" aria-label="打开 GitHub 源码主页">
         <span class="source-plus" aria-hidden="true"></span>
       </a>
@@ -155,6 +161,7 @@
           </div>
         </div>
         <p id="simulatorBuildInfo" class="sim-build" role="status">等待加载模拟器构建信息</p>
+        <p class="sim-language-note">语言切换仅影响网页工具，固件画面、配网模拟及原始串口输出保持原样。</p>
         <div class="simulator-layout">
           <section class="virtual-device" aria-label="虚拟设备" tabindex="0">
             <div class="sim-section-title"><h3>虚拟设备</h3><button id="simReset" class="secondary-button" type="button" disabled>重置设备</button></div>

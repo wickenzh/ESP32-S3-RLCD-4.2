@@ -1,3 +1,4 @@
+import { tr, setText, setAttr, LocalizedError, getLanguage } from './i18n.js';
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -21,7 +22,7 @@ const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
-  label: "0x0：完整 merged 固件",
+  get label() { return tr("0x0：完整 merged 固件"); },
   kind: "merged",
   partitions: [{ label: "flash", address: 0, size: 0 }],
   remoteImage: "merged"
@@ -100,21 +101,21 @@ function describePort(selectedPort) {
   if (info.usbVendorId !== undefined || info.usbProductId !== undefined) {
     return `USB ${serialId(info.usbVendorId)}:${serialId(info.usbProductId)}`;
   }
-  return "已授权串口设备";
+  return tr("已授权串口设备");
 }
 
 function resetAssetDeviceState(message = "未核对") {
   assetPartitionVerified = false;
   assetPartition = undefined;
   assetPartitions = [];
-  $("#assetPartitionState").textContent = message;
+  setText($("#assetPartitionState"), () => tr(message));
   updateAssetWriteButtons();
 }
 
 async function setGifOriginalPreview(file) {
   const request = ++gifPreviewRequest;
   const img = document.getElementById("gifOriginalPreview");
-  if (!(img instanceof HTMLImageElement)) throw new Error("GIF 预览图片元素不可用。");
+  if (!(img instanceof HTMLImageElement)) throw new LocalizedError(() => tr("GIF 预览图片元素不可用。"));
   const header = new Uint8Array(await file.slice(0, 6).arrayBuffer());
   if (request !== gifPreviewRequest) return false;
   const signature = String.fromCharCode(...header);
@@ -122,7 +123,7 @@ async function setGifOriginalPreview(file) {
     img.removeAttribute("src");
     if (gifOriginalUrl) URL.revokeObjectURL(gifOriginalUrl);
     gifOriginalUrl = undefined;
-    throw new Error("文件内容不是有效的 GIF，请重新选择 GIF 动图。");
+    throw new LocalizedError(() => tr("文件内容不是有效的 GIF，请重新选择 GIF 动图。"));
   }
   // 固定图片 MIME，文件字节不变，避免按上传文件声明的文档类型解释。
   const imageBlob = file.slice(0, file.size, "image/gif");
@@ -133,24 +134,27 @@ async function setGifOriginalPreview(file) {
   return true;
 }
 
-function nowText() {
-  return new Intl.DateTimeFormat("zh-CN", {
+function nowText(date = new Date()) {
+  return new Intl.DateTimeFormat(getLanguage(), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit"
-  }).format(new Date());
+  }).format(date);
 }
 
+let serialLogStarted = false;
+let writeLogStarted = false;
 function appendLog(text) {
-  if (serialLog.textContent === "等待连接设备串口...") serialLog.textContent = "";
+  if (!serialLogStarted) { serialLog.textContent = ""; serialLogStarted = true; }
   serialLog.textContent += text;
   serialLog.scrollTop = serialLog.scrollHeight;
-  lastLineTime.textContent = nowText();
+  const receivedAt = new Date();
+  setText(lastLineTime, () => nowText(receivedAt));
 }
 
 function appendWriteLog(text) {
   const log = $("#writeLog");
-  if (log.textContent.startsWith("生成资源包后")) log.textContent = "";
+  if (!writeLogStarted) { log.textContent = ""; writeLogStarted = true; }
   log.textContent += text;
   log.scrollTop = log.scrollHeight;
 }
@@ -164,7 +168,7 @@ function formatBytes(bytes) {
 function setProgress(prefix, written, total) {
   const percent = total ? Math.min(100, Math.round(written / total * 100)) : 0;
   $(`#${prefix}Progress`).value = percent;
-  $(`#${prefix}Percent`).textContent = `${percent}%`;
+  setText($(`#${prefix}Percent`), () => `${percent}%`);
 }
 
 function updateAssetWriteButtons() {
@@ -176,13 +180,13 @@ function updateAssetWriteButtons() {
 
 function setSerialSupport() {
   if ("serial" in navigator) {
-    serialSupport.textContent = "Web Serial 可用";
+    setText(serialSupport, () => tr("Web Serial 可用"));
     serialSupport.classList.add("is-ok");
     updateAssetWriteButtons();
     refreshFirmwareTargetState();
     return;
   }
-  serialSupport.textContent = "浏览器不支持串口";
+  setText(serialSupport, () => tr("浏览器不支持串口"));
   serialSupport.classList.add("is-warn");
   connectSerialBtn.disabled = true;
   $("#selectAssetDeviceBtn").disabled = true;
@@ -215,10 +219,10 @@ async function disconnectSerial() {
   reader = undefined;
   writer = undefined;
   port = undefined;
-  connectSerialBtn.textContent = "连接串口";
-  serialState.textContent = "未连接";
-  serialDevice.textContent = "未选择";
-  appendLog(`\n[${nowText()}] 串口已断开\n`);
+  setText(connectSerialBtn, () => tr("连接串口"));
+  setText(serialState, () => tr("未连接"));
+  setText(serialDevice, () => tr("未选择"));
+  appendLog(tr`\n[${nowText()}] 串口已断开\n`);
 }
 
 async function connectSerial() {
@@ -231,14 +235,14 @@ async function connectSerial() {
     await port.open({ baudRate: Number(baudRate.value) });
     writer = port.writable.getWriter();
     keepReading = true;
-    connectSerialBtn.textContent = "断开串口";
-    serialState.textContent = "已连接";
-    serialDevice.textContent = describePort(port);
-    appendLog(`[${nowText()}] 串口已连接：${describePort(port)}，波特率 ${baudRate.value}\n`);
+    setText(connectSerialBtn, () => tr("断开串口"));
+    setText(serialState, () => tr("已连接"));
+    setText(serialDevice, () => describePort(port));
+    appendLog(tr`[${nowText()}] 串口已连接：${describePort(port)}，波特率 ${baudRate.value}\n`);
     readSerialLoop();
   } catch (error) {
-    serialState.textContent = "连接失败";
-    appendLog(`[${nowText()}] 连接失败：${error.message}\n`);
+    setText(serialState, () => tr("连接失败"));
+    appendLog(tr`[${nowText()}] 连接失败：${error.message}\n`);
     port = undefined;
   }
 }
@@ -253,12 +257,12 @@ async function readSerialLoop() {
         if (done) break;
         if (value) {
           receivedBytes += value.byteLength;
-          rxBytes.textContent = formatBytes(receivedBytes);
+          setText(rxBytes, () => formatBytes(receivedBytes));
           appendLog(decoder.decode(value, { stream: true }));
         }
       }
     } catch (error) {
-      appendLog(`[${nowText()}] 读取中断：${error.message}\n`);
+      appendLog(tr`[${nowText()}] 读取中断：${error.message}\n`);
     } finally {
       reader.releaseLock();
       reader = undefined;
@@ -268,7 +272,7 @@ async function readSerialLoop() {
 
 async function sendSerialText(text) {
   if (!writer) {
-    appendLog(`[${nowText()}] 尚未连接串口，未发送：${text}\n`);
+    appendLog(tr`[${nowText()}] 尚未连接串口，未发送：${text}\n`);
     return false;
   }
   const payload = text.endsWith("\n") ? text : `${text}\n`;
@@ -455,7 +459,7 @@ async function loadImageBitmapFromFile(file) {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("图片读取失败"));
+      reject(new LocalizedError(() => tr("图片读取失败")));
     };
     img.src = url;
   });
@@ -528,7 +532,7 @@ class GifByteReader {
   }
 
   readByte() {
-    if (this.offset >= this.data.length) throw new Error("GIF 文件不完整");
+    if (this.offset >= this.data.length) throw new LocalizedError(() => tr("GIF 文件不完整"));
     return this.data[this.offset++];
   }
 
@@ -539,7 +543,7 @@ class GifByteReader {
   }
 
   readBytes(length) {
-    if (this.offset + length > this.data.length) throw new Error("GIF 文件不完整");
+    if (this.offset + length > this.data.length) throw new LocalizedError(() => tr("GIF 文件不完整"));
     const value = this.data.slice(this.offset, this.offset + length);
     this.offset += length;
     return value;
@@ -573,7 +577,7 @@ class GifByteReader {
       const size = this.readByte();
       if (size === 0) break;
       this.offset += size;
-      if (this.offset > this.data.length) throw new Error("GIF 文件不完整");
+      if (this.offset > this.data.length) throw new LocalizedError(() => tr("GIF 文件不完整"));
     }
   }
 }
@@ -629,7 +633,7 @@ function decodeGifLzw(minCodeSize, data, expectedLength) {
     } else if (previous) {
       entry = previous.concat(previous[0]);
     } else {
-      throw new Error("GIF LZW 数据无效");
+      throw new LocalizedError(() => tr("GIF LZW 数据无效"));
     }
 
     output.push(...entry);
@@ -664,7 +668,7 @@ function deinterlaceGifPixels(pixels, width, height) {
 async function decodeGifFramesLocally(bytes) {
   const reader = new GifByteReader(bytes);
   const signature = reader.readString(6);
-  if (signature !== "GIF87a" && signature !== "GIF89a") throw new Error("不是有效的 GIF 文件");
+  if (signature !== "GIF87a" && signature !== "GIF89a") throw new LocalizedError(() => tr("不是有效的 GIF 文件"));
 
   const logicalWidth = reader.readUnsigned();
   const logicalHeight = reader.readUnsigned();
@@ -704,7 +708,7 @@ async function decodeGifFramesLocally(bytes) {
       continue;
     }
 
-    if (introducer !== 0x2c) throw new Error("GIF 块格式无效");
+    if (introducer !== 0x2c) throw new LocalizedError(() => tr("GIF 块格式无效"));
 
     const left = reader.readUnsigned();
     const top = reader.readUnsigned();
@@ -743,23 +747,23 @@ async function decodeGifFramesLocally(bytes) {
     gce = { disposal: 0, durationMs: 100, transparentIndex: undefined };
   }
 
-  if (!frames.length) throw new Error("GIF 没有可解码帧");
+  if (!frames.length) throw new LocalizedError(() => tr("GIF 没有可解码帧"));
   return sampleGifTimeline(frames, GIF_FRAMES);
 }
 
 async function convertGif({ realtime = false } = {}) {
   const file = $("#gifInput").files?.[0];
   if (!file) {
-    $("#assetResult").textContent = "请先选择一个 GIF 文件。";
+    setText($("#assetResult"), () => tr("请先选择一个 GIF 文件。"));
     return;
   }
   if (file.type !== "image/gif" && !file.name.toLowerCase().endsWith(".gif")) {
-    $("#assetResult").textContent = "动图区域只支持 GIF 文件。";
+    setText($("#assetResult"), () => tr("动图区域只支持 GIF 文件。"));
     return;
   }
 
   if (!await setGifOriginalPreview(file)) return;
-  $("#assetResult").textContent = realtime ? "正在实时更新 GIF 预览..." : "正在解析并转换 GIF...";
+  setText($("#assetResult"), () => realtime ? tr("正在实时更新 GIF 预览...") : tr("正在解析并转换 GIF..."));
   const frames = await getGifFrames(file);
   const source = $("#gifSourceCanvas");
   const preview = $("#gifPreviewCanvas");
@@ -790,8 +794,8 @@ async function convertGif({ realtime = false } = {}) {
   startGifPreview(previewFrames);
   invalidateGeneratedAssets();
   const density = Math.round(blackBits / (GIF_WIDTH * GIF_HEIGHT * GIF_FRAMES) * 100);
-  const warning = blackBits === 0 ? "当前转换结果没有黑色像素，请尝试调高阈值或开启反色。" : "右侧预览正在循环播放转换后的效果。";
-  $("#assetResult").textContent = `GIF 已转换：${GIF_WIDTH}×${GIF_HEIGHT}，按完整播放区间均匀抽取 ${GIF_FRAMES} 帧，整帧连续 bitstream，${formatBytes(payload.byteLength)}，黑色像素约 ${density}%。${warning}`;
+  const warning = () => blackBits === 0 ? tr("当前转换结果没有黑色像素，请尝试调高阈值或开启反色。") : tr("右侧预览正在循环播放转换后的效果。");
+  setText($("#assetResult"), () => tr`GIF 已转换：${GIF_WIDTH}×${GIF_HEIGHT}，按完整播放区间均匀抽取 ${GIF_FRAMES} 帧，整帧连续 bitstream，${formatBytes(payload.byteLength)}，黑色像素约 ${density}%。${warning()}`);
   if (!realtime) hintNextStep("#buildAssetsBtn");
 }
 
@@ -804,7 +808,7 @@ async function previewSelectedGif() {
   gifFrameCacheFile = undefined;
   gifFrameCacheFrames = undefined;
   if (file.type !== "image/gif" && !file.name.toLowerCase().endsWith(".gif")) {
-    $("#assetResult").textContent = "动图区域只支持 GIF 文件。";
+    setText($("#assetResult"), () => tr("动图区域只支持 GIF 文件。"));
     return;
   }
   if (!await setGifOriginalPreview(file)) return;
@@ -815,17 +819,17 @@ async function previewSelectedGif() {
   const previewCtx = preview.getContext("2d", { willReadFrequently: true });
   drawFittedImage(sourceCtx, frames[0], $("#gifFit").value, GIF_WIDTH, GIF_HEIGHT);
   previewCtx.clearRect(0, 0, GIF_WIDTH, GIF_HEIGHT);
-  $("#assetResult").textContent = `已载入 GIF：${file.name}。点击“转换 GIF”查看 1-bit 动图预览。`;
+  setText($("#assetResult"), () => tr`已载入 GIF：${file.name}。点击“转换 GIF”查看 1-bit 动图预览。`);
   hintNextStep("#previewGifBtn");
 }
 
 async function convertImages() {
   const files = getSelectedImageFiles();
   if (files.length === 0) {
-    $("#assetResult").textContent = "请先选择静图文件。";
+    setText($("#assetResult"), () => tr("请先选择静图文件。"));
     return;
   }
-  $("#assetResult").textContent = "正在转换静图...";
+  setText($("#assetResult"), () => tr("正在转换静图..."));
   convertedImages = [];
   const source = $("#imageSourceCanvas");
   const preview = $("#imagePreviewCanvas");
@@ -847,7 +851,7 @@ async function convertImages() {
   updateImageList(files);
   await previewSelectedImages({ keepConverted: true });
   invalidateGeneratedAssets();
-  $("#assetResult").textContent = `静图已转换：${convertedImages.length} 张，每张 ${IMAGE_WIDTH}×${IMAGE_HEIGHT}。预览显示第 ${selectedImagePreviewIndex + 1} 张。`;
+  setText($("#assetResult"), () => tr`静图已转换：${convertedImages.length} 张，每张 ${IMAGE_WIDTH}×${IMAGE_HEIGHT}。预览显示第 ${selectedImagePreviewIndex + 1} 张。`);
   hintNextStep("#buildAssetsBtn");
 }
 
@@ -859,10 +863,10 @@ function updateSummaryNoteForImages(files = getSelectedImageFiles()) {
   const note = $("#summaryNote");
   if (!note) return;
   if (files.length === 0) {
-    note.textContent = DEFAULT_SUMMARY_NOTE;
+    setText(note, () => tr(DEFAULT_SUMMARY_NOTE));
     return;
   }
-  note.textContent = `已选择 ${files.length} 张静图，最多会转换前 ${MAX_IMAGES} 张。当前预览第 ${selectedImagePreviewIndex + 1} 张，点击“转换静图”查看 1-bit 预览。`;
+  setText(note, () => tr`已选择 ${files.length} 张静图，最多会转换前 ${MAX_IMAGES} 张。当前预览第 ${selectedImagePreviewIndex + 1} 张，点击“转换静图”查看 1-bit 预览。`);
 }
 
 function updateImagePreviewSelect(files) {
@@ -872,7 +876,7 @@ function updateImagePreviewSelect(files) {
     select.disabled = true;
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "尚未选择静图";
+    setText(option, () => tr("尚未选择静图"));
     select.appendChild(option);
     return;
   }
@@ -880,7 +884,7 @@ function updateImagePreviewSelect(files) {
   files.forEach((file, index) => {
     const option = document.createElement("option");
     option.value = String(index);
-    option.textContent = `${index + 1}. ${file.name}`;
+    setText(option, () => `${index + 1}. ${file.name}`);
     select.appendChild(option);
   });
   selectedImagePreviewIndex = Math.min(selectedImagePreviewIndex, files.length - 1);
@@ -889,15 +893,15 @@ function updateImagePreviewSelect(files) {
 
 function updateImageList(files) {
   if (files.length === 0) {
-    $("#imageList").textContent = "尚未选择静图。";
+    setText($("#imageList"), () => tr("尚未选择静图。"));
     updateSummaryNoteForImages(files);
     return;
   }
   const converted = new Set(convertedImages.map((item) => item.index));
-  $("#imageList").textContent = files.map((file, index) => {
-    const suffix = converted.has(index) ? "已转换" : "待转换";
+  setText($("#imageList"), () => files.map((file, index) => {
+    const suffix = converted.has(index) ? tr("已转换") : tr("待转换");
     return `${index + 1}. ${file.name} / ${suffix}`;
-  }).join("\n");
+  }).join("\n"));
 }
 
 function invalidateGeneratedAssets() {
@@ -906,7 +910,7 @@ function invalidateGeneratedAssets() {
   $("#assetReadyNotice").hidden = true;
   $("#downloadAssetsBtn").disabled = true;
   $("#writeAssetsBtn").disabled = true;
-  $("#assetWriteState").textContent = "等待资源包";
+  setText($("#assetWriteState"), () => tr("等待资源包"));
 }
 
 function clearGifConversion() {
@@ -915,7 +919,7 @@ function clearGifConversion() {
   invalidateGeneratedAssets();
   const preview = $("#gifPreviewCanvas");
   preview.getContext("2d", { willReadFrequently: true }).clearRect(0, 0, GIF_WIDTH, GIF_HEIGHT);
-  $("#assetResult").textContent = "已清除 GIF 转换结果。已选择的 GIF 文件仍保留，可重新转换。";
+  setText($("#assetResult"), () => tr("已清除 GIF 转换结果。已选择的 GIF 文件仍保留，可重新转换。"));
 }
 
 function clearImageConversions() {
@@ -926,14 +930,14 @@ function clearImageConversions() {
   const files = getSelectedImageFiles();
   updateImageList(files);
   updateSummaryNoteForImages(files);
-  $("#assetResult").textContent = "已清除静图转换结果。已选择的静图文件仍保留，可重新转换。";
+  setText($("#assetResult"), () => tr("已清除静图转换结果。已选择的静图文件仍保留，可重新转换。"));
 }
 
 async function updateSelectedImageRealtimePreview({ clearConverted = true, message = true } = {}) {
   const files = getSelectedImageFiles();
   if (files.length === 0) {
     updateImagePreviewSelect(files);
-    $("#imageList").textContent = "尚未选择静图。";
+    setText($("#imageList"), () => tr("尚未选择静图。"));
     return;
   }
   if (clearConverted) {
@@ -957,7 +961,7 @@ async function updateSelectedImageRealtimePreview({ clearConverted = true, messa
   updateImageList(files);
   updateSummaryNoteForImages(files);
   if (message) {
-    $("#assetResult").textContent = `已按当前参数实时预览第 ${selectedImagePreviewIndex + 1} 张。若要写入设备，请重新点击“转换静图”生成全部静图资源。`;
+    setText($("#assetResult"), () => tr`已按当前参数实时预览第 ${selectedImagePreviewIndex + 1} 张。若要写入设备，请重新点击“转换静图”生成全部静图资源。`);
   }
 }
 
@@ -969,7 +973,7 @@ async function previewSelectedImages({ keepConverted = false } = {}) {
   const files = getSelectedImageFiles();
   if (files.length === 0) {
     updateImagePreviewSelect(files);
-    $("#imageList").textContent = "尚未选择静图。";
+    setText($("#imageList"), () => tr("尚未选择静图。"));
     updateSummaryNoteForImages(files);
     return;
   }
@@ -996,7 +1000,7 @@ async function previewSelectedImages({ keepConverted = false } = {}) {
   updateImageList(files);
   updateSummaryNoteForImages(files);
   if (!keepConverted) {
-    $("#assetResult").textContent = "已载入静图，点击“转换静图”查看 1-bit 预览。";
+    setText($("#assetResult"), () => tr("已载入静图，点击“转换静图”查看 1-bit 预览。"));
     hintNextStep("#previewImagesBtn");
   }
 }
@@ -1027,11 +1031,11 @@ function normalizeWeatherCityInput() {
   const value = ($("#customWeatherCity")?.value || "").trim();
   if (!value) return "";
   if (/[&=?#%/\\<>"'`]/.test(value) || /[\u0000-\u001F\u007F]/.test(value)) {
-    throw new Error("天气城市包含不支持的字符，请直接填写城市名，例如：杭州。");
+    throw new LocalizedError(() => tr("天气城市包含不支持的字符，请直接填写城市名，例如：杭州。"));
   }
   const bytes = utf8Bytes(value);
   if (bytes.byteLength > MAX_WEATHER_CITY_BYTES) {
-    throw new Error(`天气城市过长，UTF-8 编码后不能超过 ${MAX_WEATHER_CITY_BYTES} 字节。`);
+    throw new LocalizedError(() => tr`天气城市过长，UTF-8 编码后不能超过 ${MAX_WEATHER_CITY_BYTES} 字节。`);
   }
   return value;
 }
@@ -1043,10 +1047,10 @@ function normalizeOtaManifestInput() {
   try {
     url = new URL(value);
   } catch (_error) {
-    throw new Error("自定义 OTA 服务器必须是 http 或 https 地址。");
+    throw new LocalizedError(() => tr("自定义 OTA 服务器必须是 http 或 https 地址。"));
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("自定义 OTA 服务器只支持 http 或 https。");
+    throw new LocalizedError(() => tr("自定义 OTA 服务器只支持 http 或 https。"));
   }
   if (!url.pathname.endsWith(".json")) {
     url.pathname = `${url.pathname.replace(/\/+$/, "")}/firmware/latest.json`;
@@ -1056,7 +1060,7 @@ function normalizeOtaManifestInput() {
   const normalized = url.toString();
   const bytes = utf8Bytes(normalized);
   if (bytes.byteLength > MAX_OTA_MANIFEST_URL_BYTES) {
-    throw new Error(`自定义 OTA 地址过长，不能超过 ${MAX_OTA_MANIFEST_URL_BYTES} 字节。`);
+    throw new LocalizedError(() => tr`自定义 OTA 地址过长，不能超过 ${MAX_OTA_MANIFEST_URL_BYTES} 字节。`);
   }
   return normalized;
 }
@@ -1088,7 +1092,7 @@ function buildAssetPackage() {
   try {
     configEntries = collectCustomConfigEntries();
   } catch (error) {
-    $("#assetResult").textContent = error.message;
+    setText($("#assetResult"), () => error.message);
     return;
   }
   const entries = [];
@@ -1096,7 +1100,7 @@ function buildAssetPackage() {
   entries.push(...convertedImages);
   entries.push(...configEntries);
   if (entries.length === 0) {
-    $("#assetResult").textContent = "请先转换 GIF、静图，或填写至少一项兜底配置。";
+    setText($("#assetResult"), () => tr("请先转换 GIF、静图，或填写至少一项兜底配置。"));
     return;
   }
 
@@ -1104,7 +1108,7 @@ function buildAssetPackage() {
   const payloadSize = entries.reduce((sum, entry) => sum + entry.data.byteLength, 0);
   const totalSize = headerSize + payloadSize;
   if (totalSize > MAX_ASSETS_SIZE) {
-    $("#assetResult").textContent = `资源包超过 WCA1 资源包上限：${formatBytes(totalSize)} / ${formatBytes(MAX_ASSETS_SIZE)}。`;
+    setText($("#assetResult"), () => tr`资源包超过 WCA1 资源包上限：${formatBytes(totalSize)} / ${formatBytes(MAX_ASSETS_SIZE)}。`);
     return;
   }
 
@@ -1150,14 +1154,14 @@ function buildAssetPackage() {
       fileSize: generatedAssetPackage.byteLength
     });
     assetPartitionVerified = Boolean(assetPartition && isAssetsPartition(assetPartition) && generatedAssetPackage.byteLength <= assetPartition.size);
-    $("#assetPartitionState").textContent = assetPartitionVerified ? "通过" : "未通过";
+    setText($("#assetPartitionState"), () => assetPartitionVerified ? tr("通过") : tr("未通过"));
   }
   $("#downloadAssetsBtn").disabled = false;
   updateAssetWriteButtons();
-  $("#assetResult").textContent = `资源包已生成：${entries.length} 个资源，${formatBytes(totalSize)}。已准备好进行资源写入；也可在此下载 BIN 留存。`;
-  $("#assetReadyMessage").textContent = `资源包已生成（${entries.length} 项，${formatBytes(totalSize)}），尚未写入设备。可继续处理图片；全部准备好后，点击“前往资源写入”，核对设备后完成写入。`;
+  setText($("#assetResult"), () => tr`资源包已生成：${entries.length} 个资源，${formatBytes(totalSize)}。已准备好进行资源写入；也可在此下载 BIN 留存。`);
+  setText($("#assetReadyMessage"), () => tr`资源包已生成（${entries.length} 项，${formatBytes(totalSize)}），尚未写入设备。可继续处理图片；全部准备好后，点击“前往资源写入”，核对设备后完成写入。`);
   $("#assetReadyNotice").hidden = false;
-  $("#assetWriteState").textContent = `资源包已就绪：${formatBytes(totalSize)}。下一步：① 选择并核对设备，再点击② 串口写入资源。`;
+  setText($("#assetWriteState"), () => tr`资源包已就绪：${formatBytes(totalSize)}。下一步：① 选择并核对设备，再点击② 串口写入资源。`);
   hintNextStep("#goToWriterBtn");
 }
 
@@ -1254,7 +1258,7 @@ function selectedRemoteFirmwareImage(kind = "merged") {
 function makeAppTarget(partitions, value, label) {
   return {
     value,
-    label: `${partitions.map((partition) => `${hex(partition.address)}：${partition.label}`).join(" + ")} ${label}`,
+    get label() { return `${partitions.map((partition) => `${hex(partition.address)}: ${partition.label}`).join(" + ")} ${tr(label)}`; },
     kind: "app",
     partitions,
     remoteImage: "app"
@@ -1267,7 +1271,7 @@ function renderFirmwareTargets() {
   select.textContent = "";
   const mergedOption = document.createElement("option");
   mergedOption.value = MERGED_TARGET.value;
-  mergedOption.textContent = MERGED_TARGET.label;
+  setText(mergedOption, () => MERGED_TARGET.label);
   select.appendChild(mergedOption);
 
   const ota0 = firmwarePartitions.find((partition) => partition.label === "ota_0" && isAppPartition(partition));
@@ -1280,7 +1284,7 @@ function renderFirmwareTargets() {
   firmwareAppTargets.forEach((target) => {
     const option = document.createElement("option");
     option.value = target.value;
-    option.textContent = target.label;
+    setText(option, () => target.label);
     select.appendChild(option);
   });
   select.value = [...firmwareAppTargets, MERGED_TARGET].some((target) => target.value === previous) ? previous : "merged";
@@ -1329,11 +1333,11 @@ function isLocalFirmwareFileAllowed(file, target = currentFirmwareTarget()) {
 }
 
 function firmwareTargetHint(target = currentFirmwareTarget()) {
-  if (target.kind === "merged") return "完整 merged 固件只能写入 0x0。首次迁移到 v1.5.x 分区表时必须使用 merged。";
+  if (target.kind === "merged") return tr("完整 merged 固件只能写入 0x0。首次迁移到 v1.5.x 分区表时必须使用 merged。");
   const sizes = target.partitions.map((partition) => `${partition.label} ${hex(partition.address)} / ${formatBytes(partition.size)}`).join("，");
   return firmwareDevicePort
-    ? `App 固件只允许写入读取到的 ${sizes}。`
-    : "App 分区写入前必须先选择设备并读取分区表。";
+    ? tr`App 固件只允许写入读取到的 ${sizes}。`
+    : tr("App 分区写入前必须先选择设备并读取分区表。");
 }
 
 function refreshFirmwareTargetState() {
@@ -1354,12 +1358,12 @@ function refreshFirmwareTargetState() {
   const file = $("#firmwareInput").files?.[0];
   selectedFirmware = file ? { name: file.name, size: file.size, source: "local", file } : undefined;
   setFirmwareReady(Boolean(selectedFirmware && isLocalFirmwareFileAllowed(file, target) && isFirmwareTargetReady(target, file?.size || 0)));
-  $("#firmwareWriteState").textContent = selectedFirmware
+  setText($("#firmwareWriteState"), () => selectedFirmware
     ? `${selectedFirmware.name} / ${formatBytes(selectedFirmware.size)}`
-    : "等待固件文件";
-  $("#flashResult").textContent = selectedFirmware
-    ? `已选择自定义固件文件。${firmwareTargetHint(target)}${target.kind === "app" && !isFirmwareTargetReady(target, selectedFirmware.size) ? " 文件大小超过目标 App 分区或尚未读取分区表。" : ""}`
-    : firmwareTargetHint(target);
+    : tr("等待固件文件"));
+  setText($("#flashResult"), () => selectedFirmware
+    ? tr`已选择自定义固件文件。${firmwareTargetHint(target)}${target.kind === "app" && !isFirmwareTargetReady(target, selectedFirmware.size) ? tr(" 文件大小超过目标 App 分区或尚未读取分区表。") : ""}`
+    : firmwareTargetHint(target));
   updateFirmwareWriteButton();
 }
 
@@ -1370,8 +1374,8 @@ function setRemoteFirmwareManifest(index = 0, note = "") {
   setFirmwareReady(false);
   setProgress("firmwareWrite", 0, 100);
   if (!remoteFirmwareManifest) {
-    $("#firmwareWriteState").textContent = "在线固件加载失败";
-    $("#flashResult").textContent = "未找到可用的 GitHub Release 固件版本。";
+    setText($("#firmwareWriteState"), () => tr("在线固件加载失败"));
+    setText($("#flashResult"), () => tr("未找到可用的 GitHub Release 固件版本。"));
     return;
   }
   $("#remoteFirmwareSelect").value = String(remoteFirmwareOptions.indexOf(remoteFirmwareManifest));
@@ -1380,14 +1384,14 @@ function setRemoteFirmwareManifest(index = 0, note = "") {
   const merged = selectedRemoteFirmwareImage("merged");
   const app = selectedRemoteFirmwareImage("app");
   updateFirmwareDownloadButton();
-  $("#firmwareWriteState").textContent = firmwareImage
-    ? `在线固件：${remoteFirmwareManifest.version} / ${target.kind === "merged" ? "merged" : "OTA app"} ${formatBytes(firmwareImage.size)}`
-    : "当前目标没有可用在线固件";
-  const notes = remoteFirmwareManifest.notes ? `说明：${remoteFirmwareManifest.notes}。` : "";
+  setText($("#firmwareWriteState"), () => firmwareImage
+    ? tr`在线固件：${remoteFirmwareManifest.version} / ${target.kind === "merged" ? "merged" : "OTA app"} ${formatBytes(firmwareImage.size)}`
+    : tr("当前目标没有可用在线固件"));
+  const notes = () => remoteFirmwareManifest.notes ? tr`说明：${remoteFirmwareManifest.notes}。` : "";
   if (firmwareImage) {
-    $("#flashResult").textContent = `${note}已选择 GitHub Release 固件：${remoteFirmwareManifest.version}。当前目标：${target.label}。将自动下载 ${target.kind === "merged" ? "merged 完整固件" : "OTA app 固件"} ${truncateMiddle(firmwareImage.assetName)}，SHA-256 ${formatSha(firmwareImage.sha256)}。${merged && app ? `merged ${formatBytes(merged.size)}，app ${formatBytes(app.size)}。` : ""}${notes}${firmwareTargetHint(target)}点击“下载并校验固件”后，网页会在浏览器内完成下载与校验，通过后可直接烧录。`;
+    setText($("#flashResult"), () => tr`${note}已选择 GitHub Release 固件：${remoteFirmwareManifest.version}。当前目标：${target.label}。将自动下载 ${target.kind === "merged" ? tr("merged 完整固件") : tr("OTA app 固件")} ${truncateMiddle(firmwareImage.assetName)}，SHA-256 ${formatSha(firmwareImage.sha256)}。${merged && app ? `merged ${formatBytes(merged.size)}, app ${formatBytes(app.size)}. ` : ""}${notes()}${firmwareTargetHint(target)}点击“下载并校验固件”后，网页会在浏览器内完成下载与校验，通过后可直接烧录。`);
   } else {
-    $("#flashResult").textContent = `${note}已读取 GitHub Release 固件：${remoteFirmwareManifest.version}，但当前目标没有可用固件包。`;
+    setText($("#flashResult"), () => tr`${note}已读取 GitHub Release 固件：${remoteFirmwareManifest.version}，但当前目标没有可用固件包。`);
   }
 }
 
@@ -1400,8 +1404,8 @@ function renderRemoteFirmwareOptions(note = "") {
       ? `merged ${formatBytes(manifest.merged.size)}`
       : `OTA app ${formatBytes(manifest.app.size)}`;
     const assetName = manifest.merged?.assetName || manifest.app.assetName;
-    option.textContent = `${manifest.version} / ${truncateMiddle(assetName, 30)} / ${imageText}`;
-    option.title = `${manifest.version} / ${assetName}${manifest.notes ? ` / ${manifest.notes}` : ""}`;
+    setText(option, () => `${manifest.version} / ${truncateMiddle(assetName, 30)} / ${imageText}`);
+    setAttr(option, 'title', () => `${manifest.version} / ${assetName}${manifest.notes ? ` / ${manifest.notes}` : ""}`);
     $("#remoteFirmwareSelect").appendChild(option);
   });
   setRemoteFirmwareManifest(0, note);
@@ -1485,30 +1489,30 @@ function renderPartitionTable(partitions, { tbodyId, mode, fileSize = 0 } = {}) 
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 5;
-    cell.textContent = "未读取到有效分区表。";
+    setText(cell, () => tr("未读取到有效分区表。"));
     row.appendChild(cell);
     tbody.appendChild(row);
     return undefined;
   }
   partitions.forEach((partition) => {
     const row = document.createElement("tr");
-    let state = "-";
+    let state = () => "-";
     let rowState = "";
     if (mode === "assets" && partition.label === "assets") {
       const valid = isAssetsPartition(partition);
       const fits = !fileSize || fileSize <= partition.size;
-      state = valid
-        ? (fits ? `可写入 ${hex(partition.address)}` : `资源包过大：${formatBytes(fileSize)} / ${formatBytes(partition.size)}`)
-        : "不是 data / subtype 0x40";
+      state = () => valid
+        ? (fits ? tr`可写入 ${hex(partition.address)}` : tr`资源包过大：${formatBytes(fileSize)} / ${formatBytes(partition.size)}`)
+        : tr("不是 data / subtype 0x40");
       rowState = valid && fits ? "is-ok" : "is-warn";
     }
     if (mode === "firmware") {
       if (isAppPartition(partition)) {
         const fits = !fileSize || fileSize <= partition.size;
-        state = fits ? `App 可写入 ${hex(partition.address)}` : `App 过大：${formatBytes(fileSize)} / ${formatBytes(partition.size)}`;
+        state = () => fits ? tr`App 可写入 ${hex(partition.address)}` : tr`App 过大：${formatBytes(fileSize)} / ${formatBytes(partition.size)}`;
         rowState = fits ? "is-ok" : "is-warn";
       } else if (partition.label === "assets" || partition.label === "model" || partition.label === "nvs") {
-        state = "禁止 App 写入";
+        state = () => tr("禁止 App 写入");
         rowState = "is-warn";
       }
     }
@@ -1521,7 +1525,7 @@ function renderPartitionTable(partitions, { tbodyId, mode, fileSize = 0 } = {}) 
       state
     ].forEach((value) => {
       const cell = document.createElement("td");
-      cell.textContent = value;
+      setText(cell, () => typeof value === 'function' ? value() : value);
       row.appendChild(cell);
     });
     tbody.appendChild(row);
@@ -1532,32 +1536,32 @@ function renderPartitionTable(partitions, { tbodyId, mode, fileSize = 0 } = {}) 
 
 async function inspectAssetDevice() {
   if (!("serial" in navigator)) {
-    appendWriteLog("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。\n");
+    appendWriteLog(tr("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。\n"));
     return;
   }
   resetAssetDeviceState("核对中");
   $("#selectAssetDeviceBtn").disabled = true;
   setProgress("assetWrite", 0, 100);
-  appendWriteLog(`[${nowText()}] 请选择要写入资源的设备。\n`);
+  appendWriteLog(tr`[${nowText()}] 请选择要写入资源的设备。\n`);
   let transport;
   let selectedPort;
   try {
     const esptool = await importEsptool();
     selectedPort = await navigator.serial.requestPort();
     assetDevicePort = selectedPort;
-    $("#assetDeviceName").textContent = describePort(selectedPort);
-    appendWriteLog(`[${nowText()}] 已选择设备：${describePort(selectedPort)}\n`);
+    setText($("#assetDeviceName"), () => describePort(selectedPort));
+    appendWriteLog(tr`[${nowText()}] 已选择设备：${describePort(selectedPort)}\n`);
     const Transport = esptool.Transport;
     const ESPLoader = esptool.ESPLoader;
     transport = new Transport(selectedPort, true);
     const terminal = { clean: () => {}, writeLine: (line) => appendWriteLog(`${line}\n`), write: (text) => appendWriteLog(text) };
     const loader = new ESPLoader({ transport, baudrate: Number($("#assetBaudRate").value), terminal });
-    $("#assetWriteState").textContent = "连接并读取分区表";
+    setText($("#assetWriteState"), () => tr("连接并读取分区表"));
     const chipName = await loader.main();
     const macAddress = await loader.chip.readMac(loader);
-    $("#assetChipName").textContent = chipName || "已连接";
-    $("#assetMacAddress").textContent = macAddress || "-";
-    appendWriteLog(`[${nowText()}] 正在读取分区表 0x${PARTITION_TABLE_OFFSET.toString(16)}\n`);
+    setText($("#assetChipName"), () => chipName || tr("已连接"));
+    setText($("#assetMacAddress"), () => macAddress || "-");
+    appendWriteLog(tr`[${nowText()}] 正在读取分区表 0x${PARTITION_TABLE_OFFSET.toString(16)}\n`);
     const tableBytes = await loader.readFlash(PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE, (_chunk, read, total) => {
       setProgress("assetWrite", read, total);
     });
@@ -1569,17 +1573,17 @@ async function inspectAssetDevice() {
       fileSize: generatedAssetPackage?.byteLength || 0
     });
     assetPartitionVerified = Boolean(assetPartition && isAssetsPartition(assetPartition) && (!generatedAssetPackage || generatedAssetPackage.byteLength <= assetPartition.size));
-    $("#assetPartitionState").textContent = assetPartitionVerified ? "通过" : "未通过";
-    $("#assetWriteState").textContent = assetPartitionVerified ? "分区核对通过" : "分区核对未通过";
+    setText($("#assetPartitionState"), () => assetPartitionVerified ? tr("通过") : tr("未通过"));
+    setText($("#assetWriteState"), () => assetPartitionVerified ? tr("分区核对通过") : tr("分区核对未通过"));
     appendWriteLog(assetPartitionVerified
-      ? `[${nowText()}] 分区核对通过：assets ${hex(assetPartition.address)} / ${formatBytes(assetPartition.size)}\n`
-      : `[${nowText()}] 分区核对未通过：未找到 data/subtype 0x40 的 assets 分区，或资源包超过分区大小。\n`);
+      ? tr`[${nowText()}] 分区核对通过：assets ${hex(assetPartition.address)} / ${formatBytes(assetPartition.size)}\n`
+      : tr`[${nowText()}] 分区核对未通过：未找到 data/subtype 0x40 的 assets 分区，或资源包超过分区大小。\n`);
     await resetDeviceAfterFlash(transport, selectedPort, appendWriteLog);
   } catch (error) {
     assetPartitionVerified = false;
-    $("#assetPartitionState").textContent = "失败";
-    $("#assetWriteState").textContent = "设备核对失败";
-    appendWriteLog(`[${nowText()}] 设备核对失败：${error.message}\n`);
+    setText($("#assetPartitionState"), () => tr("失败"));
+    setText($("#assetWriteState"), () => tr("设备核对失败"));
+    appendWriteLog(tr`[${nowText()}] 设备核对失败：${error.message}\n`);
   } finally {
     updateAssetWriteButtons();
     $("#selectAssetDeviceBtn").disabled = !("serial" in navigator);
@@ -1598,22 +1602,22 @@ function resetFirmwareDeviceState(message = "未读取") {
   firmwareDevicePort = undefined;
   firmwarePartitions = [];
   firmwareAppTargets = [];
-  $("#firmwarePartitionState").textContent = message;
-  $("#firmwareDeviceName").textContent = "未选择";
-  $("#firmwareChipName").textContent = "等待读取";
-  $("#firmwareMacAddress").textContent = "-";
+  setText($("#firmwarePartitionState"), () => tr(message));
+  setText($("#firmwareDeviceName"), () => tr("未选择"));
+  setText($("#firmwareChipName"), () => tr("等待读取"));
+  setText($("#firmwareMacAddress"), () => "-");
   renderFirmwareTargets();
   refreshFirmwareTargetState();
 }
 
 async function inspectFirmwareDevice() {
   if (!("serial" in navigator)) {
-    $("#flashResult").textContent = "当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。";
+    setText($("#flashResult"), () => tr("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。"));
     return;
   }
   $("#selectFirmwareDeviceBtn").disabled = true;
-  $("#firmwarePartitionState").textContent = "读取中";
-  $("#firmwareWriteState").textContent = "连接并读取分区表";
+  setText($("#firmwarePartitionState"), () => tr("读取中"));
+  setText($("#firmwareWriteState"), () => tr("连接并读取分区表"));
   setProgress("firmwareWrite", 0, 100);
   let transport;
   let selectedPort;
@@ -1621,17 +1625,17 @@ async function inspectFirmwareDevice() {
     const esptool = await importEsptool();
     selectedPort = await navigator.serial.requestPort();
     firmwareDevicePort = selectedPort;
-    $("#firmwareDeviceName").textContent = describePort(selectedPort);
-    $("#flashResult").textContent = `已选择设备：${describePort(selectedPort)}。正在读取分区表...`;
+    setText($("#firmwareDeviceName"), () => describePort(selectedPort));
+    setText($("#flashResult"), () => tr`已选择设备：${describePort(selectedPort)}。正在读取分区表...`);
     const Transport = esptool.Transport;
     const ESPLoader = esptool.ESPLoader;
     transport = new Transport(selectedPort, true);
-    const terminal = { clean: () => {}, writeLine: (line) => { $("#flashResult").textContent = line; }, write: () => {} };
+    const terminal = { clean: () => {}, writeLine: (line) => { setText($("#flashResult"), () => line); }, write: () => {} };
     const loader = new ESPLoader({ transport, baudrate: Number($("#firmwareBaudRate").value), terminal });
     const chipName = await loader.main();
     const macAddress = await loader.chip.readMac(loader);
-    $("#firmwareChipName").textContent = chipName || "已连接";
-    $("#firmwareMacAddress").textContent = macAddress || "-";
+    setText($("#firmwareChipName"), () => chipName || tr("已连接"));
+    setText($("#firmwareMacAddress"), () => macAddress || "-");
     const tableBytes = await loader.readFlash(PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE, (_chunk, read, total) => {
       setProgress("firmwareWrite", read, total);
     });
@@ -1645,18 +1649,18 @@ async function inspectFirmwareDevice() {
     const ota0 = findOtaPartition(firmwarePartitions, "ota_0");
     const ota1 = findOtaPartition(firmwarePartitions, "ota_1");
     const appCount = [ota0, ota1].filter(Boolean).length;
-    $("#firmwarePartitionState").textContent = appCount ? `已读取 ${appCount} 个 App 槽` : "未找到 App 槽";
-    $("#firmwareWriteState").textContent = appCount ? "App 分区已读取" : "未找到 ota_0 / ota_1";
-    $("#flashResult").textContent = appCount
-      ? `分区表读取完成：${[ota0, ota1].filter(Boolean).map((partition) => `${partition.label} ${hex(partition.address)} / ${formatBytes(partition.size)}`).join("，")}。App 固件只能写入这些分区；merged 固件仍写入 0x0。`
-      : "分区表读取完成，但未找到 ota_0 或 ota_1，禁止 App 分区写入。";
-    await resetDeviceAfterFlash(transport, selectedPort, (text) => { $("#flashResult").textContent = text.trim() || $("#flashResult").textContent; });
+    setText($("#firmwarePartitionState"), () => appCount ? tr`已读取 ${appCount} 个 App 槽` : tr("未找到 App 槽"));
+    setText($("#firmwareWriteState"), () => appCount ? tr("App 分区已读取") : tr("未找到 ota_0 / ota_1"));
+    setText($("#flashResult"), () => appCount
+      ? tr`分区表读取完成：${[ota0, ota1].filter(Boolean).map((partition) => `${partition.label} ${hex(partition.address)} / ${formatBytes(partition.size)}`).join("，")}。App 固件只能写入这些分区；merged 固件仍写入 0x0。`
+      : tr("分区表读取完成，但未找到 ota_0 或 ota_1，禁止 App 分区写入。"));
+    await resetDeviceAfterFlash(transport, selectedPort, (text) => { setText($("#flashResult"), () => text.trim() || $("#flashResult").textContent); });
   } catch (error) {
     firmwareDevicePort = undefined;
     firmwarePartitions = [];
-    $("#firmwarePartitionState").textContent = "读取失败";
-    $("#firmwareWriteState").textContent = "设备读取失败";
-    $("#flashResult").textContent = `设备分区表读取失败：${error.message}`;
+    setText($("#firmwarePartitionState"), () => tr("读取失败"));
+    setText($("#firmwareWriteState"), () => tr("设备读取失败"));
+    setText($("#flashResult"), () => tr`设备分区表读取失败：${error.message}`);
     renderFirmwareTargets();
   } finally {
     refreshFirmwareTargetState();
@@ -1674,9 +1678,16 @@ async function inspectFirmwareDevice() {
   }
 }
 
+function showFirmwareOptionMessage(message) {
+  const option = document.createElement('option');
+  option.value = '';
+  setText(option, () => tr(message));
+  $("#remoteFirmwareSelect").replaceChildren(option);
+}
+
 async function loadRemoteFirmwareManifest() {
-  $("#remoteFirmwareSelect").innerHTML = `<option value="">正在加载 GitHub Release 镜像</option>`;
-  $("#firmwareWriteState").textContent = "正在加载在线固件清单";
+  showFirmwareOptionMessage("正在加载 GitHub Release 镜像");
+  setText($("#firmwareWriteState"), () => tr("正在加载在线固件清单"));
   $("#downloadFirmwareBtn").disabled = true;
   setFirmwareReady(false);
   verifiedFirmwareData = undefined;
@@ -1684,17 +1695,17 @@ async function loadRemoteFirmwareManifest() {
   remoteFirmwareOptions = [];
   try {
     const response = await fetch(`${FIRMWARE_RELEASES_MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`在线固件部署清单读取失败：HTTP ${response.status}`);
+    if (!response.ok) throw new LocalizedError(() => tr`在线固件部署清单读取失败：HTTP ${response.status}`);
     const manifest = await response.json();
-    if (!manifest || !Array.isArray(manifest.items)) throw new Error("在线固件部署清单格式异常。");
+    if (!manifest || !Array.isArray(manifest.items)) throw new LocalizedError(() => tr("在线固件部署清单格式异常。"));
     remoteFirmwareOptions = manifest.items.map((item) => normalizeFirmwareMirrorItem(item)).filter(Boolean).slice(0, 10);
-    if (remoteFirmwareOptions.length === 0) throw new Error("在线固件部署清单中没有通过大小和 SHA256 预检的固件。");
+    if (remoteFirmwareOptions.length === 0) throw new LocalizedError(() => tr("在线固件部署清单中没有通过大小和 SHA256 预检的固件。"));
     renderRemoteFirmwareOptions();
   } catch (error) {
     remoteFirmwareOptions = [];
-    $("#remoteFirmwareSelect").innerHTML = `<option value="">在线固件加载失败</option>`;
-    $("#firmwareWriteState").textContent = "在线固件加载失败";
-    $("#flashResult").textContent = `${error.message} 请稍后刷新，或切换为自定义固件文件。`;
+    showFirmwareOptionMessage("在线固件加载失败");
+    setText($("#firmwareWriteState"), () => tr("在线固件加载失败"));
+    setText($("#flashResult"), () => tr`${error.message} 请稍后刷新，或切换为自定义固件文件。`);
   }
 }
 
@@ -1706,12 +1717,12 @@ async function downloadRemoteFirmware() {
   const target = currentFirmwareTarget();
   const firmwareImage = target.remoteImage ? selectedRemoteFirmwareImage(target.remoteImage) : undefined;
   if (!firmwareImage) {
-    throw new Error("当前在线固件没有可下载的 app 包。");
+    throw new LocalizedError(() => tr("当前在线固件没有可下载的 app 包。"));
   }
-  $("#firmwareWriteState").textContent = "正在下载在线固件";
-  $("#flashResult").textContent = `正在下载 ${remoteFirmwareManifest.version} 的 ${target.label} 固件...`;
+  setText($("#firmwareWriteState"), () => tr("正在下载在线固件"));
+  setText($("#flashResult"), () => tr`正在下载 ${remoteFirmwareManifest.version} 的 ${target.label} 固件...`);
   const response = await fetch(firmwareImage.url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`固件下载失败：HTTP ${response.status}。可切换为自定义固件文件后手动选择 bin。`);
+  if (!response.ok) throw new LocalizedError(() => tr`固件下载失败：HTTP ${response.status}。可切换为自定义固件文件后手动选择 bin。`);
   const total = Number(response.headers.get("content-length")) || Number(firmwareImage.size) || 0;
   const chunks = [];
   let received = 0;
@@ -1723,7 +1734,7 @@ async function downloadRemoteFirmware() {
       chunks.push(value);
       received += value.byteLength;
       setProgress("firmwareWrite", received, total);
-      $("#firmwareWriteState").textContent = `下载中 ${formatBytes(received)} / ${total ? formatBytes(total) : "未知大小"}`;
+      setText($("#firmwareWriteState"), () => tr`下载中 ${formatBytes(received)} / ${total ? formatBytes(total) : tr("未知大小")}`);
     }
   } else {
     const buffer = await response.arrayBuffer();
@@ -1739,14 +1750,14 @@ async function downloadRemoteFirmware() {
   if (firmwareImage.size && data.byteLength !== Number(firmwareImage.size)) {
     verifiedFirmwareData = undefined;
     selectedFirmware = undefined;
-    throw new Error(`固件大小不匹配，已清除本次下载：${formatBytes(data.byteLength)} / ${formatBytes(Number(firmwareImage.size))}`);
+    throw Object.assign(new LocalizedError(() => tr`固件大小不匹配，已清除本次下载：${formatBytes(data.byteLength)} / ${formatBytes(Number(firmwareImage.size))}`), { code: 'firmware-size' });
   }
-  $("#firmwareWriteState").textContent = "正在校验 SHA-256";
+  setText($("#firmwareWriteState"), () => tr("正在校验 SHA-256"));
   const actualSha = await sha256Hex(data);
   if (actualSha.toLowerCase() !== firmwareImage.sha256.toLowerCase()) {
     verifiedFirmwareData = undefined;
     selectedFirmware = undefined;
-    throw new Error(`SHA-256 校验失败，已清除本次下载，请重新下载：${formatSha(actualSha)} != ${formatSha(firmwareImage.sha256)}`);
+    throw Object.assign(new LocalizedError(() => tr`SHA-256 校验失败，已清除本次下载，请重新下载：${formatSha(actualSha)} != ${formatSha(firmwareImage.sha256)}`), { code: 'firmware-hash' });
   }
   verifiedFirmwareData = data;
   selectedFirmware = {
@@ -1759,13 +1770,13 @@ async function downloadRemoteFirmware() {
   };
   setProgress("firmwareWrite", 100, 100);
   setFirmwareReady(isFirmwareTargetReady(target, data.byteLength));
-  $("#firmwareWriteState").textContent = `校验通过：${selectedFirmware.name}`;
+  setText($("#firmwareWriteState"), () => tr`校验通过：${selectedFirmware.name}`);
   renderPartitionTable(firmwarePartitions, {
     tbodyId: "firmwarePartitionTableBody",
     mode: "firmware",
     fileSize: data.byteLength
   });
-  $("#flashResult").textContent = `${target.label} 固件已下载并通过 SHA-256 校验：${formatSha(actualSha)}。${isFirmwareTargetReady(target, data.byteLength) ? `现在可以串口烧录到 ${firmwareTargetOffsetText(target)}。` : "目标 App 分区尚未读取或文件超过分区大小，禁止烧录。"}`;
+  setText($("#flashResult"), () => tr`${target.label} 固件已下载并通过 SHA-256 校验：${formatSha(actualSha)}。${isFirmwareTargetReady(target, data.byteLength) ? tr`现在可以串口烧录到 ${firmwareTargetOffsetText(target)}。` : tr("目标 App 分区尚未读取或文件超过分区大小，禁止烧录。")}`);
   hintNextStep("#writeFirmwareBtn");
 }
 
@@ -1773,7 +1784,7 @@ async function importEsptool() {
   try {
     return await import("./vendor/esptool-js/0.5.6/bundle.js");
   } catch (error) {
-    throw new Error(`烧录模块加载失败：${error?.message || "本地依赖不可用"}`);
+    throw new LocalizedError(() => tr`烧录模块加载失败：${error?.message || tr("本地依赖不可用")}`);
   }
 }
 
@@ -1806,7 +1817,7 @@ async function setSerialSignals(transport, device, signals) {
 }
 
 async function resetDeviceAfterFlash(transport, device, log) {
-  log("正在复位设备...\n");
+  log(tr("正在复位设备...\n"));
   try {
     await setSerialSignals(transport, device, { dataTerminalReady: false, requestToSend: false });
     await wait(80);
@@ -1814,15 +1825,15 @@ async function resetDeviceAfterFlash(transport, device, log) {
     await wait(120);
     await setSerialSignals(transport, device, { dataTerminalReady: false, requestToSend: false });
     await wait(250);
-    log("复位信号已发送。\n");
+    log(tr("复位信号已发送。\n"));
   } catch (error) {
-    log(`复位信号发送失败：${error.message}\n`);
-    log("如果设备没有自动启动，请短按 RST 或重新插拔 USB。\n");
+    log(tr`复位信号发送失败：${error.message}\n`);
+    log(tr("如果设备没有自动启动，请短按 RST 或重新插拔 USB。\n"));
   }
 }
 
 async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, percentId, progressId, log, eraseSize, devicePort }) {
-  if (!("serial" in navigator)) throw new Error("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。");
+  if (!("serial" in navigator)) throw new LocalizedError(() => tr("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。"));
   const esptool = await importEsptool();
   const device = devicePort || await navigator.serial.requestPort();
   const Transport = esptool.Transport;
@@ -1831,10 +1842,10 @@ async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, pe
   const terminal = { clean: () => {}, writeLine: (line) => log(`${line}\n`), write: (text) => log(text) };
   const loader = new ESPLoader({ transport, baudrate: Number(baudRateValue), terminal });
   try {
-    $(`#${stateId}`).textContent = "连接设备中";
-    log(`目标设备：${describePort(device)}\n`);
+    setText($(`#${stateId}`), () => tr("连接设备中"));
+    log(tr`目标设备：${describePort(device)}\n`);
     await loader.main();
-    $(`#${stateId}`).textContent = "写入中";
+    setText($(`#${stateId}`), () => tr("写入中"));
     const binary = data instanceof Uint8Array ? data : new Uint8Array(data);
     const binaryString = uint8ArrayToBinaryString(binary);
     const offsets = Array.isArray(offset) ? offset : [offset];
@@ -1848,17 +1859,17 @@ async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, pe
         progressByFile[fileIndex] = total ? Math.min(1, written / total) : 0;
         const percent = Math.min(100, Math.round(progressByFile.reduce((sum, value) => sum + value, 0) / offsets.length * 100));
         $(`#${progressId}`).value = percent;
-        $(`#${percentId}`).textContent = `${percent}%`;
+        setText($(`#${percentId}`), () => `${percent}%`);
         const targetText = offsets.length > 1 ? ` ${fileIndex + 1}/${offsets.length} ${hex(offsets[fileIndex])}` : "";
-        $(`#${stateId}`).textContent = `写入中${targetText} ${formatBytes(written)} / ${formatBytes(total)}`;
+        setText($(`#${stateId}`), () => tr`写入中${targetText} ${formatBytes(written)} / ${formatBytes(total)}`);
       }
     });
-    if (eraseSize) offsets.forEach((address) => log(`写入范围：${hex(address)} + ${formatBytes(eraseSize)}\n`));
+    if (eraseSize) offsets.forEach((address) => log(tr`写入范围：${hex(address)} + ${formatBytes(eraseSize)}\n`));
     $(`#${progressId}`).value = 100;
-    $(`#${percentId}`).textContent = "100%";
-    $(`#${stateId}`).textContent = "写入完成，正在复位";
+    setText($(`#${percentId}`), () => "100%");
+    setText($(`#${stateId}`), () => tr("写入完成，正在复位"));
     await resetDeviceAfterFlash(transport, device, log);
-    $(`#${stateId}`).textContent = "写入完成，设备已复位";
+    setText($(`#${stateId}`), () => tr("写入完成，设备已复位"));
   } finally {
     try {
       await transport.disconnect();
@@ -1870,22 +1881,22 @@ async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, pe
 
 async function writeAssets() {
   if (!generatedAssetPackage) {
-    appendWriteLog("请先生成资源包。\n");
+    appendWriteLog(tr("请先生成资源包。\n"));
     return;
   }
   if (!assetPartitionVerified || !assetDevicePort || !assetPartition) {
-    appendWriteLog("请先选择设备并核对分区表。\n");
+    appendWriteLog(tr("请先选择设备并核对分区表。\n"));
     return;
   }
   if (generatedAssetPackage.byteLength > assetPartition.size) {
-    appendWriteLog(`资源包超过 assets 分区大小：${formatBytes(generatedAssetPackage.byteLength)} / ${formatBytes(assetPartition.size)}。\n`);
+    appendWriteLog(tr`资源包超过 assets 分区大小：${formatBytes(generatedAssetPackage.byteLength)} / ${formatBytes(assetPartition.size)}。\n`);
     updateAssetWriteButtons();
     return;
   }
   setProgress("assetWrite", 0, 100);
   const sha = await sha256Hex(generatedAssetPackage);
-  appendWriteLog(`[${nowText()}] 写入确认：文件类型 custom_assets.bin，目标分区 assets，地址 ${hex(assetPartition.address)}，分区大小 ${formatBytes(assetPartition.size)}，文件大小 ${formatBytes(generatedAssetPackage.byteLength)}，SHA256 ${sha}\n`);
-  appendWriteLog(`[${nowText()}] 开始写入 custom_assets.bin 到 ${hex(assetPartition.address)}\n`);
+  appendWriteLog(tr`[${nowText()}] 写入确认：文件类型 custom_assets.bin，目标分区 assets，地址 ${hex(assetPartition.address)}，分区大小 ${formatBytes(assetPartition.size)}，文件大小 ${formatBytes(generatedAssetPackage.byteLength)}，SHA256 ${sha}\n`);
+  appendWriteLog(tr`[${nowText()}] 开始写入 custom_assets.bin 到 ${hex(assetPartition.address)}\n`);
   try {
     await writeBinaryWithEsptool({
       data: generatedAssetPackage,
@@ -1898,23 +1909,23 @@ async function writeAssets() {
       eraseSize: generatedAssetPackage.byteLength,
       devicePort: assetDevicePort
     });
-    appendWriteLog(`[${nowText()}] 资源写入完成。\n`);
+    appendWriteLog(tr`[${nowText()}] 资源写入完成。\n`);
   } catch (error) {
-    $("#assetWriteState").textContent = "写入失败";
-    appendWriteLog(`[${nowText()}] 写入失败：${error.message}\n`);
+    setText($("#assetWriteState"), () => tr("写入失败"));
+    appendWriteLog(tr`[${nowText()}] 写入失败：${error.message}\n`);
   }
 }
 
 async function eraseAssets() {
   if (!assetPartitionVerified || !assetDevicePort || !assetPartition) {
-    appendWriteLog("请先选择设备并核对分区表。\n");
+    appendWriteLog(tr("请先选择设备并核对分区表。\n"));
     return;
   }
   const erasedHeader = new Uint8Array(4096).fill(0xFF);
   setProgress("assetWrite", 0, 100);
   const sha = await sha256Hex(erasedHeader);
-  appendWriteLog(`[${nowText()}] 写入确认：文件类型 erased header，目标分区 assets，地址 ${hex(assetPartition.address)}，分区大小 ${formatBytes(assetPartition.size)}，文件大小 ${formatBytes(erasedHeader.byteLength)}，SHA256 ${sha}\n`);
-  appendWriteLog(`[${nowText()}] 开始清空资源分区头部 ${hex(assetPartition.address)}\n`);
+  appendWriteLog(tr`[${nowText()}] 写入确认：文件类型 erased header，目标分区 assets，地址 ${hex(assetPartition.address)}，分区大小 ${formatBytes(assetPartition.size)}，文件大小 ${formatBytes(erasedHeader.byteLength)}，SHA256 ${sha}\n`);
+  appendWriteLog(tr`[${nowText()}] 开始清空资源分区头部 ${hex(assetPartition.address)}\n`);
   try {
     await writeBinaryWithEsptool({
       data: erasedHeader,
@@ -1927,10 +1938,10 @@ async function eraseAssets() {
       eraseSize: erasedHeader.byteLength,
       devicePort: assetDevicePort
     });
-    appendWriteLog(`[${nowText()}] 资源分区已清空，设备会回退到内置素材。\n`);
+    appendWriteLog(tr`[${nowText()}] 资源分区已清空，设备会回退到内置素材。\n`);
   } catch (error) {
-    $("#assetWriteState").textContent = "清空失败";
-    appendWriteLog(`[${nowText()}] 清空失败：${error.message}\n`);
+    setText($("#assetWriteState"), () => tr("清空失败"));
+    appendWriteLog(tr`[${nowText()}] 清空失败：${error.message}\n`);
   }
 }
 
@@ -1938,7 +1949,7 @@ async function writeFirmware() {
   if (!selectedFirmware) return;
   const target = currentFirmwareTarget();
   if (target.kind === "app" && (!firmwareDevicePort || target.partitions.length === 0)) {
-    $("#flashResult").textContent = "App 分区写入前必须先选择设备并读取分区表，不能使用旧地址或静默兜底。";
+    setText($("#flashResult"), () => tr("App 分区写入前必须先选择设备并读取分区表，不能使用旧地址或静默兜底。"));
     setFirmwareReady(false);
     return;
   }
@@ -1946,31 +1957,31 @@ async function writeFirmware() {
   let sha;
   if (selectedFirmware.source === "remote") {
     if (!verifiedFirmwareData) {
-      $("#flashResult").textContent = "在线固件尚未下载并校验，请先点击“下载并校验固件”。";
+      setText($("#flashResult"), () => tr("在线固件尚未下载并校验，请先点击“下载并校验固件”。"));
       return;
     }
     data = verifiedFirmwareData;
     sha = selectedFirmware.sha256 || await sha256Hex(data);
   } else {
     if (!isLocalFirmwareFileAllowed(selectedFirmware.file)) {
-      $("#flashResult").textContent = "请选择 .bin 固件文件。";
+      setText($("#flashResult"), () => tr("请选择 .bin 固件文件。"));
       return;
     }
     data = new Uint8Array(await selectedFirmware.file.arrayBuffer());
     sha = await sha256Hex(data);
   }
   if (!isFirmwareTargetReady(target, data.byteLength)) {
-    $("#flashResult").textContent = target.kind === "app"
-      ? `禁止烧录：${selectedFirmware.name} 大小 ${formatBytes(data.byteLength)} 超过目标 App 分区，或尚未读取 ota_0/ota_1 分区表。`
-      : "禁止烧录：当前写入目标无效。";
+    setText($("#flashResult"), () => target.kind === "app"
+      ? tr`禁止烧录：${selectedFirmware.name} 大小 ${formatBytes(data.byteLength)} 超过目标 App 分区，或尚未读取 ota_0/ota_1 分区表。`
+      : tr("禁止烧录：当前写入目标无效。"));
     setFirmwareReady(false);
     return;
   }
-  $("#firmwareWriteState").textContent = `准备写入 ${selectedFirmware.name}`;
+  setText($("#firmwareWriteState"), () => tr`准备写入 ${selectedFirmware.name}`);
   const partitionText = target.kind === "merged"
-    ? "完整 merged 镜像"
+    ? tr("完整 merged 镜像")
     : target.partitions.map((partition) => `${partition.label} ${hex(partition.address)} / ${formatBytes(partition.size)}`).join("，");
-  $("#flashResult").textContent = `写入确认：文件类型 ${target.kind === "merged" ? "merged bin" : "OTA App bin"}；目标分区 ${partitionText}；实际地址 ${firmwareTargetOffsetText(target)}；分区大小 ${target.kind === "merged" ? "完整镜像写入 0x0" : target.partitions.map((partition) => formatBytes(partition.size)).join(" + ")}；文件大小 ${formatBytes(data.byteLength)}；SHA256 ${sha}`;
+  setText($("#flashResult"), () => tr`写入确认：文件类型 ${target.kind === "merged" ? "merged bin" : "OTA App bin"}；目标分区 ${partitionText}；实际地址 ${firmwareTargetOffsetText(target)}；分区大小 ${target.kind === "merged" ? tr("完整镜像写入 0x0") : target.partitions.map((partition) => formatBytes(partition.size)).join(" + ")}；文件大小 ${formatBytes(data.byteLength)}；SHA256 ${sha}`);
   try {
     await writeBinaryWithEsptool({
       data,
@@ -1979,14 +1990,14 @@ async function writeFirmware() {
       stateId: "firmwareWriteState",
       percentId: "firmwareWritePercent",
       progressId: "firmwareWriteProgress",
-      log: (text) => { if (text.trim()) $("#flashResult").textContent = text.trim(); },
+      log: (text) => { if (text.trim()) setText($("#flashResult"), () => text.trim()); },
       eraseSize: data.byteLength,
       devicePort: target.kind === "app" ? firmwareDevicePort : firmwareDevicePort
     });
-    $("#flashResult").textContent = `${target.label} 烧录完成，设备正在重启。`;
+    setText($("#flashResult"), () => tr`${target.label} 烧录完成，设备正在重启。`);
   } catch (error) {
-    $("#firmwareWriteState").textContent = "烧录失败";
-    $("#flashResult").textContent = `烧录失败：${error.message}`;
+    setText($("#firmwareWriteState"), () => tr("烧录失败"));
+    setText($("#flashResult"), () => tr`烧录失败：${error.message}`);
   }
 }
 
@@ -2013,15 +2024,15 @@ function bindTabs() {
 
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
-    cacheState.textContent = "当前浏览器不支持离线缓存";
+    setText(cacheState, () => tr("当前浏览器不支持离线缓存"));
     return;
   }
   try {
     const registration = await navigator.serviceWorker.register("./sw.js");
     await navigator.serviceWorker.ready;
-    cacheState.textContent = registration.active ? "离线缓存已启用" : "离线缓存已注册";
+    setText(cacheState, () => registration.active ? tr("离线缓存已启用") : tr("离线缓存已注册"));
   } catch (error) {
-    cacheState.textContent = `离线缓存失败：${error.message}`;
+    setText(cacheState, () => tr`离线缓存失败：${error.message}`);
   }
 }
 
@@ -2033,17 +2044,17 @@ renderFirmwareTargets();
 setSerialSupport();
 registerServiceWorker();
 loadRemoteFirmwareManifest().catch((error) => {
-  $("#remoteFirmwareSelect").innerHTML = `<option value="">在线固件加载失败</option>`;
-  $("#firmwareWriteState").textContent = "在线固件加载失败";
-  $("#flashResult").textContent = error.message;
+  showFirmwareOptionMessage("在线固件加载失败");
+  setText($("#firmwareWriteState"), () => tr("在线固件加载失败"));
+  setText($("#flashResult"), () => error.message);
 });
 
 connectSerialBtn.addEventListener("click", connectSerial);
 clearLogBtn.addEventListener("click", () => {
   serialLog.textContent = "";
   receivedBytes = 0;
-  rxBytes.textContent = "0 B";
-  lastLineTime.textContent = "-";
+  setText(rxBytes, () => "0 B");
+  setText(lastLineTime, () => "-");
 });
 saveLogBtn.addEventListener("click", downloadLog);
 sendForm.addEventListener("submit", async (event) => {
@@ -2058,7 +2069,7 @@ function scheduleGifRealtimePreview() {
   if (!$("#gifInput").files?.[0]) return;
   clearTimeout(gifRealtimeTimer);
   gifRealtimeTimer = setTimeout(() => {
-    convertGif({ realtime: true }).catch((error) => { $("#assetResult").textContent = `GIF 实时预览失败：${error.message}`; });
+    convertGif({ realtime: true }).catch((error) => { setText($("#assetResult"), () => tr`GIF 实时预览失败：${error.message}`); });
   }, 220);
 }
 
@@ -2066,28 +2077,28 @@ function scheduleImageRealtimePreview() {
   if (getSelectedImageFiles().length === 0) return;
   clearTimeout(imageRealtimeTimer);
   imageRealtimeTimer = setTimeout(() => {
-    updateSelectedImageRealtimePreview().catch((error) => { $("#assetResult").textContent = `静图实时预览失败：${error.message}`; });
+    updateSelectedImageRealtimePreview().catch((error) => { setText($("#assetResult"), () => tr`静图实时预览失败：${error.message}`); });
   }, 120);
 }
 
 $("#gifThreshold").addEventListener("input", () => {
-  $("#gifThresholdValue").textContent = $("#gifThreshold").value;
+  setText($("#gifThresholdValue"), () => $("#gifThreshold").value);
   scheduleGifRealtimePreview();
 });
 $("#imageThreshold").addEventListener("input", () => {
-  $("#imageThresholdValue").textContent = $("#imageThreshold").value;
+  setText($("#imageThresholdValue"), () => $("#imageThreshold").value);
   scheduleImageRealtimePreview();
 });
 $("#imageEdgeFade").addEventListener("input", () => {
-  $("#imageEdgeFadeValue").textContent = $("#imageEdgeFade").value;
+  setText($("#imageEdgeFadeValue"), () => $("#imageEdgeFade").value);
   scheduleImageRealtimePreview();
 });
 $("#gifInput").addEventListener("change", () => {
-  previewSelectedGif().catch((error) => { $("#assetResult").textContent = `GIF 预览失败：${error.message}`; });
+  previewSelectedGif().catch((error) => { setText($("#assetResult"), () => tr`GIF 预览失败：${error.message}`); });
 });
 $("#imageInput").addEventListener("change", () => {
   selectedImagePreviewIndex = 0;
-  previewSelectedImages().catch((error) => { $("#assetResult").textContent = `静图预览失败：${error.message}`; });
+  previewSelectedImages().catch((error) => { setText($("#assetResult"), () => tr`静图预览失败：${error.message}`); });
 });
 $("#gifFit").addEventListener("change", () => {
   scheduleGifRealtimePreview();
@@ -2101,11 +2112,11 @@ $("#imageDither").addEventListener("change", scheduleImageRealtimePreview);
 $("#imageInvert").addEventListener("change", scheduleImageRealtimePreview);
 $("#imagePreviewSelect").addEventListener("change", () => {
   selectedImagePreviewIndex = Number($("#imagePreviewSelect").value) || 0;
-  previewSelectedImages({ keepConverted: convertedImages.length > 0 }).catch((error) => { $("#assetResult").textContent = `静图预览失败：${error.message}`; });
+  previewSelectedImages({ keepConverted: convertedImages.length > 0 }).catch((error) => { setText($("#assetResult"), () => tr`静图预览失败：${error.message}`); });
 });
-$("#previewGifBtn").addEventListener("click", () => convertGif().catch((error) => { $("#assetResult").textContent = `GIF 转换失败：${error.message}`; }));
+$("#previewGifBtn").addEventListener("click", () => convertGif().catch((error) => { setText($("#assetResult"), () => tr`GIF 转换失败：${error.message}`); }));
 $("#clearGifBtn").addEventListener("click", clearGifConversion);
-$("#previewImagesBtn").addEventListener("click", () => convertImages().catch((error) => { $("#assetResult").textContent = `静图转换失败：${error.message}`; }));
+$("#previewImagesBtn").addEventListener("click", () => convertImages().catch((error) => { setText($("#assetResult"), () => tr`静图转换失败：${error.message}`); }));
 $("#clearImagesBtn").addEventListener("click", clearImageConversions);
 $("#customWeatherCity").addEventListener("input", invalidateGeneratedAssets);
 $("#customOtaServer").addEventListener("input", invalidateGeneratedAssets);
@@ -2136,12 +2147,12 @@ $("#firmwareSource").addEventListener("change", () => {
     if (remoteFirmwareManifest) {
       setRemoteFirmwareManifest(remoteFirmwareOptions.indexOf(remoteFirmwareManifest));
     } else {
-      loadRemoteFirmwareManifest().catch((error) => { $("#flashResult").textContent = error.message; });
+      loadRemoteFirmwareManifest().catch((error) => { setText($("#flashResult"), () => error.message); });
     }
   } else {
     updateFirmwareDownloadButton();
-    $("#firmwareWriteState").textContent = "等待自定义固件文件";
-    $("#flashResult").textContent = firmwareTargetHint();
+    setText($("#firmwareWriteState"), () => tr("等待自定义固件文件"));
+    setText($("#flashResult"), () => firmwareTargetHint());
   }
   hintNextStep("#selectFirmwareDeviceBtn");
 });
@@ -2152,17 +2163,17 @@ $("#remoteFirmwareSelect").addEventListener("change", () => {
 });
 $("#refreshFirmwareBtn").addEventListener("click", () => {
   loadRemoteFirmwareManifest().catch((error) => {
-    $("#firmwareWriteState").textContent = "在线固件加载失败";
-    $("#flashResult").textContent = error.message;
+    setText($("#firmwareWriteState"), () => tr("在线固件加载失败"));
+    setText($("#flashResult"), () => error.message);
   });
 });
 $("#downloadFirmwareBtn").addEventListener("click", () => {
   downloadRemoteFirmware().catch((error) => {
     setFirmwareReady(false);
-    $("#firmwareWriteState").textContent = error.message.startsWith("SHA-256") || error.message.startsWith("固件大小")
-      ? "固件校验失败"
-      : "固件下载失败";
-    $("#flashResult").textContent = error.message;
+    setText($("#firmwareWriteState"), () => error.code === 'firmware-hash' || error.code === 'firmware-size'
+      ? tr("固件校验失败")
+      : tr("固件下载失败"));
+    setText($("#flashResult"), () => error.message);
   });
 });
 $("#firmwareInput").addEventListener("change", () => {
@@ -2176,10 +2187,10 @@ $("#firmwareInput").addEventListener("change", () => {
     mode: "firmware",
     fileSize: file?.size || 0
   });
-  $("#firmwareWriteState").textContent = selectedFirmware ? `${selectedFirmware.name} / ${formatBytes(selectedFirmware.size)}` : "等待固件文件";
-  $("#flashResult").textContent = selectedFirmware
-    ? `已选择自定义固件文件。${firmwareTargetHint(target)}${target.kind === "app" && !isFirmwareTargetReady(target, selectedFirmware.size) ? " 文件大小超过目标 App 分区或尚未读取分区表。" : ""}`
-    : firmwareTargetHint(target);
+  setText($("#firmwareWriteState"), () => selectedFirmware ? `${selectedFirmware.name} / ${formatBytes(selectedFirmware.size)}` : tr("等待固件文件"));
+  setText($("#flashResult"), () => selectedFirmware
+    ? tr`已选择自定义固件文件。${firmwareTargetHint(target)}${target.kind === "app" && !isFirmwareTargetReady(target, selectedFirmware.size) ? tr(" 文件大小超过目标 App 分区或尚未读取分区表。") : ""}`
+    : firmwareTargetHint(target));
   if (file && isLocalFirmwareFileAllowed(file, target)) hintNextStep("#writeFirmwareBtn");
 });
 $("#writeFirmwareBtn").addEventListener("click", writeFirmware);

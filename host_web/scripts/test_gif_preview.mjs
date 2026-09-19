@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { tr, LocalizedError } from '../i18n.js';
 
 const source = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 const start = source.indexOf('async function setGifOriginalPreview(');
-const end = source.indexOf('\nfunction nowText()', start);
+const end = source.indexOf('\nfunction nowText(', start);
 assert(start >= 0 && end > start);
 class ImageElement {
   removeAttribute(name) { if (name === 'src') this.src = undefined; }
@@ -15,6 +16,7 @@ let element = image;
 const created = [];
 const revoked = [];
 const context = vm.createContext({
+  tr, LocalizedError,
   Uint8Array,
   HTMLImageElement: ImageElement,
   document: { getElementById: () => element },

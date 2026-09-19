@@ -155,6 +155,13 @@ h1 {
   justify-content: flex-end;
 }
 
+.language-select { width: 128px; flex: 0 0 128px; font-size: 13px; padding-right: 8px; }
+.sim-language-note { margin: -8px 0 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.localized-file-input { position: absolute; width: 1px !important; height: 1px !important; clip-path: inset(50%); overflow: hidden; opacity: 0; pointer-events: none; }
+.file-choice-row { display: flex; align-items: center; gap: 8px; min-width: 0; height: 40px; }
+.file-choose { flex-shrink: 0; }
+.file-choice-row .file-selection { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; min-width: 0; }
+
 .top-meta .top-version { font-size: 12px; white-space: nowrap; }
 .top-meta .hosting-note { color: var(--muted); }
 #sourceRepoLink { height: 38px; flex: 0 0 38px; }
@@ -774,6 +781,24 @@ input[type="range"] {
 .quick-field-group { min-width: 0; display: grid; grid-row: span 5; grid-template-rows: subgrid; }
 .quick-field-group h3 { font-size: 15px; font-weight: 700; line-height: 1.4; margin: 0; }
 .quick-fields label, .quick-password-field { display: grid; grid-template-rows: 15px 40px auto; gap: 6px; min-width: 0; align-content: start; }
+html:not([lang="zh-CN"]) .topbar { grid-template-columns: minmax(210px, .9fr) minmax(0, 1.4fr) auto; }
+html:not([lang="zh-CN"]) .top-meta > span:first-child { white-space: normal; }
+html:not([lang="zh-CN"]) .top-meta .top-version { white-space: normal; }
+html:not([lang="zh-CN"]) .tab { white-space: normal; line-height: 1.2; font-size: 13px; }
+html:not([lang="zh-CN"]) .toolbar button,
+html:not([lang="zh-CN"]) .action-strip button,
+html:not([lang="zh-CN"]) .summary-actions button { white-space: normal; line-height: 1.3; padding-top: 8px; padding-bottom: 8px; }
+html:not([lang="zh-CN"]) .quick-fields label,
+html:not([lang="zh-CN"]) .quick-password-field { grid-template-rows: minmax(30px, auto) 40px auto; }
+html:not([lang="zh-CN"]) .quick-password-field > label { display: block; }
+html:not([lang="zh-CN"]) .quick-notice p { grid-template-columns: 100px minmax(0, 1fr); }
+html:not([lang="zh-CN"]) .quick-notice strong { white-space: normal; }
+html:not([lang="zh-CN"]) .summary-note { white-space: normal; text-wrap: pretty; }
+html:not([lang="zh-CN"]) .device-key-help { font-size: 11px; }
+html:not([lang="zh-CN"]) .simulator-actions > button { white-space: normal; line-height: 1.3; padding-top: 6px; padding-bottom: 6px; }
+html:not([lang="zh-CN"]) .image-preview-row { grid-template-columns: minmax(0, 1fr); }
+html:not([lang="zh-CN"]) .work-summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+html:not([lang="zh-CN"]) .summary-actions { grid-column: 2; }
 .quick-password-field > label { display: block; }
 .quick-password-control { position: relative; min-width: 0; height: 40px; }
 .quick-password-control input { padding-right: 44px; }

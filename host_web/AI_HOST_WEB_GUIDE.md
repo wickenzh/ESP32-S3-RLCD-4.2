@@ -2,6 +2,36 @@
 
 This document is for future AI agents or developers taking over `host_web/`.
 
+## Local UI Languages
+
+`i18n.js` owns the zh-CN / zh-TW / ja / en selector between Web Serial status and
+the source shortcut. Default is zh-CN; only the locale is persisted under
+`weather-clock-studio:language`. Catalog rows in `locales/static.js` and
+`locales/dynamic.js` use the Simplified Chinese source message as a stable key,
+followed by Taiwan Traditional Chinese, Japanese and English translations.
+Use `tr('message')` or tagged `tr` templates; placeholders must match in all locales.
+
+Static owned text nodes and title/placeholder/aria-label/alt attributes are
+registered once. Dynamic UI uses `setText(element, () => ...)` and `setAttr` so
+switching languages updates the displayed state without replaying business
+actions. Keep render callbacks side-effect-free; capture event times rather
+than generating new timestamps on a locale change. `LocalizedError` formats
+messages lazily; firmware size/hash failures use stable codes, never translated
+message text, for classification. Never apply translation to user data or raw
+serial bytes. Translation uses textContent/attributes, not HTML injection.
+
+Firmware canvas pixels and the Wi-Fi setup iframe are explicitly outside the
+language boundary. Do not translate their HTML, add a locale bridge or modify
+firmware build inputs for host language support. Native browser dialogs and
+third-party/release text retain their original language. File chooser captions
+inside the host are localized without changing file input values.
+
+Run `test_i18n.mjs` for catalog/static coverage, placeholders and config-byte
+invariance. Existing GIF/quick-config/Pages/input tests remain required. Browser
+checks cover four locales × six tabs × 1024/1280/1440 desktop widths, state and
+BIN hash preservation, serial mocks, hash failures, persistence and offline
+switching. Update all eight User manuals for user-facing behavior changes.
+
 ## Interactive Simulator
 
 Keep the simulator aligned to the page content edges. Use 18px page headings,

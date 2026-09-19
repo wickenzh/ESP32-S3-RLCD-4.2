@@ -1,3 +1,4 @@
+import { tr, setText, setAttr, LocalizedError, getLanguage } from './i18n.js';
 // 按需加载真实WASM模拟器，转发虚拟按键，控制显示生命周期与构建身份。
 const panel = document.getElementById('screens');
 const canvas = document.getElementById('simulatorCanvas');
@@ -21,7 +22,7 @@ function updateStatus() {
   lastState = raw;
   const state = JSON.parse(raw);
   document.querySelector('.virtual-device').dataset.simState = raw;
-  status.textContent = `${state.scene === 0 ? pageNames[state.page] : sceneNames[state.scene]} · ${state.offline ? '离线状态（模拟）' : '已配网（模拟）'}`;
+  setText(status, () => `${tr(state.scene === 0 ? pageNames[state.page] : sceneNames[state.scene])} · ${state.offline ? tr('离线状态（模拟）') : tr('已配网（模拟）')}`);
   if (state.scene === 0) document.getElementById('simScene').value = String(state.page);
 }
 
@@ -33,7 +34,7 @@ function tick(now) {
       runtime._demo_tick(Date.now() / 1000, now);
       updateStatus();
     } catch {
-      failed = true; status.textContent = '模拟器运行异常，请刷新重试；静态预览仍可查看。';
+      failed = true; setText(status, () => tr('模拟器运行异常，请刷新重试；静态预览仍可查看。'));
       controls.forEach(control => { control.disabled = true; });
       return;
     }
@@ -53,7 +54,7 @@ function loadPortal() {
     }).then(html => { document.getElementById('portalSimulator').srcdoc = html; })
       .catch(() => {
         portalLoading = undefined;
-        document.querySelector('.virtual-portal .sim-section-title span').textContent = '虚拟配网加载失败，请联网后重新打开';
+        setText(document.querySelector('.virtual-portal .sim-section-title span'), () => tr('虚拟配网加载失败，请联网后重新打开'));
       });
   return portalLoading;
 }
@@ -67,14 +68,14 @@ async function load() {
       runtime = await create({ canvas, print: () => {}, printErr: text => console.warn(text), onAbort: () => { failed = true; } });
       document.title = title;
       const info = JSON.parse(runtime.UTF8ToString(runtime._demo_build_info()));
-      build.textContent = `基于固件 ${info.firmwareVersion} · 源码 ${info.sourceCommit.slice(0, 8)}${info.sourceDirty ? '（本地未提交构建）' : ''} · 内容 ${info.sourceDigest.slice(0, 12)} · 构建于 ${new Date(info.builtAt).toLocaleString()}`;
-      build.title = `源码 ${info.sourceCommit}\n内容 ${info.sourceDigest}\n${info.engine}`;
+      setText(build, () => tr`基于固件 ${info.firmwareVersion} · 源码 ${info.sourceCommit.slice(0, 8)}${info.sourceDirty ? tr('（本地未提交构建）') : ''} · 内容 ${info.sourceDigest.slice(0, 12)} · 构建于 ${new Date(info.builtAt).toLocaleString(getLanguage())}`);
+      setAttr(build, 'title', () => tr`源码 ${info.sourceCommit}\n内容 ${info.sourceDigest}\n${info.engine}`);
       controls.forEach(control => { control.disabled = false; });
       if (running()) frame = requestAnimationFrame(tick);
     } catch {
       failed = true;
-      status.textContent = '交互模拟器暂不可用，可展开静态预览。';
-      build.textContent = '未加载到模拟器构建信息';
+      setText(status, () => tr('交互模拟器暂不可用，可展开静态预览。'));
+      setText(build, () => tr('未加载到模拟器构建信息'));
       document.querySelector('.screen-snapshots').open = true;
     }
   })();
@@ -128,7 +129,7 @@ document.getElementById('simPortalToggle').addEventListener('click', event => {
   const showPortal = !device.hidden;
   device.hidden = showPortal;
   document.getElementById('simPortalPanel').hidden = !showPortal;
-  event.currentTarget.textContent = showPortal ? '返回设备模拟' : '配网模拟';
+  setText(event.currentTarget, () => showPortal ? tr('返回设备模拟') : tr('配网模拟'));
   event.currentTarget.setAttribute('aria-pressed', String(showPortal));
   if (showPortal) loadPortal();
   refreshVisibility();

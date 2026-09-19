@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { tr, setText } from '../i18n.js';
 
 const source = readFileSync(new URL('../simulator-ui.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -19,6 +20,7 @@ const buttons = { simBoot: target(), simKey: target(), simPortalToggle: target()
 const device = target();
 const window = target();
 const context = vm.createContext({
+  tr, setText,
   runtime: {}, failed: false, running: () => true, heldKeys: new Map(),
   performance: { now: () => now },
   setTimeout(fn, delay) { const id = {}; timers.set(id, { fn, at: now + delay }); return id; },

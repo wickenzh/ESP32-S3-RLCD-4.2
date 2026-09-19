@@ -32,6 +32,7 @@ AI tools can set a one-shot alarm, focus timer, and weather city. Check the on-s
 
 - In System settings, check for updates with BOOT, then confirm an available update within 60 seconds.
 - Use [WeatherClock Studio](https://wickenzh.github.io/ESP32-S3-RLCD-4.2/) on a desktop browser for assets, previews, flashing, and logs.
+- The top-right language selector supports English, Japanese, Simplified Chinese and Traditional Chinese (Taiwan). Your choice is remembered; firmware screens and the Wi-Fi setup demo keep their original language.
 - Missing weather: check Key, Host, permissions, and network. Cached values are not proof of a successful refresh.
 - The Wi-Fi icon shows radio activity. Battery and charging indicators are estimates; USB connection does not mean continuous charging.
 - Offline mode allows local pages only. Returning online requires complete credentials.
