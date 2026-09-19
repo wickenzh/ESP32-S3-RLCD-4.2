@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.5",
+  "latest": "v1.6.6",
   "items": [
+    {
+      "version": "v1.6.6",
+      "notes": "v1.6.6：共 6 项更新。\n1. 新增简体中文、繁體中文、English、日本語四语简易与详细使用说明，并在对应主页提供…\n2. 修复正常天气同步期间 Wi-Fi 省电策略被错误改变的问题，保持正常节能策略。\n3. 修复 TLS 连接超时被无依据切换旧 CA 的问题，仅证书校验失败时尝试兼容 CA，其…\n4. 修复瞬时电压波动误判充电状态和满电记录的问题，采用 5 次 ADC 中值及连续 3 次…\n5. 统一各页面当前温度读数的摄氏度标记；天气看板未来预报保持原有显示方式。\n6. 优化四语主页与手册导航，按各语言用户用语整理，不改变设备语言切换行为。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.6/weather_clock_v1.6.6.bin",
+        "sha256": "b626e618ae7e14cb9fcc7cb36ce943719402edb645be815b554d96c45ab65c4c",
+        "size": 6291104
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.6/weather_clock_v1.6.6_merged.bin",
+        "sha256": "4d284641765cd4be90b5fa4440db3130d931452a914246a6b7c0cbc9eb7923b8",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.5",
       "notes": "v1.6.5：共 3 项更新。\n1. 修复天气与传感器状态读取可能无限等待的问题，增加 50ms 有界读取并保留调用方重试。\n2. 修复 LVGL 锁持续阻塞时缺少恢复路径的问题，采用分段等待；连续 60 秒无成功取锁…\n3. 优化任务看门狗异常处理：由仅报警调整为 panic/reboot，在长期阻塞时触发自动…\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.39/weather_clock_v1.5.39_merged.bin",
         "sha256": "5a92448e7bf940dc0a790f614a22bfbfa115643ca56b6e721a70d944c72b3367",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.5.38",
-      "notes": "v1.5.38：共 8 项更新。\n1. 修复小智待唤醒、首次进入实时会话及离开页面时的 Wi-Fi 省电状态和 PM 锁校准，…\n2. 修正 ESP-IDF 新 I2C 主机接口的超时单位，避免慢总线或外设异常时实际等待时…\n3. 修复 SensorLib 调试帧长度校验缺失，异常帧不再可能越界复制。\n4. 修正显示驱动同时支持 LUT 与非 LUT 算法时的构建测试定位，保证两种实现均按各自…\n5. 上位机 Web Serial 烧录依赖改为固定版本并随项目本地提供，避免运行时第三方…\n6. Power Demo 不再把本机 Wi-Fi 凭据编译进固件，改为读取正式固件已保存的…\n其余 2 项见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.38/weather_clock_v1.5.38.bin",
-        "sha256": "ec771de44bbb001b891a0d5a69bfd6ec20037e92c3fb5db7c23cae7e75ff70ce",
-        "size": 6266112
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.38/weather_clock_v1.5.38_merged.bin",
-        "sha256": "03c777128f44315234ae96183efe3ac4921e8bb52c695d4fd1c6d65252067812",
         "size": 16509951
       }
     }
