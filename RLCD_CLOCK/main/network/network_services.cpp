@@ -30,6 +30,7 @@
 #include "ui_work_page_catalog.h"
 #include "weather_state.h"
 #include "weather_update.h"
+#include "weather_wifi_ab_test.h"
 #include "wifi_idle_stop_policy.h"
 #include "wifi_portal_state.h"
 #include "wifi_radio_services_internal.h"
@@ -410,7 +411,29 @@ static bool execute_connected_sync_window(const NetworkSyncSchedule &schedule,
             requests.manual_weather || pages.extended_weather
                 ? WeatherUpdateScope::kFull
                 : WeatherUpdateScope::kCurrentAndAlerts;
-        WeatherUpdateResult result = perform_weather_update(scope);
+        const int64_t weather_started_us = esp_timer_get_time();
+        WeatherUpdateResult result;
+        bool performance_enabled = false;
+#ifdef WEATHER_CLOCK_WIFI_AB_TEST
+        const int ab_slot = weather_wifi_ab_slot(weather_started_us);
+        if (ab_slot >= 0) {
+            performance_enabled = ab_slot % 2 != 0;
+            ESP_LOGI(TAG, "weather AB: slot=%d mode=%s", ab_slot,
+                     performance_enabled ? "NONE" : "MAX_MODEM");
+        }
+#endif
+        {
+            WeatherWifiPerformanceGuard performance_guard(performance_enabled);
+            result = perform_weather_update(scope);
+        }
+#ifdef WEATHER_CLOCK_WIFI_AB_TEST
+        if (ab_slot >= 0) {
+            weather_wifi_ab_last_slot.store(ab_slot);
+        }
+#endif
+        ESP_LOGI(TAG, "weather request window: elapsed_ms=%lld result=%d",
+                 static_cast<long long>((esp_timer_get_time() - weather_started_us) / 1000),
+                 static_cast<int>(result));
         if (!network_sync_continuation_allowed()) {
             return false;
         }

@@ -1,5 +1,6 @@
 // 绘制聚合时钟四块差异化信息区，数字仅按变化的两位时间局部失效。
 #include "ui_aggregate_clock_view.h"
+#include "ui_celsius_marker.h"
 #include "aggregate_sensor_icons.h"
 #include "ui_aggregate_weather_texture.h"
 #include "dseg_digits.h"
@@ -177,6 +178,9 @@ void aggregate_clock_view_build(lv_obj_t *root,AggregateClockView &v,lv_color_t 
     sensor_icon(root,255,240,aggregate_temperature_bits);
     sensor_icon(root,255,265,aggregate_humidity_bits);
     v.local_temp=label(root,285,241,93,24,"--.- C",&aggregate_numeric_20,true);
+    ui_enable_celsius_marker(v.temperature);
+    ui_enable_celsius_marker(v.range);
+    ui_enable_celsius_marker(v.local_temp);
     v.humidity=label(root,285,266,93,24,"--%",&aggregate_numeric_20,true);
 }
 

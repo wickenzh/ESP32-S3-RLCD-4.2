@@ -7,6 +7,7 @@
 #include "core/app_constexpr.h"
 #include "sdl_preview_widgets.h"
 #include "ui_weather_board_layout.h"
+#include "ui_celsius_marker.h"
 
 LV_FONT_DECLARE(qweather_icons_36);
 LV_FONT_DECLARE(zh_font_16);
@@ -79,13 +80,14 @@ void build_weather_board_preview_body(lv_obj_t *screen)
                          kWeatherBoardCurrentTempH,
                          "26",
                          &lv_font_montserrat_48);
-    make_label_with_font(screen,
+    lv_obj_t *unit = make_label_with_font(screen,
                          kWeatherBoardCurrentUnitX,
                          kWeatherBoardCurrentUnitY,
                          kWeatherBoardCurrentUnitW,
                          kWeatherBoardCurrentUnitH,
-                         "C",
+                         " C",
                          &lv_font_montserrat_24);
+    ui_enable_celsius_marker(unit);
     lv_obj_t *icon = make_label(screen,
                                 kWeatherBoardCurrentIconX,
                                 kWeatherBoardCurrentIconY,
@@ -100,12 +102,13 @@ void build_weather_board_preview_body(lv_obj_t *screen)
                kWeatherBoardCurrentTextW,
                kWeatherBoardCurrentTextH,
                "晴");
-    make_label(screen,
+    lv_obj_t *range = make_label(screen,
                kWeatherBoardTodayRangeX,
                kWeatherBoardTodayRangeY,
                kWeatherBoardTodayRangeW,
                kWeatherBoardTodayRangeH,
-               "今日 22/29C");
+               "今日 22/29 C");
+    ui_enable_celsius_marker(range);
 
     static constexpr const char *kDays[] = {
         "周二\n23日", "周三\n24日", "周四\n25日", "周五\n26日", "周六\n27日", "周日\n28日",

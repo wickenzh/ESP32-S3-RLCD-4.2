@@ -1,6 +1,6 @@
 # ESP32-S3 RLCD 4.2 天气时钟
 
-> **语言：** 简体中文（当前） · [English](README_EN.md)
+> **语言：** 简体中文（当前） · [English](README_EN.md) · [繁體中文](README_zh_TW.md) · [日本語](README_JA.md)
 
 这是一个基于 **ESP32-S3** 和 **4.2 英寸 RLCD 屏幕** 的低功耗天气时钟固件项目。它把常驻显示、本地温湿度、联网天气、日历、图片展示、音频提醒、小智 AI 和 OTA 更新整合到一台桌面设备中。
 
@@ -8,8 +8,7 @@
 
 **界面主要基于 LVGL 开发。** 页面布局、文字、菜单和状态控件由 LVGL 管理；大号时钟、图片和曲线等通过 LVGL Canvas 与自定义绘制实现。底层 RLCD 驱动负责单色输出，并优先采用局部刷新，兼顾显示效果与低功耗。
 
-- [中文用户使用说明](docs/User_zh.md)
-- [English User Guide](docs/User.md)
+- [简易用户手册](docs/User_zh.md) · [用户详细说明](docs/User_Detailed_zh.md)
 - [贡献指南 / Contributing Guide](CONTRIBUTING.md)
 - [安全政策 / Security Policy](SECURITY.md)
 - [第三方开源许可说明](THIRD_PARTY_NOTICES.md)
@@ -125,7 +124,7 @@
 - `previews/`：由当前源码生成的全部详细 SDL 页面预览和总览图。
 - `.github/`：公开仓库的固件构建与源码发布工作流。
 
-构建与提交要求见 [贡献指南](CONTRIBUTING.md)。完整刷机、仅更新 App、配网、页面操作和常见问题见 [中文用户手册](docs/User_zh.md) 或 [English User Guide](docs/User.md)。
+构建与提交要求见 [贡献指南](CONTRIBUTING.md)。先阅读[简易用户手册](docs/User_zh.md)，完整刷机、配网、页面设置和故障处理见[用户详细说明](docs/User_Detailed_zh.md)。
 
 ## OTA 与自定义资源
 

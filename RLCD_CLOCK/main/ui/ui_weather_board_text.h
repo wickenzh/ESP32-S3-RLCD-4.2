@@ -7,7 +7,7 @@
 
 inline constexpr const char *kWeatherBoardDash = "--";
 inline constexpr const char *kWeatherBoardShortDatePlaceholder = "--/--";
-inline constexpr const char *kWeatherBoardTodayRangePlaceholder = "今日 --/--C";
+inline constexpr const char *kWeatherBoardTodayRangePlaceholder = "今日 --/-- C";
 inline constexpr const char *kWeatherBoardAlertPlaceholder = "预警 --";
 inline constexpr const char *kWeatherBoardAirPlaceholder = "AQI --";
 inline constexpr const char *kWeatherBoardHumidityPlaceholder = "湿度 --%";

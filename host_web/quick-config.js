@@ -25,6 +25,11 @@ export function makeQuickConfigLink(input) {
     selected = { manual_time: values.manual_time };
     warnings.push('此链接仅设置离线固定时间，不保存 Wi-Fi 或天气字段；使用前核对时间。');
   } else {
+    for (const key of ['pass', 'backup_pass']) {
+      if (values[key] && new TextEncoder().encode(values[key]).length < 8) {
+        throw new Error(`${fields[key][0]}至少需要 8 字节（英文、数字或符号通常为 8 位）；请补全密码，或留空以沿用已有密码 / 连接开放网络。`);
+      }
+    }
     if (Boolean(values.api_key) !== Boolean(values.api_host)) {
       throw new Error('API Key 和 API Host 必须同时填写，或同时留空以沿用设备已有配置。');
     }

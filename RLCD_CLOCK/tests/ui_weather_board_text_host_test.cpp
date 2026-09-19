@@ -25,7 +25,7 @@ int main()
     format_forecast_temp_range(day, out, sizeof(out));
     assert(strcmp(out, "17/26") == 0);
     format_today_range(day, out, sizeof(out));
-    assert(strcmp(out, "今日 17/26C") == 0);
+    assert(strcmp(out, "今日 17/26 C") == 0);
 
     strcpy(day.date, "invalid");
     day.temp_min[0] = '\0';

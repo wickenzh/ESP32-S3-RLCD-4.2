@@ -15,9 +15,13 @@ int main()
     assert(http_tls_trust_mode(true, 1) ==
            HttpTlsTrustMode::kQweatherLegacyCa);
 
-    assert(!http_tls_should_retry(false, 0, true));
-    assert(!http_tls_should_retry(true, 0, false));
-    assert(http_tls_should_retry(true, 0, true));
-    assert(!http_tls_should_retry(true, 1, true));
+    assert(!http_tls_should_retry(false, 0, true, true));
+    assert(!http_tls_should_retry(true, 0, false, true));
+    assert(http_tls_should_retry(true, 0, true, true));
+    assert(!http_tls_should_retry(true, 1, true, true));
+    // DNS, TCP timeout and memory failures do not justify changing trust roots.
+    assert(!http_tls_should_retry(true, 0, true, false));
+    assert(!http_tls_should_retry(true, 0, false, false));
+    assert(!http_tls_should_retry(true, SIZE_MAX, true, true));
     return 0;
 }

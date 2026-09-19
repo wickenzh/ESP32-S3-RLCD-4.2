@@ -82,7 +82,8 @@ TickType_t next_housekeeping_wake_tick(bool low_battery,
 TickType_t next_battery_wake_after_sample(TickType_t sampled_tick,
                                           bool charging)
 {
-    if (battery_charging_requires_fast_sampling(charging)) {
+    if (battery_charging_requires_fast_sampling(charging) ||
+        battery_charge_confirmation_pending()) {
         return sampled_tick + kBatteryChargingSampleDelay;
     }
     return next_sensor_sample_tick(sampled_tick);
@@ -117,7 +118,8 @@ void schedule_housekeeping_samples(TickType_t now,
 {
     const TickType_t next_sample = next_sensor_sample_tick(now);
     *next_sensor = next_sample;
-    *next_battery = battery_charging_requires_fast_sampling(charging)
+    *next_battery = (battery_charging_requires_fast_sampling(charging) ||
+                     battery_charge_confirmation_pending())
                         ? next_battery_wake_after_sample(now, true)
                         : next_sample;
 }

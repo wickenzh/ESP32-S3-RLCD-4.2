@@ -9,6 +9,7 @@
 #include "work_page_ids.h"
 #include "ui_battery.h"
 #include "ui_fonts.h"
+#include "ui_celsius_marker.h"
 #include "ui_page_state.h"
 #include "ui_progress.h"
 #include "ui_weather_board_sun.h"
@@ -85,7 +86,7 @@ EXT_RAM_BSS_ATTR ForecastCardUi s_cards[kWeatherForecastDays];
 constexpr const char *kWeatherBoardUnknownIcon = "999";
 constexpr const char *kWeatherBoardWaitingData = "等待数据";
 constexpr const char *kWeatherBoardSyncing = "同步中";
-constexpr const char *kWeatherBoardCurrentUnitText = "C";
+constexpr const char *kWeatherBoardCurrentUnitText = " C";
 constexpr size_t kForecastDateLineSize = 24;
 constexpr size_t kForecastTempRangeSize = 20;
 constexpr size_t kCurrentTempLineSize = 12;
@@ -316,6 +317,7 @@ void build_current_weather_panel(lv_obj_t *screen)
                                                       kWeatherBoardCurrentUnitText,
                                                       &lv_font_montserrat_24);
     set_weather_label_align(objects.current_unit_label, LV_TEXT_ALIGN_LEFT);
+    ui_enable_celsius_marker(objects.current_unit_label);
 
     objects.current_icon_label = make_label(screen,
                                             kWeatherBoardCurrentIconX,
@@ -337,6 +339,7 @@ void build_current_weather_panel(lv_obj_t *screen)
                                            kWeatherBoardTodayRangeW,
                                            kWeatherBoardTodayRangeH,
                                            kWeatherBoardTodayRangePlaceholder);
+    ui_enable_celsius_marker(objects.today_range_label);
 }
 
 void build_weather_detail_panel(lv_obj_t *screen)

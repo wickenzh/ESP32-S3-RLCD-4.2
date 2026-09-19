@@ -76,12 +76,23 @@ bool update_battery_charging_state(const BatteryChargingInput &input,
     }
 
     float delta = input.current_voltage - input.previous_voltage;
-    if (delta >= policy.rise_voltage) {
-        if (tracker->rise_samples < policy.rise_samples_required) {
-            ++tracker->rise_samples;
+    if (!state->charging) {
+        if (tracker->rise_samples > 0 &&
+            ((policy.confirmation_timeout_ticks > 0 &&
+              app_tick_interval_elapsed(input.now_tick, tracker->candidate_tick,
+                                        policy.confirmation_timeout_ticks)) ||
+             input.current_voltage < tracker->candidate_voltage - policy.stop_voltage)) {
+            tracker->rise_samples = 0;
         }
-    } else {
-        tracker->rise_samples = 0;
+        if (tracker->rise_samples > 0) {
+            if (tracker->rise_samples < policy.rise_samples_required) {
+                ++tracker->rise_samples;
+            }
+        } else if (delta >= policy.rise_voltage) {
+            tracker->rise_samples = 1;
+            tracker->candidate_voltage = input.current_voltage;
+            tracker->candidate_tick = input.now_tick;
+        }
     }
 
     if (state->charging) {
@@ -105,7 +116,9 @@ bool update_battery_charging_state(const BatteryChargingInput &input,
             state->animation_complete = false;
             reset_battery_charging_tracker(tracker);
         }
-    } else if (tracker->rise_samples >= policy.rise_samples_required) {
+    } else if (tracker->rise_samples >= policy.rise_samples_required &&
+               app_tick_interval_elapsed(input.now_tick, tracker->candidate_tick,
+                                         policy.confirmation_min_ticks)) {
         state->charging = true;
         state->animation_complete = false;
         tracker->stop_samples = 0;

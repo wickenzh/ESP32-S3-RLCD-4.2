@@ -44,7 +44,7 @@ constexpr const char *kHttpBootBudgetExhaustedLog = "http get skipped: boot sync
 constexpr const char *kHttpClientInitFailedLog = "http client init failed";
 constexpr const char *kHttpTransactionLockTimeoutLog = "http transaction deferred: TLS session is busy";
 constexpr const char *kHttpQweatherTlsFallbackLog =
-    "qweather TLS bundle connection failed, retrying with legacy CA";
+    "qweather TLS certificate verification failed, retrying with legacy CA";
 constexpr TickType_t kHttpTlsFallbackDelay = pdMS_TO_TICKS(350);
 
 // All HTTPS/WSS activity is serialized by NetworkHttpTransactionGuard. Keep
@@ -290,6 +290,13 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
     int status = 0;
     int64_t content_length = 0;
     for (size_t attempt = 0; attempt < attempt_count; ++attempt) {
+        // Lock acquisition and the first handshake may consume the boot budget.
+        if (!compute_http_timeout_ms(&timeout_ms)) {
+            return ESP_ERR_TIMEOUT;
+        }
+        config.timeout_ms = timeout_ms;
+        int tls_error = 0;
+        int tls_flags = 0;
         buffer.len = 0;
         buffer.truncated = false;
         out[0] = '\0';
@@ -312,13 +319,21 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
                 return header_err;
             }
             err = esp_http_client_perform(client.get());
+            if (err == ESP_ERR_HTTP_CONNECT) {
+                const esp_err_t tls_result = esp_http_client_get_and_clear_last_tls_error(
+                    client.get(), &tls_error, &tls_flags);
+                ESP_LOGW(TAG, "http TLS failure: detail=%s code=%d flags=0x%x",
+                         esp_err_to_name(tls_result), tls_error,
+                         static_cast<unsigned>(tls_flags));
+            }
             status = esp_http_client_get_status_code(client.get());
             content_length = esp_http_client_get_content_length(client.get());
         }
         if (err == ESP_OK || !http_tls_should_retry(
                                  qweather_url,
                                  attempt,
-                                 err == ESP_ERR_HTTP_CONNECT)) {
+                                 err == ESP_ERR_HTTP_CONNECT,
+                                 tls_flags != 0)) {
             break;
         }
         ESP_LOGW(TAG, "%s", kHttpQweatherTlsFallbackLog);

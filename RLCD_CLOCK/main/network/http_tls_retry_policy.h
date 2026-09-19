@@ -23,7 +23,9 @@ constexpr HttpTlsTrustMode http_tls_trust_mode(bool qweather_url, size_t attempt
 
 constexpr bool http_tls_should_retry(bool qweather_url,
                                      size_t attempt,
-                                     bool connection_failed)
+                                     bool connection_failed,
+                                     bool certificate_verification_failed)
 {
-    return connection_failed && attempt + 1U < http_tls_attempt_count(qweather_url);
+    return connection_failed && certificate_verification_failed &&
+           attempt < http_tls_attempt_count(qweather_url) - 1U;
 }

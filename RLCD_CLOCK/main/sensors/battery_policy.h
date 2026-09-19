@@ -5,7 +5,9 @@ inline constexpr int kLowBatteryEnterPercent = 10;
 inline constexpr int kLowBatteryExitPercent = 13;
 inline constexpr float kBatteryChargingRiseVoltage = 0.035f;
 inline constexpr float kBatteryChargingStopVoltage = 0.006f;
-inline constexpr int kBatteryChargingRiseSamples = 1;
+inline constexpr int kBatteryChargingRiseSamples = 3;
+inline constexpr int kBatteryChargingConfirmMs = 2000;
+inline constexpr int kBatteryChargingConfirmTimeoutMs = 5000;
 inline constexpr int kBatteryChargingStopSamples = 5;
 inline constexpr int kBatteryChargingAnimationStopPercent = 96;
 inline constexpr int kBatteryChargingAnimationIdleMs = 10 * 60 * 1000;
@@ -26,14 +28,14 @@ constexpr bool battery_charging_requires_fast_sampling(bool charging)
 constexpr bool battery_full_charge_history_should_update(
     bool is_charging,
     bool session_started_below_full_threshold,
-    bool was_animation_complete,
-    bool is_animation_complete,
+    bool session_already_recorded,
+    bool at_full_threshold,
     bool session_elapsed)
 {
     return is_charging &&
            session_started_below_full_threshold &&
-           !was_animation_complete &&
-           is_animation_complete &&
+           !session_already_recorded &&
+           at_full_threshold &&
            session_elapsed;
 }
 
@@ -59,6 +61,9 @@ static_assert(kBatteryChargingRiseVoltage > kBatteryChargingStopVoltage,
               "charging rise threshold must exceed stop threshold");
 static_assert(kBatteryChargingRiseSamples > 0,
               "charging detection must require a rising sample");
+static_assert(kBatteryChargingConfirmMs >= 2 * kBatteryChargingSampleMs &&
+                  kBatteryChargingConfirmTimeoutMs > kBatteryChargingConfirmMs,
+              "charging confirmation must span fast samples and remain bounded");
 static_assert(kBatteryChargingStopSamples > 0,
               "charging clear must require a confirming sample");
 static_assert(kBatteryChargingAnimationStopPercent > kLowBatteryExitPercent &&

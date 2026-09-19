@@ -10,6 +10,7 @@
 #include "ui_canvas_primitives.h"
 #include "ui_draw_cache.h"
 #include "ui_fonts.h"
+#include "ui_celsius_marker.h"
 #include "ui_inverted_clock_card.h"
 #include "ui_page_state.h"
 #include "ui_progress.h"
@@ -66,7 +67,7 @@ static constexpr int kFlipLunarTextY = 249;
 static constexpr int kFlipLunarTextH = 42;
 static constexpr int kFlipDateBoldOffset = 1;
 static constexpr int kFlipDateBoldYOffset = 1;
-static constexpr const char *kFlipTempPlaceholder = "--.-C";
+static constexpr const char *kFlipTempPlaceholder = "--.- C";
 static constexpr const char *kFlipHumiPlaceholder = "--%";
 static constexpr const char *kFlipDayPlaceholder = "--";
 EXT_RAM_BSS_ATTR lv_color_t *s_flip_clock_card_canvas_buffer[kCardCount];
@@ -110,6 +111,7 @@ lv_obj_t *make_flip_sensor_value_label(lv_obj_t *parent,
         return nullptr;
     }
     style_flip_white_label(label, align);
+    ui_enable_celsius_marker(label);
     return label;
 }
 

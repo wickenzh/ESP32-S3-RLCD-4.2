@@ -1,5 +1,6 @@
 // 构建 SDL 温湿时钟数字牌、传感器状态和日期农历主体。
 #include "sdl_preview_flip_clock.h"
+#include "ui_celsius_marker.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -56,11 +57,13 @@ void build_flip_clock_preview_body(lv_obj_t *screen, const struct tm *local)
     lv_obj_set_style_radius(sensor_panel, 18, LV_PART_MAIN);
     lv_obj_set_style_clip_corner(sensor_panel, true, LV_PART_MAIN);
     lv_obj_t *temp = sdl_preview_widgets::make_label_with_font(
-        screen, 34, 204, 148, 36, "25.6C", &lv_font_montserrat_24);
+        screen, 34, 204, 148, 36, "25.6 C", &lv_font_montserrat_24);
     style_white_left_label(temp);
+    ui_enable_celsius_marker(temp);
     lv_obj_t *temp_bold = sdl_preview_widgets::make_label_with_font(
-        screen, 35, 204, 148, 36, "25.6C", &lv_font_montserrat_24);
+        screen, 35, 204, 148, 36, "25.6 C", &lv_font_montserrat_24);
     style_white_left_label(temp_bold);
+    ui_enable_celsius_marker(temp_bold);
     lv_obj_t *humi = sdl_preview_widgets::make_label_with_font(
         screen, 34, 243, 148, 36, "46%", &lv_font_montserrat_24);
     style_white_left_label(humi);

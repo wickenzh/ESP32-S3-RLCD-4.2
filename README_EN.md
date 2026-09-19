@@ -1,6 +1,6 @@
 # ESP32-S3 RLCD 4.2 Weather Clock
 
-> **Language:** English (current) · [Chinese](README.md)
+> **Language:** English (current) · [Chinese](README.md) · [Traditional Chinese](README_zh_TW.md) · [Japanese](README_JA.md)
 
 This is a low-power weather clock firmware project built around the **ESP32-S3** and a **4.2-inch RLCD display**. It combines an always-readable clock, local temperature and humidity sensing, online weather data, a calendar, picture display, audio reminders, Xiaozhi AI, and OTA updates in one desktop device.
 
@@ -8,8 +8,7 @@ This is a low-power weather clock firmware project built around the **ESP32-S3**
 
 **LVGL is the project's primary UI framework.** It manages page layouts, text, menus, and status widgets, while large clock digits, images, and charts use LVGL Canvas and custom drawing. The RLCD driver handles monochrome output and prioritizes partial refreshes to balance readability and power consumption.
 
-- [Chinese User Guide](docs/User_zh.md)
-- [English User Guide](docs/User.md)
+- [Quick Guide](docs/User.md) · [Detailed User Guide](docs/User_Detailed.md)
 - [Contributing Guide](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 - [Third-Party Notices](THIRD_PARTY_NOTICES.md)
@@ -125,7 +124,7 @@ The standalone [Power Demo](docs/Power%20Demo/README.md) under `docs/Power Demo/
 - `previews/`: every detailed SDL page preview and the generated contact sheets.
 - `.github/`: public firmware build and source-release workflow.
 
-See the [Contributing Guide](CONTRIBUTING.md) for build and contribution requirements. See the [Chinese User Guide](docs/User_zh.md) or [English User Guide](docs/User.md) for full flashing, provisioning, page operation, and troubleshooting instructions.
+See the [Contributing Guide](CONTRIBUTING.md) for build and contribution requirements. Start with the [Quick Guide](docs/User.md); see the [Detailed User Guide](docs/User_Detailed.md) for flashing, setup, page settings, and troubleshooting.
 
 ## OTA and Custom Resources
 

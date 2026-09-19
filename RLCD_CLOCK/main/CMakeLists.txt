@@ -246,4 +246,8 @@ idf_component_register(
         tcp_transport)
 
 string(TIMESTAMP WEATHER_CLOCK_BUILD_DATE "%Y-%m-%d")
+option(WEATHER_CLOCK_WIFI_AB_TEST "Temporary 8-hour weather Wi-Fi A/B test" OFF)
+if(WEATHER_CLOCK_WIFI_AB_TEST)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE WEATHER_CLOCK_WIFI_AB_TEST=1)
+endif()
 target_compile_definitions(${COMPONENT_LIB} PRIVATE WEATHER_CLOCK_BUILD_DATE="${WEATHER_CLOCK_BUILD_DATE}")

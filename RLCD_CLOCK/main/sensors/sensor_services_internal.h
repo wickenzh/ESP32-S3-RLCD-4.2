@@ -21,4 +21,5 @@ void load_battery_charge_history();
 void init_shtc3_sensor(I2cMasterBus &i2c);
 bool sample_sensor();
 bool sample_battery();
+bool battery_charge_confirmation_pending();
 void housekeeping_task(void *);

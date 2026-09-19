@@ -28,10 +28,10 @@ constexpr int kSecondCardIndex = 2;
 constexpr int kTrendDrawCacheInvalid = 99;
 constexpr size_t kSensorTextSize = 16;
 constexpr size_t kDayTextSize = 8;
-constexpr const char *kTempPlaceholder = "--.-C";
+constexpr const char *kTempPlaceholder = "--.- C";
 constexpr const char *kHumiPlaceholder = "--%";
 constexpr const char *kDayPlaceholder = "--";
-constexpr const char *kTempFormat = "%.1fC";
+constexpr const char *kTempFormat = "%.1f C";
 constexpr const char *kHumiFormat = "%.0f%%";
 constexpr const char *kDayFormat = "%d";
 

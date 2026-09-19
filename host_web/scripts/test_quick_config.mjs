@@ -26,6 +26,14 @@ assert.throws(() => makeQuickConfigLink({...base, pass: 'a'.repeat(65)}), /64 �
 assert.throws(() => makeQuickConfigLink({...base, pass: '&'.repeat(54)}), /编码后过长/);
 assert.throws(() => makeQuickConfigLink({...base, api_key: 'DEMO\0KEY'}), /控制字符/);
 const retained = makeQuickConfigLink({ssid: 'Demo'});
+for (const length of [1, 7]) {
+  assert.throws(() => makeQuickConfigLink({...base, pass: 'a'.repeat(length)}), /主 Wi-Fi 密码至少/);
+  assert.throws(() => makeQuickConfigLink({...base, backup_ssid: 'Backup', backup_pass: 'a'.repeat(length)}), /备用 Wi-Fi 密码至少/);
+}
+assert.doesNotThrow(() => makeQuickConfigLink({...base, pass: 'a'.repeat(8)}));
+assert.doesNotThrow(() => makeQuickConfigLink({...base, backup_ssid: 'Backup', backup_pass: 'a'.repeat(8)}));
+assert.doesNotThrow(() => makeQuickConfigLink({...base, pass: '', backup_ssid: 'Backup', backup_pass: ''}));
+assert.doesNotThrow(() => makeQuickConfigLink({manual_time: '2028-01-01T00:00', pass: 'a'}));
 assert.throws(() => makeQuickConfigLink({...base, api_host: ''}), /必须同时填写/);
 assert.throws(() => makeQuickConfigLink({...base, api_key: '  '}), /必须同时填写/);
 assert.ok(retained.warnings.some(text => text.includes('首次配置')));
