@@ -68,6 +68,23 @@ changes cancel pending holds. Keyboard K/B uses the same timing. Run
 `node host_web/scripts/test_simulator_keys.mjs` for the input regression checks.
 This browser adapter does not change physical firmware button handling.
 
+## Simplified Firmware Install
+
+The Firmware tab presents the latest merged Release as the default Online full
+installation. Full install only needs verified ESP32-S3 identity and a known
+Flash capacity; an empty or invalid partition table is allowed because merged
+firmware includes the partition table. It requires an explicit confirmation,
+freezes version/target while active, reuses the existing download/SHA-256/
+esptool/reset path, and never enables writing after a failed hash. It does not
+expose erase-all.
+
+Advanced firmware flashing retains local/App targets, dynamic partition checks,
+MAC/SHA256/details and baud rate. App writes require a valid device partition
+table and target capacity. Device disconnect, unknown chip/capacity, user
+cancel, duplicate clicks and failed writes must leave the main install blocked
+or retryable. Completion shows setup/Quick setup guidance without navigation.
+Mobile browsers can view the page but Web Serial still needs desktop Chrome/Edge.
+
 ## Scope
 
 Quick configuration stays on the `settings` hash and uses `quick-config.js` to

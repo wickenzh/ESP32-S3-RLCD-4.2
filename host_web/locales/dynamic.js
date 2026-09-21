@@ -58,7 +58,6 @@ export const dynamicMessages = [
 ['App 分区写入前必须先选择设备并读取分区表。','寫入 App 分割區前，必須先選擇裝置並讀取分割表。','App書き込み前にデバイスを選択し、パーティション表を読み取ってください。','Select a device and read its partition table before writing App firmware.'],
 [' 文件大小超过目标 App 分区或尚未读取分区表。',' 檔案超過目標 App 分割區大小，或尚未讀取分割表。',' ファイルがApp領域を超えているか、表が未読み取りです。',' File exceeds the target App partition or partitions have not been read.'],
 ['已选择自定义固件文件。{0}{1}','已選擇自訂韌體檔案。{0}{1}','ローカルファームウェアを選択しました。{0}{1}','Local firmware selected. {0}{1}'],
-['在线固件加载失败','線上韌體載入失敗','オンラインファームウェア読込失敗','Online firmware unavailable'],
 ['未找到可用的 GitHub Release 固件版本。','找不到可用的 GitHub Release 韌體版本。','利用可能なGitHub Releaseファームウェアがありません。','No usable GitHub Release firmware was found.'],
 ['在线固件：{0} / {1} {2}','線上韌體：{0} / {1} {2}','オンライン版：{0} / {1} {2}','Online firmware: {0} / {1} {2}'],
 ['当前目标没有可用在线固件','目前目標沒有可用的線上韌體','この書き込み先に対応するオンライン版がありません','No online firmware for this target'],

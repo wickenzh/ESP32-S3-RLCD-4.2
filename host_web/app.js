@@ -70,6 +70,11 @@ let assetPartitions = [];
 let firmwareDevicePort;
 let firmwarePartitions = [];
 let firmwareAppTargets = [];
+let firmwareChipVerified = false;
+let firmwareFlashSizeBytes = 0;
+let firmwareFlashSizeText = "-";
+let firmwareInstallBusy = false;
+let firmwareInstallSnapshot;
 let nextStepElement;
 let nextStepTimer;
 
@@ -1311,8 +1316,8 @@ function selectedFirmwareSize() {
 }
 
 function isFirmwareTargetReady(target = currentFirmwareTarget(), size = selectedFirmwareSize()) {
-  if (target.kind === "merged") return true;
-  if (!firmwareDevicePort || target.kind !== "app" || target.partitions.length === 0) return false;
+  if (target.kind === "merged") return Boolean(firmwareFlashSizeBytes && (!size || size <= firmwareFlashSizeBytes));
+  if (!firmwareDevicePort || !firmwareChipVerified || !firmwareFlashSizeBytes || target.kind !== "app" || target.partitions.length === 0) return false;
   if (!size) return true;
   return target.partitions.every((partition) => size <= partition.size);
 }
@@ -1321,7 +1326,86 @@ function updateFirmwareWriteButton() {
   const hasSerial = "serial" in navigator;
   const target = currentFirmwareTarget();
   const hasFirmware = selectedFirmware?.source === "remote" ? Boolean(verifiedFirmwareData) : Boolean(selectedFirmware);
-  $("#writeFirmwareBtn").disabled = !(hasSerial && hasFirmware && isFirmwareTargetReady(target));
+  $("#writeFirmwareBtn").disabled = !(hasSerial && firmwareDevicePort && firmwareChipVerified && hasFirmware && isFirmwareTargetReady(target));
+}
+
+function normalizeFlashCapacity(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value < 1024 ? value * 1024 * 1024 : value;
+  }
+  const text = String(value || "").trim();
+  const match = text.match(/([0-9]+(?:\.[0-9]+)?)\s*(KB|MB|GB|bytes?)/i);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  return unit.startsWith("gb") ? amount * 1024 * 1024 * 1024
+    : unit.startsWith("mb") ? amount * 1024 * 1024
+      : unit.startsWith("kb") ? amount * 1024 : amount;
+}
+
+function updateFirmwareInstallSummary() {
+  const manifest = remoteFirmwareManifest;
+  setText($("#firmwareInstallVersion"), () => manifest?.version || tr("在线固件加载失败"));
+  setText($("#firmwareInstallNotes"), () => manifest?.notes ? truncateMiddle(manifest.notes, 72) : tr("等待固件清单"));
+  setText($("#firmwareInstallDevice"), () => firmwareDevicePort
+    ? (firmwareFlashSizeText === "-" ? describePort(firmwareDevicePort) : `${describePort(firmwareDevicePort)} / ${firmwareFlashSizeText}`)
+    : tr("未连接"));
+  const ready = Boolean(firmwareDevicePort && firmwareChipVerified && firmwareFlashSizeBytes > 0 && selectedRemoteFirmwareImage("merged"));
+  $("#firmwareInstallConnectBtn").disabled = !("serial" in navigator) || firmwareInstallBusy;
+  $("#firmwareInstallBtn").disabled = !ready || firmwareInstallBusy;
+}
+
+function setFirmwareInstallBusy(busy) {
+  firmwareInstallBusy = busy;
+  $("#firmwareInstallBtn").disabled = busy || !firmwareDevicePort || !firmwareChipVerified || !firmwareFlashSizeBytes || !selectedRemoteFirmwareImage("merged");
+  $("#firmwareInstallConnectBtn").disabled = busy || !("serial" in navigator);
+  $("#firmwareAdvancedPanel").querySelectorAll("input, select, button").forEach((control) => { control.disabled = busy; });
+}
+
+function setFirmwareInstallProgress(value, state) {
+  $("#firmwareInstallProgress").value = value;
+  setText($("#firmwareInstallPercent"), () => `${value}%`);
+  if (state) setText($("#firmwareInstallState"), () => state);
+}
+
+function showFirmwareInstallConfirm() {
+  if (firmwareInstallBusy || !firmwareDevicePort || !firmwareChipVerified || !firmwareFlashSizeBytes) return;
+  firmwareInstallSnapshot = {
+    version: remoteFirmwareManifest?.version,
+    target: "merged",
+    image: selectedRemoteFirmwareImage("merged")
+  };
+  $("#firmwareInstallConfirm").hidden = false;
+  $("#firmwareInstallBtn").disabled = true;
+}
+
+async function installLatestFirmware() {
+  if (firmwareInstallBusy || !firmwareInstallSnapshot?.image) return;
+  setFirmwareInstallBusy(true);
+  const snapshot = firmwareInstallSnapshot;
+  $("#firmwareInstallConfirm").hidden = true;
+  setFirmwareInstallProgress(0, tr("正在准备完整安装"));
+  try {
+    $("#firmwareSource").value = "remote";
+    $("#firmwareTarget").value = "merged";
+    if (!remoteFirmwareManifest) await loadRemoteFirmwareManifest();
+    if (!remoteFirmwareManifest || remoteFirmwareManifest.version !== snapshot.version) throw new LocalizedError(() => tr("在线固件版本已变化，请重新连接并确认。"));
+    setText($("#firmwareInstallResult"), () => tr`正在下载并校验 ${snapshot.version} 的完整 merged 固件。`);
+    await downloadRemoteFirmware();
+    if (!verifiedFirmwareData || selectedFirmware?.version !== snapshot.version) throw new LocalizedError(() => tr("固件校验未通过，未执行写入。"));
+    setFirmwareInstallProgress(60, tr("校验通过，准备写入"));
+    const success = await writeFirmware();
+    if (!success) throw new LocalizedError(() => tr("安装失败，可重试。"));
+    setFirmwareInstallProgress(100, tr("安装完成，设备正在复位"));
+    setText($("#firmwareInstallResult"), () => tr("安装完成。请按需打开配网或快捷配置；页面不会自动跳转。"));
+  } catch (error) {
+    setFirmwareInstallProgress(0, tr("安装失败，可重试"));
+    setText($("#firmwareInstallResult"), () => error.message);
+  } finally {
+    firmwareInstallSnapshot = undefined;
+    setFirmwareInstallBusy(false);
+    updateFirmwareInstallSummary();
+  }
 }
 
 function firmwareTargetOffsetText(target = currentFirmwareTarget()) {
@@ -1369,6 +1453,7 @@ function refreshFirmwareTargetState() {
 
 function setRemoteFirmwareManifest(index = 0, note = "") {
   remoteFirmwareManifest = remoteFirmwareOptions[index] || remoteFirmwareOptions[0];
+  updateFirmwareInstallSummary();
   verifiedFirmwareData = undefined;
   selectedFirmware = undefined;
   setFirmwareReady(false);
@@ -1442,6 +1527,7 @@ function partitionSubtypeName(type, subtype) {
 }
 
 function parsePartitionTable(bytes) {
+  if (!bytes || bytes.byteLength === 0) return [];
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const partitions = [];
   for (let offset = 0; offset + 32 <= bytes.byteLength; offset += 32) {
@@ -1602,12 +1688,16 @@ function resetFirmwareDeviceState(message = "未读取") {
   firmwareDevicePort = undefined;
   firmwarePartitions = [];
   firmwareAppTargets = [];
+  firmwareChipVerified = false;
+  firmwareFlashSizeBytes = 0;
+  firmwareFlashSizeText = "-";
   setText($("#firmwarePartitionState"), () => tr(message));
   setText($("#firmwareDeviceName"), () => tr("未选择"));
   setText($("#firmwareChipName"), () => tr("等待读取"));
   setText($("#firmwareMacAddress"), () => "-");
   renderFirmwareTargets();
   refreshFirmwareTargetState();
+  updateFirmwareInstallSummary();
 }
 
 async function inspectFirmwareDevice() {
@@ -1616,6 +1706,7 @@ async function inspectFirmwareDevice() {
     return;
   }
   $("#selectFirmwareDeviceBtn").disabled = true;
+  $("#firmwareInstallConnectBtn").disabled = true;
   setText($("#firmwarePartitionState"), () => tr("读取中"));
   setText($("#firmwareWriteState"), () => tr("连接并读取分区表"));
   setProgress("firmwareWrite", 0, 100);
@@ -1636,9 +1727,28 @@ async function inspectFirmwareDevice() {
     const macAddress = await loader.chip.readMac(loader);
     setText($("#firmwareChipName"), () => chipName || tr("已连接"));
     setText($("#firmwareMacAddress"), () => macAddress || "-");
-    const tableBytes = await loader.readFlash(PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE, (_chunk, read, total) => {
-      setProgress("firmwareWrite", read, total);
-    });
+    firmwareChipVerified = /ESP32-S3/i.test(String(chipName || ""));
+    const rawFlashSize = typeof loader.chip.getFlashSize === "function"
+      ? await loader.chip.getFlashSize(loader)
+      : loader.chip.flashSize;
+    firmwareFlashSizeBytes = normalizeFlashCapacity(rawFlashSize);
+    firmwareFlashSizeText = firmwareFlashSizeBytes ? formatBytes(firmwareFlashSizeBytes) : "-";
+    updateFirmwareInstallSummary();
+    if (!firmwareChipVerified || !firmwareFlashSizeBytes) {
+      setText($("#firmwareInstallConnection"), () => tr("无法验证芯片或 Flash 容量"));
+      throw new LocalizedError(() => tr`无法验证设备：芯片 ${chipName || "-"} / Flash ${firmwareFlashSizeText}`);
+    }
+    setText($("#firmwareInstallConnection"), () => tr`已识别 ESP32-S3 / Flash ${firmwareFlashSizeText}`);
+    let tableBytes;
+    try {
+      tableBytes = await loader.readFlash(PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE, (_chunk, read, total) => {
+        setProgress("firmwareWrite", read, total);
+      });
+    } catch (partitionError) {
+      tableBytes = undefined;
+      setText($("#firmwarePartitionState"), () => tr("未读取"));
+      setText($("#flashResult"), () => tr`未读取分区表。完整安装仍可继续；高级 App 更新需要有效分区表：${partitionError.message}`);
+    }
     firmwarePartitions = parsePartitionTable(tableBytes);
     renderPartitionTable(firmwarePartitions, {
       tbodyId: "firmwarePartitionTableBody",
@@ -1653,18 +1763,23 @@ async function inspectFirmwareDevice() {
     setText($("#firmwareWriteState"), () => appCount ? tr("App 分区已读取") : tr("未找到 ota_0 / ota_1"));
     setText($("#flashResult"), () => appCount
       ? tr`分区表读取完成：${[ota0, ota1].filter(Boolean).map((partition) => `${partition.label} ${hex(partition.address)} / ${formatBytes(partition.size)}`).join("，")}。App 固件只能写入这些分区；merged 固件仍写入 0x0。`
-      : tr("分区表读取完成，但未找到 ota_0 或 ota_1，禁止 App 分区写入。"));
+      : tr("分区表为空或不可用。完整安装可继续；高级 App 更新需要有效分区表。"));
     await resetDeviceAfterFlash(transport, selectedPort, (text) => { setText($("#flashResult"), () => text.trim() || $("#flashResult").textContent); });
   } catch (error) {
     firmwareDevicePort = undefined;
     firmwarePartitions = [];
+    firmwareChipVerified = false;
+    firmwareFlashSizeBytes = 0;
+    firmwareFlashSizeText = "-";
     setText($("#firmwarePartitionState"), () => tr("读取失败"));
     setText($("#firmwareWriteState"), () => tr("设备读取失败"));
     setText($("#flashResult"), () => tr`设备分区表读取失败：${error.message}`);
     renderFirmwareTargets();
   } finally {
     refreshFirmwareTargetState();
+    updateFirmwareInstallSummary();
     $("#selectFirmwareDeviceBtn").disabled = !("serial" in navigator);
+    $("#firmwareInstallConnectBtn").disabled = !("serial" in navigator);
     if (transport) {
       try {
         await transport.disconnect();
@@ -1675,6 +1790,7 @@ async function inspectFirmwareDevice() {
     if (firmwareDevicePort && firmwarePartitions.length) {
       hintNextStep($("#firmwareSource").value === "remote" ? "#downloadFirmwareBtn" : "#firmwareInput");
     }
+    updateFirmwareInstallSummary();
   }
 }
 
@@ -1706,6 +1822,7 @@ async function loadRemoteFirmwareManifest() {
     showFirmwareOptionMessage("在线固件加载失败");
     setText($("#firmwareWriteState"), () => tr("在线固件加载失败"));
     setText($("#flashResult"), () => tr`${error.message} 请稍后刷新，或切换为自定义固件文件。`);
+    updateFirmwareInstallSummary();
   }
 }
 
@@ -1735,6 +1852,7 @@ async function downloadRemoteFirmware() {
       received += value.byteLength;
       setProgress("firmwareWrite", received, total);
       setText($("#firmwareWriteState"), () => tr`下载中 ${formatBytes(received)} / ${total ? formatBytes(total) : tr("未知大小")}`);
+      if (firmwareInstallBusy) setFirmwareInstallProgress(total ? Math.min(55, Math.round(received / total * 55)) : 5, tr("正在下载并校验完整 merged 固件"));
     }
   } else {
     const buffer = await response.arrayBuffer();
@@ -1862,6 +1980,7 @@ async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, pe
         setText($(`#${percentId}`), () => `${percent}%`);
         const targetText = offsets.length > 1 ? ` ${fileIndex + 1}/${offsets.length} ${hex(offsets[fileIndex])}` : "";
         setText($(`#${stateId}`), () => tr`写入中${targetText} ${formatBytes(written)} / ${formatBytes(total)}`);
+        if (firmwareInstallBusy && stateId === "firmwareWriteState") setFirmwareInstallProgress(60 + Math.round(percent * 0.4), tr("正在写入完整 merged 固件"));
       }
     });
     if (eraseSize) offsets.forEach((address) => log(tr`写入范围：${hex(address)} + ${formatBytes(eraseSize)}\n`));
@@ -1946,19 +2065,19 @@ async function eraseAssets() {
 }
 
 async function writeFirmware() {
-  if (!selectedFirmware) return;
+  if (!selectedFirmware) return false;
   const target = currentFirmwareTarget();
   if (target.kind === "app" && (!firmwareDevicePort || target.partitions.length === 0)) {
     setText($("#flashResult"), () => tr("App 分区写入前必须先选择设备并读取分区表，不能使用旧地址或静默兜底。"));
     setFirmwareReady(false);
-    return;
+    return false;
   }
   let data;
   let sha;
   if (selectedFirmware.source === "remote") {
     if (!verifiedFirmwareData) {
       setText($("#flashResult"), () => tr("在线固件尚未下载并校验，请先点击“下载并校验固件”。"));
-      return;
+      return false;
     }
     data = verifiedFirmwareData;
     sha = selectedFirmware.sha256 || await sha256Hex(data);
@@ -1973,9 +2092,9 @@ async function writeFirmware() {
   if (!isFirmwareTargetReady(target, data.byteLength)) {
     setText($("#flashResult"), () => target.kind === "app"
       ? tr`禁止烧录：${selectedFirmware.name} 大小 ${formatBytes(data.byteLength)} 超过目标 App 分区，或尚未读取 ota_0/ota_1 分区表。`
-      : tr("禁止烧录：当前写入目标无效。"));
+      : tr`禁止完整安装：文件 ${formatBytes(data.byteLength)} 超过已识别的 Flash 容量 ${formatBytes(firmwareFlashSizeBytes)}，或设备容量尚未验证。`);
     setFirmwareReady(false);
-    return;
+    return false;
   }
   setText($("#firmwareWriteState"), () => tr`准备写入 ${selectedFirmware.name}`);
   const partitionText = target.kind === "merged"
@@ -1995,14 +2114,16 @@ async function writeFirmware() {
       devicePort: target.kind === "app" ? firmwareDevicePort : firmwareDevicePort
     });
     setText($("#flashResult"), () => tr`${target.label} 烧录完成，设备正在重启。`);
+    return true;
   } catch (error) {
     setText($("#firmwareWriteState"), () => tr("烧录失败"));
     setText($("#flashResult"), () => tr`烧录失败：${error.message}`);
+    return false;
   }
 }
 
 function activateTab(tabId, updateAddress = true) {
-  if (!$$(".tab").some(tab => tab.dataset.tab === tabId)) tabId = "assets";
+  if (!$$(".tab").some(tab => tab.dataset.tab === tabId)) tabId = "firmware";
   clearNextStepHint();
   $$(".tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabId));
   $$(".tab-panel").forEach((panel) => panel.classList.toggle("is-active", panel.id === tabId));
@@ -2132,6 +2253,14 @@ $("#selectAssetDeviceBtn").addEventListener("click", inspectAssetDevice);
 $("#writeAssetsBtn").addEventListener("click", writeAssets);
 $("#eraseAssetsBtn").addEventListener("click", eraseAssets);
 $("#selectFirmwareDeviceBtn").addEventListener("click", inspectFirmwareDevice);
+$("#firmwareInstallConnectBtn").addEventListener("click", inspectFirmwareDevice);
+$("#firmwareInstallBtn").addEventListener("click", showFirmwareInstallConfirm);
+$("#firmwareInstallCancelBtn").addEventListener("click", () => {
+  firmwareInstallSnapshot = undefined;
+  $("#firmwareInstallConfirm").hidden = true;
+  updateFirmwareInstallSummary();
+});
+$("#firmwareInstallConfirmBtn").addEventListener("click", installLatestFirmware);
 $("#firmwareSource").addEventListener("change", () => {
   const source = $("#firmwareSource").value;
   const useRemote = source === "remote";

@@ -37,15 +37,15 @@
   <main class="layout">
     <section class="workspace">
       <nav class="tabs" aria-label="上位机功能">
-        <button class="tab is-active" data-tab="assets" type="button">资源制作</button>
+        <button class="tab is-active" data-tab="firmware" type="button">固件烧录</button>
+        <button class="tab" data-tab="assets" type="button">资源制作</button>
         <button class="tab" data-tab="writer" type="button">资源写入</button>
-        <button class="tab" data-tab="firmware" type="button">固件烧录</button>
         <button class="tab" data-tab="serial" type="button">串口日志</button>
         <button class="tab" data-tab="screens" type="button">界面预览</button>
         <button class="tab" data-tab="settings" type="button">快捷配置</button>
       </nav>
 
-      <section id="assets" class="tab-panel is-active">
+      <section id="assets" class="tab-panel">
         <div class="work-summary">
           <div class="summary-specs">
             <div><span>GIF 动图</span><strong>84 x 84 / 60 帧</strong></div>
@@ -343,23 +343,50 @@
         <pre id="writeLog" class="terminal compact-terminal">生成资源包后，请先读取设备分区表，再写入设备 assets 分区。</pre>
       </section>
 
-      <section id="firmware" class="tab-panel">
+      <section id="firmware" class="tab-panel is-active">
+        <div class="firmware-install-card">
+          <div class="firmware-install-heading">
+            <div><h2>在线完整安装</h2><p>默认安装最新正式版 merged 固件，适合首次安装或分区迁移。</p></div>
+            <span id="firmwareInstallConnection" class="status-pill">设备未连接</span>
+          </div>
+          <div class="firmware-install-summary">
+            <div><span>最新版本</span><strong id="firmwareInstallVersion">加载中</strong></div>
+            <div><span>版本说明</span><strong id="firmwareInstallNotes">-</strong></div>
+            <div><span>已选设备</span><strong id="firmwareInstallDevice">未连接</strong></div>
+          </div>
+          <p class="firmware-install-warning">完整 merged 固件会覆盖设备固件、分区表和资源内容，设备配置与自定义资源可能被清除。需要保留时，请取消并在高级固件烧录中选择 App 更新。</p>
+          <div class="firmware-install-actions">
+            <button id="firmwareInstallConnectBtn" class="primary-button" type="button">① 连接设备并识别</button>
+            <button id="firmwareInstallBtn" class="primary-button" type="button" disabled>② 安装最新固件</button>
+          </div>
+          <div id="firmwareInstallConfirm" class="firmware-confirm" hidden>
+            <p><strong>请确认完整安装</strong><span>这会覆盖固件、分区表和设备资源。确认后将下载、校验并写入最新 merged 固件。</span></p>
+            <div><button id="firmwareInstallCancelBtn" class="secondary-button" type="button">取消</button><button id="firmwareInstallConfirmBtn" class="primary-button" type="button">我已了解并继续</button></div>
+          </div>
+          <div class="progress-block firmware-install-progress">
+            <div class="progress-head"><span id="firmwareInstallState">连接设备后可安装</span><strong id="firmwareInstallPercent">0%</strong></div>
+            <progress id="firmwareInstallProgress" value="0" max="100"></progress>
+          </div>
+          <p id="firmwareInstallResult" class="firmware-install-result">安装完成后设备会自动复位；页面不会自动跳转，可按需打开配网或快捷配置。</p>
+        </div>
+        <details id="firmwareAdvancedPanel" class="firmware-advanced">
+          <summary>高级固件烧录</summary>
         <div class="form-grid">
           <label>
-            <span>① 固件来源</span>
+            <span>固件来源</span>
             <select id="firmwareSource">
               <option value="remote" selected>GitHub Release</option>
               <option value="local">自定义固件文件</option>
             </select>
           </label>
           <label>
-            <span>① 选择在线固件</span>
+            <span>选择在线固件</span>
             <select id="remoteFirmwareSelect">
               <option value="">正在加载固件清单</option>
             </select>
           </label>
           <label class="wide-field file-picker">
-            <span>③ 选择自定义 bin 文件</span>
+            <span>选择自定义 bin 文件</span>
             <input id="firmwareInput" type="file" accept=".bin,application/octet-stream" disabled>
           </label>
           <label>
@@ -379,10 +406,10 @@
           </label>
         </div>
         <div class="action-strip">
-          <button id="selectFirmwareDeviceBtn" class="secondary-button" type="button">② 选择并读取分区表</button>
+          <button id="selectFirmwareDeviceBtn" class="secondary-button" type="button">① 选择并读取分区表</button>
           <button id="refreshFirmwareBtn" class="secondary-button" type="button">刷新在线固件</button>
-          <button id="downloadFirmwareBtn" class="secondary-button" type="button">③ 下载并校验固件</button>
-          <button id="writeFirmwareBtn" class="primary-button" type="button" disabled>④ 串口烧录固件</button>
+          <button id="downloadFirmwareBtn" class="secondary-button" type="button">② 下载并校验固件</button>
+          <button id="writeFirmwareBtn" class="primary-button" type="button" disabled>③ 串口烧录固件</button>
         </div>
         <div class="device-panel">
           <div class="metrics writer-metrics">
@@ -413,6 +440,7 @@
           <progress id="firmwareWriteProgress" value="0" max="100"></progress>
         </div>
         <output id="flashResult" class="output-box">默认读取 GitHub Release 提供的最近版本固件。首次迁移到 v1.5.x 分区表时请使用完整 merged 固件写入 0x0。</output>
+        </details>
       </section>
     </section>
   </main>

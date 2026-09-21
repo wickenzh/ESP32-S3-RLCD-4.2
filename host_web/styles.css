@@ -1142,6 +1142,28 @@ progress::-moz-progress-bar { background: var(--accent); }
 .quick-provider-heading { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
 .quick-provider-heading small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .quick-provider-heading small + small { margin-top: 4px; }
+.firmware-install-card { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); padding: 16px; }
+.firmware-install-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.firmware-install-heading h2 { margin: 0; font-size: 18px; }
+.firmware-install-heading p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.firmware-install-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+.firmware-install-summary > div { min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.firmware-install-summary span { display: block; color: var(--muted); font-size: 12px; }
+.firmware-install-summary strong { display: block; margin-top: 5px; overflow-wrap: anywhere; }
+.firmware-install-warning { margin: 0 0 14px; padding: 10px 12px; border-left: 3px solid var(--warn); color: var(--warn); font-size: 13px; line-height: 1.55; }
+.firmware-install-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.firmware-install-actions button { min-width: 0; white-space: normal; }
+.firmware-confirm { margin-top: 14px; padding: 12px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-soft); }
+.firmware-confirm p { margin: 0 0 10px; color: var(--warn); line-height: 1.55; }
+.firmware-confirm p strong, .firmware-confirm p span { display: block; }
+.firmware-confirm p strong { margin-bottom: 4px; color: var(--ink); }
+.firmware-confirm > div { display: flex; justify-content: flex-end; gap: 10px; }
+.firmware-confirm button { min-width: 120px; }
+.firmware-install-progress { margin: 16px 0 0; padding: 0; }
+.firmware-install-result { margin: 12px 0 0; color: var(--muted); line-height: 1.5; }
+.firmware-advanced { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; }
+.firmware-advanced summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+.firmware-advanced[open] summary { margin-bottom: 16px; }
 @media (min-width: 801px) {
   .quick-field-group > :nth-child(2) { grid-row: 2; }
   .quick-field-group > :nth-child(3) { grid-row: 3; }
@@ -1184,6 +1206,7 @@ progress::-moz-progress-bar { background: var(--accent); }
   .device-workspace { grid-template-columns: 1fr; gap: 18px; align-items: stretch; }
   .device-settings { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--line); }
   .virtual-portal { max-width: none; }
+  .firmware-install-summary { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -1200,6 +1223,12 @@ progress::-moz-progress-bar { background: var(--accent); }
   .device-key-help { font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .device-key-help p { white-space: normal; }
   .device-settings .action-strip { grid-template-columns: 1fr; }
+  .firmware-install-card { padding: 12px; }
+  .firmware-install-heading { flex-direction: column; gap: 8px; }
+  .firmware-install-heading .status-pill { width: 100%; justify-content: center; }
+  .firmware-install-actions { grid-template-columns: 1fr; }
+  .firmware-confirm > div { flex-direction: column-reverse; }
+  .firmware-confirm button { width: 100%; }
   .quick-notice p { grid-template-columns: 82px minmax(0, 1fr); gap: 6px; }
   .quick-fields { gap: 24px; }
   .quick-field-group { gap: 14px; }

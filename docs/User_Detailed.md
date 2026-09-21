@@ -107,6 +107,8 @@ Translation covers web-tool buttons, descriptions and application status. Firmwa
 
 The browser tool prepares GIFs and image galleries, previews pages, checks and flashes firmware, and reads logs. Asset conversion and configuration generation run locally; loading the site and downloading firmware still use the network. The preview is not a full hardware simulator. The web UI supports narrow-screen viewing and stacks the simulator vertically; asset writing, firmware flashing and serial operations still require desktop Chrome/Edge with Web Serial.
 
+The Firmware page defaults to Online full installation using the latest stable merged firmware. For a first install or partition migration, connect the device and verify an ESP32-S3 chip and known Flash capacity before confirming the overwrite of firmware, partitions and assets; a blank or invalid partition table does not block a full install. To preserve settings or custom assets, cancel and use Advanced firmware flashing with a valid partition table and an App update. Verification failures never write, and completion does not navigate automatically. Phones can browse but cannot perform serial installation.
+
 Quick configuration generates a link to the device's save endpoint. Connect to the device hotspot first. Opening the link submits settings rather than merely prefilling a form. It contains plaintext credentials and must be treated like a password.
 
 Missing or invalid resources normally fall back to built-in assets. Use tools and addresses matching the current partition layout, and keep original resource files before replacing them.
