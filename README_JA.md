@@ -1,5 +1,7 @@
 # ESP32-S3 RLCD 4.2 天気時計
 
+天気サービスを選べます。初期設定はQWeatherで、Open-Meteoを有効にするとQWeatherのKey/Hostは不要です。大気質はUS AQI、気象警報は非対応で、自動的に別サービスへ切り替えません。公開APIは非商用向けです。データ：[Open-Meteo](https://open-meteo.com/) / [CAMS](https://atmosphere.copernicus.eu/)、都市検索：[GeoNames](https://www.geonames.org/)。
+
 [简体中文](README.md) · [繁體中文](README_zh_TW.md) · [English](README_EN.md) · 日本語（現在）
 
 WaveshareのESP32-S3と4.2インチRLCDを使った卓上時計です。常時読める画面に、天気、温湿度、画像、カレンダー、通知、Xiaozhi AIをまとめています。必要なときだけ通信や音声を動かす設計を重視しています。

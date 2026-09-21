@@ -61,6 +61,8 @@
 
 ## 配置与联网
 
+天气服务可选和风天气或 Open-Meteo，配网页和网页快捷配置中的开关默认关闭。开启 Open-Meteo 无需和风 Key/Host，显示 US AQI，不提供本项目预警；两个来源不自动混用。公共服务仅限非商业使用，数据来自 [Open-Meteo](https://open-meteo.com/) / [CAMS](https://atmosphere.copernicus.eu/)，城市查询使用 [GeoNames](https://www.geonames.org/)。
+
 首次使用通过设备配网页完成配置：
 
 - 支持主 Wi-Fi 和可选备用 Wi-Fi；主网络连续不可用时会尝试备用网络，成功后可按既有策略晋升。

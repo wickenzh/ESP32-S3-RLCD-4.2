@@ -1,6 +1,7 @@
 // 验证联网凭据在并发读写时始终以同一代成对快照对外提供。
 #include "network_credentials_state.h"
 #include "network_credentials_state_internal.h"
+#include "weather_provider.h"
 
 #include <assert.h>
 #include <atomic>
@@ -300,5 +301,12 @@ int main()
 
     network_credentials_clear();
     expect_mutex_released();
+    weather_provider_store(WeatherProvider::kOpenMeteo);
+    assert(network_weather_configuration_configured());
+    assert(!network_all_online_credentials_configured());
+    store_single_credentials("Demo", "password", "", "", false, false);
+    assert(network_all_online_credentials_configured());
+    weather_provider_store(WeatherProvider::kQweather);
+    assert(!network_weather_configuration_configured());
     return 0;
 }

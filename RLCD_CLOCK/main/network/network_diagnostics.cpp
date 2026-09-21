@@ -21,6 +21,7 @@
 #include "ui_settings_activity_state.h"
 #include "ui_task_notify.h"
 #include "weather_update.h"
+#include "weather_provider.h"
 #include "wifi_portal_state.h"
 
 #include "esp_log.h"
@@ -208,8 +209,11 @@ const char *diag_result_text(bool ok)
     return ok ? kNetworkDiagStatusOk : kNetworkDiagStatusFailed;
 }
 
-bool configured_qweather_dns_ok()
+bool configured_weather_dns_ok()
 {
+    if (weather_provider_load() == WeatherProvider::kOpenMeteo) {
+        return network_diagnostic_dns_lookup_ok("api.open-meteo.com");
+    }
     char api_host[kQweatherApiHostLen] = {};
     if (!network_weather_api_host_snapshot(api_host, sizeof(api_host))) {
         ESP_LOGW(TAG, "%s", kNetworkDiagQweatherHostUnavailableLog);
@@ -390,7 +394,7 @@ bool run_network_diagnostic_checks(uint32_t request_generation)
     }
 
     network_diag_set_checking_line(kNetworkDiagDnsLine, kNetworkDiagDnsFormat);
-    bool dns_ok = configured_qweather_dns_ok() &&
+    bool dns_ok = configured_weather_dns_ok() &&
                   network_diagnostic_dns_lookup_ok(kNetworkDiagGithubDnsHost);
     if (!network_diagnostics_should_continue(kNetworkDiagDnsLine,
                                              completed,

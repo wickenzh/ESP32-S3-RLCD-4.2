@@ -7,6 +7,8 @@
 #include "network_sync_request_generation.h"
 #include "offline_mode_state.h"
 #include "qweather_client.h"
+#include "weather_provider.h"
+#include "open_meteo_client.h"
 #include "ui_task_notify.h"
 #include "weather_city_contract.h"
 #include "weather_city_pending_state_internal.h"
@@ -66,7 +68,17 @@ bool handle_weather_city(const XiaozhiMcpWeatherCityRequest &request,
     char resolved_city[kManualWeatherCityLen] = {};
     char latitude[kCityCoordinateLen] = {};
     char longitude[kCityCoordinateLen] = {};
-    QweatherCityLookupStatus status = qweather_lookup_city_status(normalized,
+    QweatherCityLookupStatus status;
+    if(weather_provider_load()==WeatherProvider::kOpenMeteo) {
+        WeatherData location;
+        const auto result_status=open_meteo_lookup_city(normalized,&location);
+        status=result_status==OpenMeteoCityStatus::kOk?kQweatherCityLookupOk:
+               result_status==OpenMeteoCityStatus::kNotFound?kQweatherCityLookupNotFound:kQweatherCityLookupError;
+        std::snprintf(resolved_city,sizeof(resolved_city),"%s",location.city);
+        std::snprintf(latitude,sizeof(latitude),"%s",location.lat);
+        std::snprintf(longitude,sizeof(longitude),"%s",location.lon);
+    } else {
+    status = qweather_lookup_city_status(normalized,
                                                                   city_id,
                                                                   sizeof(city_id),
                                                                   resolved_city,
@@ -75,6 +87,7 @@ bool handle_weather_city(const XiaozhiMcpWeatherCityRequest &request,
                                                                   sizeof(latitude),
                                                                   longitude,
                                                                   sizeof(longitude));
+    }
     if (status != kQweatherCityLookupOk || resolved_city[0] == '\0') {
         if (result && result_len > 0) {
             std::snprintf(result,

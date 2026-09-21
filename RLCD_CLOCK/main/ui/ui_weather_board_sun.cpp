@@ -83,6 +83,8 @@ WeatherBoardSunSchedule weather_board_sun_schedule(const WeatherForecastData &fo
         return schedule;
     }
     schedule.ready = true;
+    schedule.sunrise_day_offset = today->sunrise_day_offset;
+    schedule.sunset_day_offset = today->sunset_day_offset;
     strlcpy(schedule.today_sunrise,
             today->sunrise,
             sizeof(schedule.today_sunrise));
@@ -90,6 +92,7 @@ WeatherBoardSunSchedule weather_board_sun_schedule(const WeatherForecastData &fo
             today->sunset,
             sizeof(schedule.today_sunset));
     const WeatherForecastDay *tomorrow = weather_board_forecast_day_or_null(forecast, 1);
+    schedule.tomorrow_sunrise_day_offset = tomorrow ? tomorrow->sunrise_day_offset : today->sunrise_day_offset;
     strlcpy(schedule.tomorrow_sunrise,
             tomorrow && tomorrow->sunrise[0] ? tomorrow->sunrise : today->sunrise,
             sizeof(schedule.tomorrow_sunrise));
@@ -112,9 +115,16 @@ void format_weather_board_sun_countdown(const struct tm &local,
     }
     struct tm now_tm = local;
     time_t now = mktime(&now_tm);
-    time_t sunrise = weather_board_time_on_day(local, schedule.today_sunrise, 0);
-    time_t sunset = weather_board_time_on_day(local, schedule.today_sunset, 0);
+    time_t sunrise = weather_board_time_on_day(local, schedule.today_sunrise, schedule.sunrise_day_offset);
+    time_t sunset = weather_board_time_on_day(local, schedule.today_sunset, schedule.sunset_day_offset);
     if (now <= 0 || sunrise <= 0 || sunset <= 0) {
+        set_sun_countdown_placeholder(out, out_len);
+        return;
+    }
+    // A fixed device timezone may put yesterday's sunset after midnight.
+    // Without yesterday's solar event, do not invent its exact countdown.
+    if (schedule.sunset_day_offset > 0 && now < sunrise &&
+        now < weather_board_time_on_day(local, schedule.today_sunset, 0)) {
         set_sun_countdown_placeholder(out, out_len);
         return;
     }
@@ -129,7 +139,7 @@ void format_weather_board_sun_countdown(const struct tm &local,
                                            schedule.tomorrow_sunrise[0]
                                                ? schedule.tomorrow_sunrise
                                                : schedule.today_sunrise,
-                                           1);
+                                           1 + schedule.tomorrow_sunrise_day_offset);
     }
     if (target <= now) {
         set_sun_countdown_placeholder(out, out_len);

@@ -3,6 +3,7 @@
 
 #include "battery_runtime_state.h"
 #include "network_credentials_state.h"
+#include "weather_provider.h"
 #include "network_sync_schedule.h"
 #include "offline_mode_state.h"
 #include "ota_runtime_state.h"
@@ -14,8 +15,8 @@ NetworkSyncAvailability capture_network_runtime_availability()
         network_credentials_availability();
     return {
         credentials.wifi_configured,
-        credentials.weather_api_key_configured &&
-            credentials.weather_api_host_configured,
+        weather_provider_load() == WeatherProvider::kOpenMeteo ||
+            (credentials.weather_api_key_configured && credentials.weather_api_host_configured),
         offline_mode_enabled_load(),
         battery_low_mode_load(),
     };

@@ -7,6 +7,7 @@
 #include "checked_size.h"
 #include "manual_weather_city_state.h"
 #include "network_credentials_state.h"
+#include "weather_provider.h"
 #include "scoped_heap_buffer.h"
 #include "wifi_portal_html_text.h"
 #include "wifi_portal_ui_assets.h"
@@ -51,13 +52,13 @@ constexpr const char *kPortalSaveWeatherApiFailedTitle = "天气 API 验证失�
 constexpr const char *kPortalSaveWeatherCityInvalidTitle = "天气城市无效";
 constexpr const char *kPortalSaveConnectedBody = "天气时钟已连接到 Wi-Fi 网络。";
 constexpr const char *kPortalSaveValidatingBody =
-    "设备正在连接 Wi-Fi，并验证天气 API 密钥、API Host 和天气城市，请稍候。";
+    "设备正在连接 Wi-Fi，并验证所选天气服务和天气城市，请稍候。";
 constexpr const char *kPortalSaveMissingBody =
-    "在线模式请填写 Wi-Fi、和风天气 API 密钥和账号专属 API Host；离线模式可仅设置日期和时间。";
+    "在线模式请填写 Wi-Fi；和风天气需要 API Key 和专属 API Host，Open-Meteo 无需密钥。离线可仅设置日期时间。";
 constexpr const char *kPortalSaveWifiFailedBody =
     "设备未能连接主 Wi-Fi 或备用 Wi-Fi。请检查密码、信号和路由器状态后重新填写。";
 constexpr const char *kPortalSaveWeatherApiFailedBody =
-    "Wi-Fi 已连接，但和风天气验证失败。请检查 API 密钥和账号专属 API Host 后重新填写。";
+    "Wi-Fi 已连接，但所选天气服务验证失败。请检查网络、城市；使用和风天气时还需检查 Key 和 Host。";
 constexpr const char *kPortalSaveWeatherCityInvalidBody =
     "Wi-Fi 与 API 密钥可用，但和风天气无法识别该城市。请修改城市，或留空使用自动定位。";
 constexpr const char *kPortalOfflineSavedTitle = "离线模式已开启";
@@ -375,6 +376,9 @@ esp_err_t root_get_handler(httpd_req_t *req)
                 text.safe_ssid,
                 text.safe_backup_ssid,
                 text.safe_weather_city);
+    if(weather_provider_load()==WeatherProvider::kOpenMeteo) {
+        html_append(html.data(),html.size(),"<script>document.getElementById('open-meteo').checked=true;selectWeatherProvider();</script>");
+    }
     html_append(html.data(), html.size(), "</section>");
     append_wifi_scan_list(html.data(), html.size());
     html_append(html.data(), html.size(), "</main></body></html>");

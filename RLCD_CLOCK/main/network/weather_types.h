@@ -10,6 +10,8 @@ inline constexpr int kWeatherForecastDays = 6;
 inline constexpr int kWeatherAdviceLen = 96;
 
 struct WeatherData {
+    uint32_t configuration_generation = 0;
+    bool open_meteo = false;
     char city[32] = {};
     char text[32] = {};
     char icon[8] = {};
@@ -39,6 +41,8 @@ struct WeatherForecastDay {
     char wind_scale[8] = {};
     char sunrise[8] = {};
     char sunset[8] = {};
+    int8_t sunrise_day_offset = 0;
+    int8_t sunset_day_offset = 0;
 };
 
 struct WeatherForecastData {
@@ -50,6 +54,7 @@ struct WeatherForecastData {
 };
 
 struct WeatherAirData {
+    bool us_aqi = false;
     bool ready = false;
     char aqi[8] = {};
     char category[16] = {};

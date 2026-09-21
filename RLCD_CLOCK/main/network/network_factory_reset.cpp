@@ -55,6 +55,7 @@ constexpr const char *kSavedConfigKeys[] = {
     kManualWeatherCityKey,
     kIgnoredAssetWeatherCityKey,
     kQweatherApiHostKey,
+    network_config_keys::kWeatherProviderKey,
     kOfflineModeKey,
     kHourlyChimeKey,
     kHourlyAllDayKey,
@@ -76,7 +77,7 @@ constexpr const char *kSavedConfigKeys[] = {
     kGalleryRotationKey,
 };
 
-static_assert(array_count(kSavedConfigKeys) == 28,
+static_assert(array_count(kSavedConfigKeys) == 29,
               "factory reset key registry count changed; update its host test");
 static_assert(cstr_array_nonempty(kSavedConfigKeys),
               "factory reset config keys must be non-empty");

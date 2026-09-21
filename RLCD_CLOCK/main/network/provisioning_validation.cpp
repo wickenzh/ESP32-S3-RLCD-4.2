@@ -4,6 +4,8 @@
 #include "app_metadata.h"
 #include "manual_weather_city_state.h"
 #include "qweather_client.h"
+#include "weather_provider.h"
+#include "open_meteo_client.h"
 
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -30,6 +32,9 @@ static_assert(sizeof(WeatherData) >= 96,
 
 WifiPortalSaveResult validate_saved_provisioning_weather_configuration()
 {
+    if(weather_provider_load()==WeatherProvider::kOpenMeteo) {
+        return open_meteo_validate_configuration()?WifiPortalSaveResult::kSuccess:WifiPortalSaveResult::kWeatherApiFailed;
+    }
     s_provisioning_probe_weather = {};
     if (!qweather_fetch_now(kProvisioningWeatherApiProbeCityId,
                             &s_provisioning_probe_weather)) {

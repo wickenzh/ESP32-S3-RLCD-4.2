@@ -130,6 +130,7 @@ input{
   font-size:16px;
 }
 input::placeholder{color:#8a959f}
+input:disabled{color:var(--muted);opacity:.6;cursor:not-allowed}
 input:focus{border-color:var(--focus);box-shadow:0 0 0 3px rgba(0,113,227,.14);background:#fff}
 .hint{margin:5px 1px 0;color:var(--muted);font-size:11px;line-height:1.4}
 .actions{margin-top:12px}
@@ -239,6 +240,8 @@ function pick(ssid){
   if(password){password.focus();}
 }
 function beginSave(form){
+  var provider=document.getElementById("weather-provider");
+  if(provider){provider.value=document.getElementById("open-meteo").checked?"open_meteo":"qweather";}
   var button=form.querySelector(".submit");
   var status=document.getElementById("save-status");
   if(button){
@@ -249,6 +252,14 @@ function beginSave(form){
   setTimeout(function(){form.submit();},80);
   return false;
 }
+function selectWeatherProvider(){
+  var toggle=document.getElementById('open-meteo');
+  var selected=toggle && toggle.checked;
+  var provider=document.getElementById('weather-provider');
+  if(provider){provider.value=selected?'open_meteo':'qweather';}
+  ['weather-key','weather-host'].forEach(function(id){var field=document.getElementById(id);if(field){field.disabled=selected;}});
+}
+document.addEventListener('DOMContentLoaded',selectWeatherProvider);
 )PORTAL";
 
 inline constexpr char kFormHtml[] = R"PORTAL(
@@ -283,10 +294,16 @@ inline constexpr char kFormHtml[] = R"PORTAL(
       <div><h2>天气服务</h2><p>用于天气、预报与空气质量</p></div>
     </div>
     <div class='field'>
+      <label style='display:flex;align-items:center;gap:8px'><input id='open-meteo' type='checkbox' onchange='selectWeatherProvider()' style='width:18px;height:18px;padding:0;margin:0'> 使用 Open-Meteo</label>
+      <input id='weather-provider' type='hidden' name='weather_provider' value='qweather'>
+      <p class='hint'>开启后无需和风密钥，不提供天气预警，空气质量使用 US AQI。公共服务仅限非商业使用。</p>
+      <p class='hint'>数据：<a href='https://open-meteo.com/' target='_blank' rel='noopener'>Open-Meteo</a> / <a href='https://atmosphere.copernicus.eu/' target='_blank' rel='noopener'>CAMS</a>；城市：<a href='https://www.geonames.org/' target='_blank' rel='noopener'>GeoNames</a></p>
+    </div>
+    <div class='field' data-qweather>
       <label for='weather-key'>和风天气 API 密钥</label>
       <input id='weather-key' name='api_key' placeholder='请输入和风天气 API Key' value='' autocomplete='off'>
     </div>
-    <div class='field'>
+    <div class='field' data-qweather>
       <label for='weather-host'>和风天气 API Host</label>
       <input id='weather-host' name='api_host' placeholder='例如：abc123.re.qweatherapi.com' value='' autocomplete='off' aria-describedby='api-host-hint'>
       <p id='api-host-hint' class='hint'>请在和风天气控制台“设置 → API Host”中查看；只填写域名，不含 https:// 和路径。已有 Host 时可留空。</p>

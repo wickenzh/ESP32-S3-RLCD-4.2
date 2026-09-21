@@ -777,8 +777,8 @@ input[type="range"] {
 .quick-notice strong { color: var(--ink); font-weight: 750; white-space: nowrap; }
 .quick-notice p > span { min-width: 0; overflow-wrap: anywhere; }
 .quick-notice p + p { margin-top: 8px; }
-.quick-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; align-items: start; }
-.quick-field-group { min-width: 0; display: grid; gap: 16px; align-content: start; }
+.quick-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(5, auto); gap: 16px 32px; }
+.quick-field-group { min-width: 0; display: grid; grid-row: span 5; grid-template-rows: subgrid; }
 .quick-field-group h3 { font-size: 15px; font-weight: 700; line-height: 1.4; margin: 0; }
 .quick-fields label, .quick-password-field { display: grid; grid-template-rows: 15px 40px auto; gap: 6px; min-width: 0; align-content: start; }
 html:not([lang="zh-CN"]) .topbar { grid-template-columns: minmax(210px, .9fr) minmax(0, 1.4fr) auto; }
@@ -1138,8 +1138,20 @@ progress::-moz-progress-bar { background: var(--accent); }
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 .quick-field-group label[hidden] { display: none; }
-.quick-fields .quick-provider-toggle { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
-.quick-provider-heading small { display: block; margin-top: 5px; }
+.quick-provider-toggle { display: flex; align-items: center; gap: 8px; margin: 0; flex-shrink: 0; }
+.quick-provider-heading { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.quick-provider-heading small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.quick-provider-heading small + small { margin-top: 4px; }
+@media (min-width: 801px) {
+  .quick-field-group > :nth-child(2) { grid-row: 2; }
+  .quick-field-group > :nth-child(3) { grid-row: 3; }
+  .quick-field-group > :nth-child(4) { grid-row: 4; }
+  .quick-field-group > :nth-child(5) { grid-row: 5; }
+}
+@media (max-width: 800px) {
+  .quick-field-group { grid-row: auto; grid-template-rows: none; gap: 16px; }
+  .quick-fields { grid-template-rows: none; }
+}
 
 /* Narrow desktop-class layouts: stack the simulator and keep every control reachable. */
 @media (max-width: 800px) {

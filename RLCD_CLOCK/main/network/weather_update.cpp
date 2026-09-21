@@ -1,5 +1,7 @@
 // 负责选择手动城市或 IP 定位，并按请求作用域提交天气结果。
 #include "weather_update.h"
+#include "open_meteo_client.h"
+#include "weather_provider.h"
 
 #include "ip_geolocation_client.h"
 #include "network_https_resources.h"
@@ -43,6 +45,7 @@ static_assert(kWeatherCityResolutionCacheTtlUs > kWeatherIpRetryContextTtlUs,
               "weather city resolution cache must outlive deferred retry context");
 
 struct WeatherUpdateWorkspace {
+    uint32_t configuration_generation;
     char manual_city[kManualWeatherCityLen];
     char location[kWeatherLocationTextSize];
     char city_id[kQweatherCityIdSize];
@@ -280,6 +283,7 @@ WeatherUpdateResult fetch_and_commit_weather(const char *city_id,
     if (!qweather_fetch_now(city_id, &workspace.weather)) {
         return WeatherUpdateResult::kFailed;
     }
+    workspace.weather.configuration_generation = workspace.configuration_generation;
 
     bool alert_updated = false;
     bool forecast_ok = false;
@@ -436,6 +440,9 @@ WeatherUpdateResult update_weather_by_ip_location(WeatherUpdateWorkspace &worksp
 
 WeatherUpdateResult perform_weather_update(WeatherUpdateScope scope)
 {
+    if (weather_provider_load() == WeatherProvider::kOpenMeteo) {
+        return perform_open_meteo_update(scope);
+    }
     if (!network_weather_configuration_configured()) {
         clear_weather_ip_retry_context();
         clear_weather_city_resolution_cache();
@@ -449,6 +456,7 @@ WeatherUpdateResult perform_weather_update(WeatherUpdateScope scope)
 
     WeatherUpdateWorkspace &workspace = s_weather_update_workspace;
     memset(&workspace, 0, sizeof(workspace));
+    workspace.configuration_generation = weather_provider_generation();
     if (manual_weather_city_snapshot(workspace.manual_city,
                                      sizeof(workspace.manual_city))) {
         trim_ascii_whitespace(workspace.manual_city);

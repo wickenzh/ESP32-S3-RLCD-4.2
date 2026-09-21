@@ -9,6 +9,7 @@ inline constexpr const char *kWifiBackupSsidKey = "ssid_b";
 inline constexpr const char *kWifiBackupPassKey = "pass_b";
 inline constexpr const char *kWifiPreferredSlotKey = "wifi_pri_v1";
 inline constexpr const char *kWeatherApiKeyKey = "api_key";
+inline constexpr const char *kWeatherProviderKey = "weather_src_v1";
 inline constexpr const char *kQweatherApiHostKey = "api_host";
 inline constexpr const char *kOfflineModeKey = "offline_v1";
 inline constexpr const char *kXiaozhiAutoReturnKey = "xz_auto_ret_v1";

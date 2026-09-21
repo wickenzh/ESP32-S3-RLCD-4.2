@@ -14,6 +14,7 @@
 #include "network_page_storage.h"
 #include "network_page_storage_policy.h"
 #include "qweather_api_host.h"
+#include "weather_provider.h"
 #include "network_weather_city_storage.h"
 #include "offline_mode_state_internal.h"
 #include "ui_gallery_rotation_state_internal.h"
@@ -78,6 +79,7 @@ struct LoadedSavedConfig {
     uint8_t xiaozhi_auto_return;
     uint8_t gallery_rotation;
     uint8_t preferred_wifi_slot;
+    uint8_t weather_provider;
     uint8_t page_order[kWorkPageCount];
     char manual_weather_city[kManualWeatherCityLen];
     bool have_page_order;
@@ -197,6 +199,7 @@ void read_saved_config(nvs_handle_t nvs, LoadedSavedConfig *loaded)
     loaded->sound = chime.sound;
     loaded->page_mask = read_saved_page_mask(nvs);
     loaded->offline = read_nvs_u8_or_default(nvs, kOfflineModeKey, 0);
+    loaded->weather_provider = read_nvs_u8_or_default(nvs, network_config_keys::kWeatherProviderKey, 0);
     loaded->xiaozhi_auto_return = read_nvs_u8_or_default(
         nvs, kXiaozhiAutoReturnKey, kDefaultXiaozhiAutoReturnEnabled ? 1 : 0);
     loaded->gallery_rotation = read_nvs_u8_or_default(
@@ -213,6 +216,8 @@ void read_saved_config(nvs_handle_t nvs, LoadedSavedConfig *loaded)
 
 bool apply_loaded_config(const LoadedSavedConfig &loaded)
 {
+    weather_provider_store(loaded.weather_provider == 1 ? WeatherProvider::kOpenMeteo
+                                                       : WeatherProvider::kQweather);
     const bool wifi_a_configured = loaded.ssid_err == ESP_OK &&
                                    loaded.pass_err == ESP_OK &&
                                    loaded.wifi_ssid[0] != '\0';

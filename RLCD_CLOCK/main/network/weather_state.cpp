@@ -5,6 +5,7 @@
 #include "app_metadata.h"
 #include "scoped_semaphore_lock.h"
 #include "weather_snapshot_store.h"
+#include "weather_provider.h"
 
 #include <esp_attr.h>
 #include "esp_log.h"
@@ -100,6 +101,7 @@ bool commit_weather_snapshot(const WeatherData &next,
                              bool forecast_ok,
                              bool air_ok)
 {
+    if (next.configuration_generation != weather_provider_generation()) return false;
     time_t now = 0;
     time(&now);
     {
@@ -107,6 +109,7 @@ bool commit_weather_snapshot(const WeatherData &next,
         if (!lock) {
             return false;
         }
+        if (next.configuration_generation != weather_provider_generation()) return false;
         weather_snapshot_store_commit(&s_weather_store,
                                       next,
                                       next_alert,
@@ -117,8 +120,8 @@ bool commit_weather_snapshot(const WeatherData &next,
                                       air_ok,
                                       now);
         publish_weather_alert_status_locked();
+        publish_weather_ready_event();
     }
-    publish_weather_ready_event();
     return true;
 }
 
@@ -126,6 +129,7 @@ bool commit_basic_weather_snapshot(const WeatherData &next,
                                    const WeatherAlertData &next_alert,
                                    bool alert_updated)
 {
+    if (next.configuration_generation != weather_provider_generation()) return false;
     time_t now = 0;
     time(&now);
     {
@@ -133,14 +137,15 @@ bool commit_basic_weather_snapshot(const WeatherData &next,
         if (!lock) {
             return false;
         }
+        if (next.configuration_generation != weather_provider_generation()) return false;
         weather_snapshot_store_commit_basic(&s_weather_store,
                                             next,
                                             next_alert,
                                             alert_updated,
                                             now);
         publish_weather_alert_status_locked();
+        publish_weather_ready_event();
     }
-    publish_weather_ready_event();
     return true;
 }
 } // namespace
@@ -194,9 +199,18 @@ bool weather_cache_status_snapshot_load(WeatherCacheStatusSnapshot *out)
     if (!lock) {
         return false;
     }
-    out->last_sync_time = s_weather_store.last_sync_time;
     out->version = packed_weather_alert_version(
         s_weather_alert_status.load(std::memory_order_acquire));
+    // Configuration is published before cache invalidation acquires this mutex.
+    // Do not expose the previous provider's timestamp in that short interval.
+    if (s_weather_store.weather.configuration_generation !=
+        weather_provider_generation()) {
+        out->last_sync_time = 0;
+        out->extended_data_ready = false;
+        out->forecast_data_ready = false;
+        return true;
+    }
+    out->last_sync_time = s_weather_store.last_sync_time;
     out->extended_data_ready =
         weather_snapshot_store_extended_ready(s_weather_store);
     out->forecast_data_ready = s_weather_store.forecast.ready &&
@@ -232,6 +246,15 @@ void clear_weather_ready_event()
         return;
     }
     app_event_group_clear_bits(kWeatherReadyBit);
+}
+
+void invalidate_weather_configuration()
+{
+    ScopedSemaphoreLock lock(s_weather_state_mutex);
+    if (!lock) return;
+    s_weather_store = {};
+    publish_weather_alert_status_locked();
+    clear_weather_ready_event();
 }
 
 void commit_weather_update_snapshot(const WeatherData &next,

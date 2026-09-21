@@ -5,6 +5,7 @@
 
 bool init_weather_state();
 void clear_weather_ready_event();
+void invalidate_weather_configuration();
 void commit_weather_update_snapshot(const WeatherData &next,
                                     const WeatherAlertData &next_alert,
                                     const WeatherForecastData &next_forecast,

@@ -82,7 +82,6 @@ if (typeof document !== 'undefined') {
     for (const name of ['api_key', 'api_host']) {
       const field = form.elements.namedItem(name);
       field.disabled = providerToggle.checked;
-      field.closest('label').hidden = providerToggle.checked;
     }
   }
   providerToggle.addEventListener('change', updateProviderFields);

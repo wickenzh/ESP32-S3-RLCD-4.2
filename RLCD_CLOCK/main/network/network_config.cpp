@@ -1,5 +1,6 @@
 // 负责联网、离线和天气城市配置读写，以及恢复出厂运行态重置。
 #include "network_config.h"
+#include "weather_state_internal.h"
 #include "wifi_radio_services.h"
 #include "wifi_portal_state_internal.h"
 
@@ -172,13 +173,17 @@ static bool finish_manual_weather_city_save(ScopedNvsHandle &nvs,
         return false;
     }
     manual_weather_city_store(city);
+    weather_provider_store(weather_provider_load());
+    invalidate_weather_configuration();
     return true;
 }
 
 static void reset_saved_config_runtime_state()
 {
+    weather_provider_store(WeatherProvider::kQweather);
     network_credentials_clear();
     manual_weather_city_store("");
+    invalidate_weather_configuration();
     clear_wifi_station_ip();
     offline_mode_enabled_store(false);
     xiaozhi_auto_return_enabled_store(kDefaultXiaozhiAutoReturnEnabled);
@@ -231,6 +236,7 @@ static esp_err_t write_saved_config_nvs(nvs_handle_t nvs,
                                         const char *api_key,
                                         const char *api_host,
                                         const char *city,
+                                        WeatherProvider provider,
                                         bool *changed)
 {
     if (changed) {
@@ -321,6 +327,9 @@ static esp_err_t write_saved_config_nvs(nvs_handle_t nvs,
     // changes in this transaction so a later NVS write cannot leave them out of sync.
     err = write_changed_nvs_u8(nvs, err, kOfflineModeKey, 0, &item_changed);
     any_changed = any_changed || item_changed;
+    err = write_changed_nvs_u8(nvs, err, network_config_keys::kWeatherProviderKey,
+                              static_cast<uint8_t>(provider), &item_changed);
+    any_changed = any_changed || item_changed;
     if (err == ESP_OK && changed) {
         *changed = any_changed;
     }
@@ -333,8 +342,10 @@ bool save_config(const char *ssid,
                  const char *backup_pass,
                  const char *api_key,
                  const char *api_host,
-                 const char *weather_city)
+                 const char *weather_city,
+                 WeatherProvider provider)
 {
+    if(provider != WeatherProvider::kQweather && provider != WeatherProvider::kOpenMeteo) return false;
     if (!ssid || ssid[0] == '\0') {
         ESP_LOGW(TAG, "%s", kEmptyWifiSsidSaveLog);
         return false;
@@ -352,11 +363,14 @@ bool save_config(const char *ssid,
         api_key = "";
     }
     char normalized_api_host[kQweatherApiHostLen] = {};
-    if (!normalize_qweather_api_host(api_host,
+    if (provider == WeatherProvider::kQweather && !normalize_qweather_api_host(api_host,
                                      normalized_api_host,
                                      sizeof(normalized_api_host))) {
         ESP_LOGW(TAG, "%s", kInvalidQweatherApiHostSaveLog);
         return false;
+    }
+    if (provider == WeatherProvider::kOpenMeteo && api_host) {
+        strlcpy(normalized_api_host, api_host, sizeof(normalized_api_host));
     }
     char city[kManualWeatherCityLen] = {};
     copy_trimmed_weather_city(city, sizeof(city), weather_city);
@@ -378,6 +392,7 @@ bool save_config(const char *ssid,
                                  api_key,
                                  normalized_api_host,
                                  city,
+                                 provider,
                                  &changed);
     err = commit_nvs_if_changed(nvs.get(), err, changed);
     nvs.close();
@@ -393,6 +408,8 @@ bool save_config(const char *ssid,
         api_key,
         normalized_api_host,
         city);
+    weather_provider_store(provider);
+    invalidate_weather_configuration();
     offline_mode_enabled_store(false);
     xiaozhi_ai_notify_network_configuration_changed();
     return true;
@@ -473,6 +490,8 @@ bool clear_manual_weather_city()
         return false;
     }
     manual_weather_city_store("");
+    weather_provider_store(weather_provider_load());
+    invalidate_weather_configuration();
     return true;
 }
 

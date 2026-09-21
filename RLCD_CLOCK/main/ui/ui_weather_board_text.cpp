@@ -1,6 +1,7 @@
 // 实现天气看板不依赖 LVGL 的日期、温度范围和预警文本格式化。
 #include "ui_weather_board_text.h"
 #include "weather_advice.h"
+#include "weather_provider.h"
 
 #include "app_constexpr.h"
 #include "app_time_constants.h"
@@ -144,6 +145,10 @@ void format_weather_board_alert_line(const WeatherAlertData &alert,
     if (!ui_text::output_buffer_available(out, out_len)) {
         return;
     }
+    if(weather_provider_load()==WeatherProvider::kOpenMeteo) {
+        strlcpy(out,"Open-Meteo / CAMS：不支持预警",out_len);
+        return;
+    }
     if (!alert.active || alert.count <= 0 || !alert.titles[0][0]) {
         strlcpy(out, kWeatherBoardAlertPlaceholder, out_len);
         return;
@@ -160,7 +165,11 @@ void format_weather_board_alert_line(const WeatherAlertData &alert,
 void format_weather_board_air_line(const WeatherAirData &air, char *out, size_t out_len)
 {
     if (!air.ready) {
-        ui_text::copy(out, out_len, kWeatherBoardAirPlaceholder);
+        ui_text::copy(out, out_len, weather_provider_load()==WeatherProvider::kOpenMeteo ? "US AQI --" : kWeatherBoardAirPlaceholder);
+        return;
+    }
+    if(air.us_aqi) {
+        ui_text::format_or_fallback(out,out_len,"US AQI --","US AQI %s",text_or_dash(air.aqi));
         return;
     }
     ui_text::format_or_fallback(out,

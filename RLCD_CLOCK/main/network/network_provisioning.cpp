@@ -166,6 +166,8 @@ bool save_credentials_from_body(const char *body)
     ProvisioningFormFieldsWorkspaceGuard workspace;
     ProvisioningFormFields &fields = workspace.fields();
     read_provisioning_form_fields(body, &fields);
+    WeatherProvider provider=weather_provider_load();
+    if(fields.weather_provider[0] && !parse_weather_provider(fields.weather_provider,&provider))return false;
     if (fields.ssid[0] == '\0') {
         ESP_LOGW(TAG, "%s", PROVISIONING_EMPTY_SSID_LOG);
         return false;
@@ -185,22 +187,22 @@ bool save_credentials_from_body(const char *body)
         ESP_LOGW(TAG, "%s", PROVISIONING_DUPLICATE_WIFI_LOG);
         return false;
     }
-    if (fields.api_key[0] == '\0') {
+    if (provider == WeatherProvider::kOpenMeteo || fields.api_key[0] == '\0') {
         (void)network_weather_api_key_snapshot(fields.api_key, sizeof(fields.api_key));
     }
-    if (fields.api_key[0] == '\0') {
+    if (provider == WeatherProvider::kQweather && fields.api_key[0] == '\0') {
         ESP_LOGW(TAG, "%s", PROVISIONING_EMPTY_API_KEY_LOG);
         return false;
     }
-    if (fields.api_host[0] == '\0') {
+    if (provider == WeatherProvider::kOpenMeteo || fields.api_host[0] == '\0') {
         (void)network_weather_api_host_snapshot(fields.api_host,
                                                 sizeof(fields.api_host));
     }
-    if (fields.api_host[0] == '\0') {
+    if (provider == WeatherProvider::kQweather && fields.api_host[0] == '\0') {
         ESP_LOGW(TAG, "%s", PROVISIONING_EMPTY_API_HOST_LOG);
         return false;
     }
-    if (!normalize_qweather_api_host(fields.api_host,
+    if (provider == WeatherProvider::kQweather && !normalize_qweather_api_host(fields.api_host,
                                      fields.api_host,
                                      sizeof(fields.api_host))) {
         ESP_LOGW(TAG, "%s", PROVISIONING_INVALID_API_HOST_LOG);
@@ -229,7 +231,8 @@ bool save_credentials_from_body(const char *body)
                      fields.backup_pass,
                      fields.api_key,
                      fields.api_host,
-                     fields.weather_city)) {
+                     fields.weather_city,
+                     provider)) {
         return false;
     }
     return true;

@@ -14,6 +14,9 @@ struct WeatherBoardSunSchedule {
     char today_sunrise[8] = {};
     char today_sunset[8] = {};
     char tomorrow_sunrise[8] = {};
+    int8_t sunrise_day_offset = 0;
+    int8_t sunset_day_offset = 0;
+    int8_t tomorrow_sunrise_day_offset = 0;
 };
 
 const WeatherForecastDay *weather_board_forecast_day_or_null(const WeatherForecastData &forecast,

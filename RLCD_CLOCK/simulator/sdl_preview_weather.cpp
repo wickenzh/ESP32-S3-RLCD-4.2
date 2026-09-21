@@ -3,6 +3,7 @@
 #include "sdl_preview_weather.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "core/app_constexpr.h"
 #include "sdl_preview_widgets.h"
@@ -63,6 +64,8 @@ const char *preview_weather_icon_text(const char *code)
 
 void build_weather_board_preview_body(lv_obj_t *screen)
 {
+    const char *provider = getenv("WEATHER_CLOCK_SDL_WEATHER_PROVIDER");
+    const bool open_meteo = provider && strcmp(provider,"open_meteo")==0;
     if (!screen) {
         return;
     }
@@ -173,7 +176,7 @@ void build_weather_board_preview_body(lv_obj_t *screen)
                kWeatherBoardDetailTopY,
                kWeatherBoardAirLabelW,
                kWeatherBoardDetailLabelH,
-               "AQI 42 优");
+               open_meteo ? "US AQI 42" : "AQI 42 优");
     make_label(screen,
                kWeatherBoardMiddleColumnX,
                kWeatherBoardDetailTopY,
@@ -209,7 +212,7 @@ void build_weather_board_preview_body(lv_obj_t *screen)
                kWeatherBoardAlertY,
                kWeatherBoardAlertW,
                kWeatherBoardAlertH,
-               "预警 大风蓝 / 暴雨黄 / 雷电橙");
+               open_meteo ? "Open-Meteo / CAMS：不支持预警" : "预警 大风蓝 / 暴雨黄 / 雷电橙");
     lv_obj_t *advice = make_label(screen,
                                   kWeatherBoardAdviceX,
                                   kWeatherBoardAdviceY,

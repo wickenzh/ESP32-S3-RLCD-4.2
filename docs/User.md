@@ -45,6 +45,8 @@ The firmware currently uses UTC+8 with no timezone selector. A translated guide 
 
 ## Optional weather provider
 
+QWeather Key/Host fields stay visible but disabled while Open-Meteo is selected; turn the switch off to edit them again. Network diagnostics use the selected provider. About shows its last successful weather sync; after switching providers, wait for the first successful sync.
+
 Setup and WeatherClock Studio quick configuration now offer a Use Open-Meteo switch, off by default. Off selects QWeather and its existing Key/Host requirements. On uses Open-Meteo without those credentials; saved QWeather credentials are retained, and no automatic provider fallback occurs. Switching back requires valid QWeather credentials.
 
 Open-Meteo provides model-based weather and explicitly labelled US AQI, not China's AQI. This integration does not provide weather alerts and says so on screen. The public API is for non-commercial use and still depends on network availability. Quick-configuration links require firmware supporting both providers; older firmware may ignore the choice. Offline setup still needs only a valid date and time.

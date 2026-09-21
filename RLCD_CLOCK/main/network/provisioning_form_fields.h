@@ -14,6 +14,7 @@ inline constexpr size_t kProvisioningApiHostFieldSize = kQweatherApiHostLen;
 inline constexpr size_t kProvisioningWeatherCityFieldSize = kManualWeatherCityLen;
 
 struct ProvisioningFormFields {
+    char weather_provider[16] = {};
     char ssid[kProvisioningSsidFieldSize] = {};
     char pass[kProvisioningPasswordFieldSize] = {};
     char backup_ssid[kProvisioningSsidFieldSize] = {};

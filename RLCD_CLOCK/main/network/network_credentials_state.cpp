@@ -1,5 +1,6 @@
 // 集中维护 Wi-Fi 凭据、天气 API Key 及其可用状态。
 #include "network_credentials_state_internal.h"
+#include "weather_provider.h"
 
 #include "scoped_semaphore_lock.h"
 
@@ -318,16 +319,17 @@ bool network_weather_configuration_configured()
 {
     const NetworkCredentialsAvailability availability =
         network_credentials_availability();
-    return availability.weather_api_key_configured &&
-           availability.weather_api_host_configured;
+    return weather_provider_load() == WeatherProvider::kOpenMeteo ||
+           (availability.weather_api_key_configured &&
+           availability.weather_api_host_configured);
 }
 
 bool network_all_online_credentials_configured()
 {
     const NetworkCredentialsAvailability availability = network_credentials_availability();
     return availability.wifi_configured &&
-           availability.weather_api_key_configured &&
-           availability.weather_api_host_configured;
+           (weather_provider_load() == WeatherProvider::kOpenMeteo ||
+            (availability.weather_api_key_configured && availability.weather_api_host_configured));
 }
 
 bool network_wifi_ssid_snapshot(char *out, size_t out_len)

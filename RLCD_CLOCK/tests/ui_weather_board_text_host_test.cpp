@@ -1,5 +1,6 @@
 // 验证天气看板日期、温度范围和多预警文本的既有格式规则。
 #include "ui_weather_board_text.h"
+#include "weather_provider.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -61,6 +62,13 @@ int main()
     strcpy(air.category, "优");
     format_weather_board_air_line(air, out, sizeof(out));
     assert(strcmp(out, "AQI 42 优") == 0);
+    air.us_aqi=true;
+    format_weather_board_air_line(air,out,sizeof(out));
+    assert(strcmp(out,"US AQI 42")==0);
+    weather_provider_store(WeatherProvider::kOpenMeteo);
+    format_weather_board_alert_line(alert,out,sizeof(out));
+    assert(strstr(out,"不支持预警")!=nullptr);
+    weather_provider_store(WeatherProvider::kQweather);
 
     WeatherData weather = {};
     strcpy(weather.humidity, "58");

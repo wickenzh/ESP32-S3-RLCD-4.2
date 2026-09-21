@@ -1,5 +1,6 @@
 // 直接验证生产天气状态的静态 mutex、事件发布和并发完整快照。
 #include "weather_state_internal.h"
+#include "weather_provider.h"
 
 #include "app_metadata.h"
 
@@ -220,5 +221,36 @@ int main()
         last_alert_version = current_status.version;
     } while (!writer_done.load(std::memory_order_acquire));
     writer.join();
+    const uint32_t old_generation=weather_provider_generation();
+    weather_provider_store(WeatherProvider::kOpenMeteo);
+    assert(weather_cache_status_snapshot_load(&cache_status));
+    assert(cache_status.last_sync_time == 0);
+    assert(!cache_status.extended_data_ready);
+    assert(!cache_status.forecast_data_ready);
+    invalidate_weather_configuration();
+    assert(!weather_ready_state_load());
+    weather.configuration_generation=old_generation;
+    commit_weather_update_snapshot(weather,alert,forecast,air,true,true,true);
+    assert(!weather_ready_state_load());
+    weather.open_meteo=true;
+    weather.configuration_generation=weather_provider_generation();
+    commit_weather_update_snapshot(weather,{},forecast,air,true,true,true);
+    assert(weather_ready_state_load());
+    assert(weather_cache_status_snapshot_load(&cache_status));
+    assert(cache_status.last_sync_time > 0);
+    const time_t open_meteo_sync_time = cache_status.last_sync_time;
+    weather.configuration_generation = old_generation;
+    commit_weather_update_snapshot(weather, {}, forecast, air, true, true, true);
+    assert(weather_cache_status_snapshot_load(&cache_status));
+    assert(cache_status.last_sync_time == open_meteo_sync_time);
+    weather_provider_store(WeatherProvider::kQweather);
+    assert(weather_cache_status_snapshot_load(&cache_status));
+    assert(cache_status.last_sync_time == 0);
+    invalidate_weather_configuration();
+    weather.open_meteo = false;
+    weather.configuration_generation = weather_provider_generation();
+    commit_weather_basic_snapshot(weather, {}, true);
+    assert(weather_cache_status_snapshot_load(&cache_status));
+    assert(cache_status.last_sync_time > 0);
     return 0;
 }

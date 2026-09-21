@@ -1,6 +1,7 @@
 // 核对现有固件配网字段、URL编码与限制；仅使用虚构测试凭据。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { makeQuickConfigLink } from '../quick-config.js';
 
 const base = { ssid: 'Demo &+中文', pass: 'Test+#?&=123', api_key: 'DEMO_KEY', api_host: 'ABC.re.qweatherapi.com', weather_city: '杭州' };
@@ -54,6 +55,24 @@ for (const date of ['2025-02-29T09:00', '2023-12-31T00:00', '2036-01-01T00:00', 
 assert.equal(new URL(makeQuickConfigLink({...base, manual_time: 'invalid'}).url).searchParams.has('manual_time'), false);
 assert.throws(() => makeQuickConfigLink({ssid:'a'.repeat(32), pass:'p'.repeat(64), backup_ssid:'b'.repeat(32), backup_pass:'q'.repeat(64), api_key:'k'.repeat(95), api_host:`${'a'.repeat(63)}.${'b'.repeat(47)}.qweatherapi.com`, weather_city:'城'.repeat(10)}), /512 字节/);
 const source = readFileSync(new URL('../quick-config.js', import.meta.url), 'utf8');
+const updateFields = source.slice(source.indexOf('  function updateProviderFields()'), source.indexOf("  providerToggle.addEventListener"));
+const fields = Object.fromEntries(['api_key', 'api_host'].map(name => [name, {value: name + '-retained', disabled:false}]));
+const providerToggle = {checked:true};
+const context = {form:{elements:{namedItem:name => fields[name]}}, providerToggle};
+runInNewContext(updateFields + '\nupdateProviderFields();', context);
+for (const [name, field] of Object.entries(fields)) {
+  assert.equal(field.disabled, true);
+  assert.equal(field.value, name + '-retained');
+}
+providerToggle.checked = false;
+runInNewContext('updateProviderFields();', context);
+assert.equal(fields.api_key.disabled, false);
+assert.equal(fields.api_host.disabled, false);
+assert.doesNotMatch(updateFields, /hidden|display|remove\(/);
+const portal = readFileSync(new URL('../../RLCD_CLOCK/main/network/wifi_portal_ui_assets.h', import.meta.url), 'utf8');
+const portalUpdate = portal.slice(portal.indexOf('function selectWeatherProvider()'), portal.indexOf("document.addEventListener('DOMContentLoaded',selectWeatherProvider)"));
+assert.match(portalUpdate, /field.disabled=selected/);
+assert.doesNotMatch(portalUpdate, /hidden|display|remove\(/);
 assert.doesNotMatch(source, /\b(fetch|XMLHttpRequest|localStorage|sessionStorage|sendBeacon)\b/);
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 assert.match(html, /data-tab="settings"[^>]*>快捷配置/);

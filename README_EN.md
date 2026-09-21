@@ -1,5 +1,7 @@
 # ESP32-S3 RLCD 4.2 Weather Clock
 
+Weather is now selectable: QWeather remains the default, while the optional Open-Meteo switch needs no QWeather Key/Host. It displays US AQI, does not provide weather alerts, and does not silently mix providers. The public API is for non-commercial use. Data: [Open-Meteo](https://open-meteo.com/), [CAMS](https://atmosphere.copernicus.eu/); city lookup: [GeoNames](https://www.geonames.org/).
+
 > **Language:** English (current) · [Chinese](README.md) · [Traditional Chinese](README_zh_TW.md) · [Japanese](README_JA.md)
 
 This is a low-power weather clock firmware project built around the **ESP32-S3** and a **4.2-inch RLCD display**. It combines an always-readable clock, local temperature and humidity sensing, online weather data, a calendar, picture display, audio reminders, Xiaozhi AI, and OTA updates in one desktop device.

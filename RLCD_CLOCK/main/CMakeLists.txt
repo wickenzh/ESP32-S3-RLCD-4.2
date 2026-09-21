@@ -1,6 +1,8 @@
 # 固件主组件的源码清单和构建依赖配置。
 idf_component_register(
     SRCS
+        "network/open_meteo_client.cpp"
+        "network/open_meteo_parser.cpp"
         "ui/ui_aggregate_clock.cpp"
         "ui/ui_aggregate_clock_view.cpp"
         "core/main.cpp"

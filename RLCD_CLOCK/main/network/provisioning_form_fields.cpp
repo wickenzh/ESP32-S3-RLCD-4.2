@@ -57,6 +57,7 @@ void read_provisioning_form_fields(const char *body, ProvisioningFormFields *fie
         return;
     }
     form_value(body, kFormSsidKey, fields->ssid, sizeof(fields->ssid));
+    form_value(body, "weather_provider", fields->weather_provider, sizeof(fields->weather_provider));
     form_value_fallback(body, kFormPasswordKey, kFormPasswordFallbackKey, fields->pass, sizeof(fields->pass));
     form_value(body,
                kFormBackupSsidKey,

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "wifi_failover_policy.h"
+#include "weather_provider.h"
 
 #include <stddef.h>
 
@@ -11,7 +12,8 @@ bool save_config(const char *ssid,
                  const char *backup_pass,
                  const char *api_key,
                  const char *api_host,
-                 const char *weather_city = nullptr);
+                 const char *weather_city = nullptr,
+                 WeatherProvider provider = weather_provider_load());
 bool persist_preferred_wifi_slot(WifiCredentialSlot slot);
 bool save_manual_weather_city(const char *city);
 bool clear_manual_weather_city();

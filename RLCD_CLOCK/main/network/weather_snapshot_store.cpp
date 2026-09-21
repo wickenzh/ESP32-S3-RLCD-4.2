@@ -18,6 +18,7 @@ bool weather_coordinate_pair_available(const WeatherData &weather)
 bool weather_location_matches(const WeatherData &previous,
                               const WeatherData &next)
 {
+    if (previous.open_meteo != next.open_meteo) return false;
     const bool previous_coordinates_available =
         weather_coordinate_pair_available(previous);
     const bool next_coordinates_available =

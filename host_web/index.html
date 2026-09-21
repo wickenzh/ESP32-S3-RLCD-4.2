@@ -216,22 +216,25 @@
           <p><strong>安全保管：</strong><span>请勿公开或向不可信对象分享配置链接。浏览器历史、剪贴板及分享记录可能保留敏感信息，使用后请及时清理。</span></p>
         </div>
         <form id="quickConfigForm" method="dialog" autocomplete="off">
+          <div class="quick-provider-heading">
+            <label class="check-row quick-provider-toggle"><input id="quickOpenMeteo" name="use_open_meteo" type="checkbox" value="1"><span>使用 Open-Meteo</span></label>
+            <div>
+              <small>开启后无需和风密钥；不提供天气预警，空气质量使用 US AQI。公共接口仅限非商业使用。</small>
+              <small>数据来源：Open-Meteo / CAMS；城市查询：GeoNames。</small>
+            </div>
+          </div>
           <div class="quick-fields">
             <div class="quick-field-group" role="group" aria-labelledby="quickWifiHeading"><h3 id="quickWifiHeading">联网配置</h3>
               <label><span>主 Wi-Fi 名称（SSID，联网时必填）</span><input name="ssid" type="text" autocomplete="off"></label>
               <div class="quick-password-field"><label for="quickWifiPassword"><span>主 Wi-Fi 密码</span></label><div class="quick-password-control"><input id="quickWifiPassword" name="pass" type="text" autocomplete="off" spellcheck="false" autocapitalize="none"><button class="quick-password-toggle" type="button" data-password="quickWifiPassword" data-label="主 Wi-Fi 密码" aria-controls="quickWifiPassword" aria-pressed="true" aria-label="隐藏主 Wi-Fi 密码" title="隐藏主 Wi-Fi 密码"><span aria-hidden="true"></span></button></div><small>同名网络已有密码时可留空沿用；开放网络可留空。</small></div>
               <label><span>备用 Wi-Fi 名称（选填）</span><input name="backup_ssid" type="text" autocomplete="off"><small>留空会取消备用 Wi-Fi，不是保留原值。</small></label>
               <div class="quick-password-field"><label for="quickBackupPassword"><span>备用 Wi-Fi 密码（选填）</span></label><div class="quick-password-control"><input id="quickBackupPassword" name="backup_pass" type="text" autocomplete="off" spellcheck="false" autocapitalize="none"><button class="quick-password-toggle" type="button" data-password="quickBackupPassword" data-label="备用 Wi-Fi 密码" aria-controls="quickBackupPassword" aria-pressed="true" aria-label="隐藏备用 Wi-Fi 密码" title="隐藏备用 Wi-Fi 密码"><span aria-hidden="true"></span></button></div><small>备用同名网络已有密码时可留空沿用。</small></div>
-              <label><span>离线日期和时间（仅离线使用时必填）</span><input name="manual_time" type="datetime-local" min="2024-01-01T00:00" max="2035-12-31T23:59"><small>不填写主 Wi-Fi 时使用；联网时忽略此项。链接保存的是固定时间，不会随访问时间更新。</small></label>
             </div>
-            <div class="quick-field-group" role="group" aria-labelledby="quickWeatherHeading"><div class="quick-provider-heading"><h3 id="quickWeatherHeading">天气服务</h3>
-              <label class="check-row quick-provider-toggle"><input id="quickOpenMeteo" name="use_open_meteo" type="checkbox" value="1"><span>使用 Open-Meteo</span></label>
-              <small>开启后无需和风密钥；不提供天气预警，空气质量使用 US AQI。公共接口仅限非商业使用。</small>
-              <small>数据来源：Open-Meteo / CAMS；城市查询：GeoNames。</small>
-              </div>
+            <div class="quick-field-group" role="group" aria-labelledby="quickWeatherHeading"><h3 id="quickWeatherHeading">天气服务</h3>
               <label><span>和风天气 API Key（首次配置必填）</span><input name="api_key" type="password" autocomplete="new-password"><small>须与 API Host 同时填写，或同时留空沿用设备已有天气配置。</small></label>
               <label><span>和风天气 API Host（首次配置必填）</span><input name="api_host" type="text" placeholder="abc123.re.qweatherapi.com" autocomplete="off"><small>与 API Key 成对填写；仅填专属域名，不含 https:// 或路径。</small></label>
               <label><span>天气城市（选填）</span><input name="weather_city" type="text" placeholder="例如：杭州" autocomplete="off"><small>自动定位不准时填写城市名；留空会恢复 IP 自动定位。</small></label>
+              <label><span>离线日期和时间（仅离线使用时必填）</span><input name="manual_time" type="datetime-local" min="2024-01-01T00:00" max="2035-12-31T23:59"><small>不填写主 Wi-Fi 时使用；联网时忽略此项。链接保存的是固定时间，不会随访问时间更新。</small></label>
             </div>
           </div>
           <div class="action-strip">

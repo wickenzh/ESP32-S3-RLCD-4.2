@@ -1,5 +1,7 @@
 # ESP32-S3 RLCD 4.2 天氣時鐘
 
+天氣來源可選和風或 Open-Meteo，預設仍為和風。啟用 Open-Meteo 不需和風 Key/Host，空氣品質採 US AQI，不提供天氣警報，也不會自行混用來源。公共介面僅供非商業使用；資料來自 [Open-Meteo](https://open-meteo.com/) / [CAMS](https://atmosphere.copernicus.eu/)，城市由 [GeoNames](https://www.geonames.org/) 查詢。
+
 简体中文 [切換](README.md) · 繁體中文（目前） · [English](README_EN.md) · [日本語](README_JA.md)
 
 以微雪 ESP32-S3 和 4.2 吋 RLCD 為基礎的桌面時鐘，整合常駐顯示、天氣、本機溫溼度、圖片、月曆、提醒與小智 AI。重點是按需連網與低功耗，不是讓所有功能持續運作。

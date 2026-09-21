@@ -240,5 +240,12 @@ int main()
     test_failed_extended_fetch_clears_changed_location_cache();
     test_failed_or_unattempted_alert_preserves_only_same_location_cache();
     test_partial_extended_readiness();
+    WeatherSnapshotStore source_switch;
+    WeatherData weather;WeatherAlertData alert;WeatherForecastData forecast;WeatherAirData air;
+    fill_initial_snapshot(&weather,&alert,&forecast,&air);
+    weather_snapshot_store_commit(&source_switch,weather,alert,forecast,air,true,true,true,100);
+    weather.open_meteo=true;
+    weather_snapshot_store_commit(&source_switch,weather,{}, {}, {},false,false,false,200);
+    assert(!source_switch.alert.active && !source_switch.air.ready && !source_switch.forecast.ready);
     return 0;
 }
