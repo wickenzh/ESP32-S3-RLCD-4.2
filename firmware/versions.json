@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.7",
+  "latest": "v1.6.8",
   "items": [
+    {
+      "version": "v1.6.8",
+      "notes": "v1.6.8：共 4 项更新。\n1. 聚合时钟新增多云与阴天静态手工云层，保留原高低温点阵与页面布局，仅随天气变化更新，不增…\n2. 修复聚合天气装饰层按布局前省略号宽度进行避让不准确的问题，避免云层与温度读数区域重叠。\n3. 修复 WeatherClock Studio 更新后旧 Service Worker…\n4. 优化 Studio 在线固件安装流程、芯片与容量识别、覆盖确认和资源写入前置门禁；发布…\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.8/weather_clock_v1.6.8.bin",
+        "sha256": "7c322e8a300f4e7bf28cf0f57835be85cae7af21b4c6be5ef247e8bec16b64bf",
+        "size": 6303312
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.8/weather_clock_v1.6.8_merged.bin",
+        "sha256": "f24d50cc216694c09040757c3dadb3ef8d6533a7b3a0ddff15b5206dd6c11d2c",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.7",
       "notes": "v1.6.7：共 4 项更新。\n1. 新增可选 Open-Meteo 天气源，默认关闭；无需和风 Key/Host，支持当前…\n2. WeatherClock Studio 新增简体中文、繁體中文（台湾用语）、Engli…\n3. 修复天气源切换时旧同步请求污染成功更新时间和就绪状态的问题，网络检测和“关于本机”均按…\n4. 优化快捷配置字段对齐并将天气源开关置顶；和风字段仅禁用、不隐藏，保留原有布局和值，设备…\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.41/weather_clock_v1.5.41_merged.bin",
         "sha256": "91098e4343421f4430ab62cec0d77b86d7683049774fbc8e8c011300672bbed1",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.5.40",
-      "notes": "v1.5.40：共 1 项更新。\n1. 修复退出低电量极简模式后没有返回进入前工作页的问题；同一次开机中电量恢复到 13% 以…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.40/weather_clock_v1.5.40.bin",
-        "sha256": "5a968ac9246be47d8d239b349be9ebf81286e7866c1a81cef682799ab831f88b",
-        "size": 6266784
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.40/weather_clock_v1.5.40_merged.bin",
-        "sha256": "6af9ef55bc2694547e8c3b0c57abd82a1ad1d6305d97f5d053f4dd48dc33687d",
         "size": 16509951
       }
     }
