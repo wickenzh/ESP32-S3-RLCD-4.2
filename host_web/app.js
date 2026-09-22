@@ -20,7 +20,7 @@ const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
 const FIRMWARE_RELEASES_SOURCE_URL = "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases";
-const HOST_WEB_VERSION = "v1.0.2";
+const HOST_WEB_VERSION = "v1.0.3";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
@@ -2217,7 +2217,19 @@ async function registerServiceWorker() {
     return;
   }
   try {
+    let hasExistingController = Boolean(navigator.serviceWorker.controller);
+    let isRefreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hasExistingController) {
+        hasExistingController = true;
+        return;
+      }
+      if (isRefreshing) return;
+      isRefreshing = true;
+      window.location.reload();
+    });
     const registration = await navigator.serviceWorker.register("./sw.js");
+    registration.update().catch(() => undefined);
     await navigator.serviceWorker.ready;
     setText(cacheState, () => registration.active ? tr("离线缓存已启用") : tr("离线缓存已注册"));
   } catch (error) {
