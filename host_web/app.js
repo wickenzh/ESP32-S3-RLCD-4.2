@@ -20,7 +20,7 @@ const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
 const FIRMWARE_RELEASES_SOURCE_URL = "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases";
-const HOST_WEB_VERSION = "v1.0.0";
+const HOST_WEB_VERSION = "v1.0.1";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
@@ -1261,16 +1261,30 @@ function normalizeFirmwareReleaseUrl(value, version) {
   return fallback;
 }
 
-function summarizeFirmwareNotes(notes, version, maxLength = 160) {
+function firmwareNoteLines(notes, version) {
   const versionText = String(version || "").trim();
   const introPattern = /^ESP32-S3 RLCD 4\.2.*(?:源码发布|source release)/i;
-  const lines = String(notes || "")
+  return String(notes || "")
     .replace(/\r/g, "")
     .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || introPattern.test(trimmed)) return !introPattern.test(trimmed);
+      return trimmed !== versionText && trimmed.replace(/^#{1,6}\s*/, "") !== versionText;
+    });
+}
+
+function formatFirmwareNotes(notes, version) {
+  const formatted = firmwareNoteLines(notes, version).join("\n").trim();
+  return formatted || tr("暂无详细发布说明");
+}
+
+function summarizeFirmwareNotes(notes, version, maxLength = 160) {
+  const lines = firmwareNoteLines(notes, version)
     .map((line) => line.trim())
     .filter((line) => line && !/^#{1,6}\s/.test(line))
     .map((line) => line.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "").replace(/[`*_]/g, "").replace(/\s+/g, " ").trim())
-    .filter((line) => line && line !== versionText && !/^v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(line) && !introPattern.test(line) && !line.startsWith("固件源码位于"));
+    .filter((line) => line && !/^v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(line) && !line.startsWith("固件源码位于"));
   const summary = lines.slice(0, 2).join(" ");
   return summary ? truncateMiddle(summary, maxLength) : tr("暂无详细发布说明");
 }
@@ -1382,7 +1396,8 @@ function normalizeFlashCapacity(value) {
 function updateFirmwareInstallSummary() {
   const manifest = remoteFirmwareManifest;
   setText($("#firmwareInstallVersion"), () => manifest?.version || tr("在线固件加载失败"));
-  setText($("#firmwareInstallNotes"), () => manifest?.notes ? summarizeFirmwareNotes(manifest.notes, manifest.version) : tr("等待固件清单"));
+  setText($("#firmwareInstallNotesVersion"), () => manifest?.version || tr("加载中"));
+  setText($("#firmwareInstallNotes"), () => manifest?.notes ? formatFirmwareNotes(manifest.notes, manifest.version) : tr("等待固件清单"));
   setAttr($("#firmwareInstallNotes"), "title", () => manifest?.notes || "");
   const notesLink = $("#firmwareInstallNotesLink");
   if (notesLink) {

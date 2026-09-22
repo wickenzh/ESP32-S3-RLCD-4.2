@@ -10,8 +10,8 @@ const [html, app, serviceWorker, readme] = await Promise.all([
   readFile(new URL('README.md', root), 'utf8')
 ]);
 const version = app.match(/const HOST_WEB_VERSION = "([^"]+)"/)?.[1];
-assert.equal(version, 'v1.0.0');
+assert.equal(version, 'v1.0.1');
 assert.match(html, new RegExp(`id="hostVersion">${version.replaceAll('.', '\\.')}`));
 assert.match(readme, new RegExp(`网页 ${version.replaceAll('.', '\\.')}`));
-assert.match(serviceWorker, /CACHE_NAME = .*v74-/);
+assert.match(serviceWorker, /CACHE_NAME = .*v75-/);
 console.log(`Host Web version ${version}, display marker and cache revision are synchronized.`);
