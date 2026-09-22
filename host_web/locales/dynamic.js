@@ -131,6 +131,8 @@ export const dynamicMessages = [
 ['写入完成，正在复位','寫入完成，正在重設','書き込み完了、リセット中','Write complete; resetting'],
 ['写入完成，设备已复位','寫入完成，裝置已重設','書き込み・リセット完了','Write complete; device reset'],
 ['请先生成资源包。\n','請先產生素材包。\n','先に素材パックを作成してください。\n','Build an asset pack first.\n'],
+['请先生成资源包，再读取设备分区表。\n','請先產生素材包，再讀取裝置分割表。\n','先に素材パックを作成してから、デバイスのパーティション表を読み取ってください。\n','Build an asset pack before reading the device partition table.\n'],
+['请先生成资源包，再进行资源写入操作。\n','請先產生素材包，再進行素材寫入操作。\n','先に素材パックを作成してから、素材を書き込んでください。\n','Build an asset pack before writing assets.\n'],
 ['请先选择设备并核对分区表。\n','請先選擇裝置並核對分割表。\n','先にデバイスを選びパーティション表を確認してください。\n','Select a device and verify its partitions first.\n'],
 ['资源包超过 assets 分区大小：{0} / {1}。\n','素材包超過 assets 分割區大小：{0} / {1}。\n','素材パックがassets容量を超えています：{0} / {1}。\n','Asset pack exceeds assets partition: {0} / {1}.\n'],
 ['[{0}] 写入确认：文件类型 custom_assets.bin，目标分区 assets，地址 {1}，分区大小 {2}，文件大小 {3}，SHA256 {4}\n','[{0}] 寫入確認：custom_assets.bin，目標 assets，位址 {1}，分割區大小 {2}，檔案大小 {3}，SHA256 {4}\n','[{0}] 書き込み確認：custom_assets.bin、assets、アドレス {1}、領域 {2}、ファイル {3}、SHA256 {4}\n','[{0}] Write confirmation: custom_assets.bin, partition assets, address {1}, partition size {2}, file size {3}, SHA256 {4}\n'],

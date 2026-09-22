@@ -20,7 +20,7 @@ const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
 const FIRMWARE_RELEASES_SOURCE_URL = "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases";
-const HOST_WEB_VERSION = "v1.0.1";
+const HOST_WEB_VERSION = "v1.0.2";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
@@ -183,9 +183,13 @@ function setProgress(prefix, written, total) {
 
 function updateAssetWriteButtons() {
   const hasSerial = "serial" in navigator;
+  const hasPackage = Boolean(generatedAssetPackage);
   const packageFits = Boolean(generatedAssetPackage && assetPartition && generatedAssetPackage.byteLength <= assetPartition.size);
-  $("#writeAssetsBtn").disabled = !(hasSerial && assetPartitionVerified && packageFits);
-  $("#eraseAssetsBtn").disabled = !(hasSerial && assetPartitionVerified);
+  $("#writerLockedNotice").hidden = hasPackage;
+  $("#assetBaudRate").disabled = !(hasSerial && hasPackage);
+  $("#selectAssetDeviceBtn").disabled = !(hasSerial && hasPackage);
+  $("#writeAssetsBtn").disabled = !(hasSerial && hasPackage && assetPartitionVerified && packageFits);
+  $("#eraseAssetsBtn").disabled = !(hasSerial && hasPackage && assetPartitionVerified);
 }
 
 function setSerialSupport() {
@@ -919,8 +923,8 @@ function invalidateGeneratedAssets() {
   generatedAssetPackage = undefined;
   $("#assetReadyNotice").hidden = true;
   $("#downloadAssetsBtn").disabled = true;
-  $("#writeAssetsBtn").disabled = true;
   setText($("#assetWriteState"), () => tr("等待资源包"));
+  updateAssetWriteButtons();
 }
 
 function clearGifConversion() {
@@ -1678,6 +1682,10 @@ function renderPartitionTable(partitions, { tbodyId, mode, fileSize = 0 } = {}) 
 }
 
 async function inspectAssetDevice() {
+  if (!generatedAssetPackage) {
+    appendWriteLog(tr("请先生成资源包，再读取设备分区表。\n"));
+    return;
+  }
   if (!("serial" in navigator)) {
     appendWriteLog(tr("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。\n"));
     return;
@@ -1729,7 +1737,6 @@ async function inspectAssetDevice() {
     appendWriteLog(tr`[${nowText()}] 设备核对失败：${error.message}\n`);
   } finally {
     updateAssetWriteButtons();
-    $("#selectAssetDeviceBtn").disabled = !("serial" in navigator);
     if (transport) {
       try {
         await transport.disconnect();
@@ -2093,6 +2100,10 @@ async function writeAssets() {
 }
 
 async function eraseAssets() {
+  if (!generatedAssetPackage) {
+    appendWriteLog(tr("请先生成资源包，再进行资源写入操作。\n"));
+    return;
+  }
   if (!assetPartitionVerified || !assetDevicePort || !assetPartition) {
     appendWriteLog(tr("请先选择设备并核对分区表。\n"));
     return;
@@ -2299,6 +2310,10 @@ $("#clearImagesBtn").addEventListener("click", clearImageConversions);
 $("#customWeatherCity").addEventListener("input", invalidateGeneratedAssets);
 $("#customOtaServer").addEventListener("input", invalidateGeneratedAssets);
 $("#buildAssetsBtn").addEventListener("click", buildAssetPackage);
+$("#goToAssetsFromWriterBtn").addEventListener("click", () => {
+  activateTab("assets");
+  hintNextStep(".gif-asset-card .file-choose");
+});
 $("#goToWriterBtn").addEventListener("click", () => {
   if (!generatedAssetPackage) return;
   activateTab("writer");

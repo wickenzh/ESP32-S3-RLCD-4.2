@@ -18,7 +18,7 @@
     </div>
     <div class="top-meta">
       <span>使用 Edge / Chrome · 素材与配置本地处理，不上传服务器</span>
-      <span class="top-version"><b id="hostVersion">v1.0.1</b> · <span id="cacheState">离线缓存准备中</span> · <span class="hosting-note">页面服务托管于 GitHub Pages</span></span>
+      <span class="top-version"><b id="hostVersion">v1.0.2</b> · <span id="cacheState">离线缓存准备中</span> · <span class="hosting-note">页面服务托管于 GitHub Pages</span></span>
     </div>
     <div class="top-actions">
       <span id="serialSupport" class="status-pill">检测中</span>
@@ -298,17 +298,21 @@
       </section>
 
       <section id="writer" class="tab-panel">
+        <div id="writerLockedNotice" class="writer-locked-notice" role="status">
+          <div><strong>资源包尚未生成</strong><p>请先在“资源制作”中完成素材转换并点击“生成资源包”，生成后才能读取设备并写入资源。</p></div>
+          <button id="goToAssetsFromWriterBtn" class="secondary-button" type="button">前往资源制作</button>
+        </div>
         <div class="toolbar">
           <label class="select-field">
             <span>写入波特率</span>
-            <select id="assetBaudRate">
+            <select id="assetBaudRate" disabled>
               <option value="115200" selected>115200</option>
               <option value="230400">230400</option>
               <option value="460800">460800</option>
               <option value="921600">921600</option>
             </select>
           </label>
-          <button id="selectAssetDeviceBtn" class="primary-button" type="button">① 选择并核对设备</button>
+          <button id="selectAssetDeviceBtn" class="primary-button" type="button" disabled>① 选择并核对设备</button>
           <button id="writeAssetsBtn" class="primary-button" type="button" disabled>② 串口写入资源</button>
           <button id="eraseAssetsBtn" class="secondary-button" type="button" disabled>清空资源分区</button>
         </div>

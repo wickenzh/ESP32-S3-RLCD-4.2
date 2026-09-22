@@ -2,6 +2,9 @@
 export const staticMessages = [
 ['最新版本','最新版本','最新バージョン','Latest version'],
 ['版本说明','版本說明','バージョンの説明','Release notes'],
+['资源包尚未生成','素材包尚未建立','素材パック未作成','Asset pack not generated'],
+['请先在“资源制作”中完成素材转换并点击“生成资源包”，生成后才能读取设备并写入资源。','請先在「素材製作」完成素材轉換並點擊「產生素材包」；建立後才能讀取裝置並寫入素材。','先に「素材の作成」で素材を変換し、「素材パックを作成」を押してください。作成後にデバイスを読み取り、素材を書き込めます。','Complete conversion in Create assets and click Build asset pack before reading the device or writing assets.'],
+['前往资源制作','前往素材製作','素材の作成へ','Go to Create assets'],
 ['查看完整发布说明','查看完整發布說明','完全なリリースノートを見る','View full release notes'],
 ['暂无详细发布说明','暫無詳細發布說明','詳細なリリース説明はありません','No detailed release notes'],
 ['已选设备','已選裝置','選択したデバイス','Selected device'],

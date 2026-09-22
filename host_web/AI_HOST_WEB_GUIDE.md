@@ -7,6 +7,11 @@ The visible Host Web version is `HOST_WEB_VERSION` in `app.js`, mirrored by
 Service Worker cache revision for each web release, then run the version and
 Pages tests so stale offline assets are not mistaken for the new release.
 
+The Write assets tab is intentionally read-only until `custom_assets.bin` has
+been generated. Keep the package gate on the baud selector, device selection,
+partition read, write and clear actions; the guidance button should return the
+user to Create assets without changing the resource protocol.
+
 ## Local UI Languages
 
 `i18n.js` owns the zh-CN / zh-TW / ja / en selector between Web Serial status and

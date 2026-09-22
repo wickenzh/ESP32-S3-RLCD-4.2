@@ -357,6 +357,11 @@ label span,
 .asset-ready-notice[hidden] { display: none; }
 .asset-ready-notice p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .asset-ready-notice button { flex-shrink: 0; }
+.writer-locked-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; padding: 12px 14px; border-left: 3px solid var(--warn); background: var(--warn-soft); color: var(--warn); }
+.writer-locked-notice[hidden] { display: none; }
+.writer-locked-notice strong { display: block; color: var(--ink); }
+.writer-locked-notice p { margin: 4px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+.writer-locked-notice button { flex-shrink: 0; }
 
 .summary-actions {
   display: flex;
@@ -1190,6 +1195,7 @@ progress::-moz-progress-bar { background: var(--accent); }
   .firmware-notes-panel { min-height: 280px; padding-top: 4px; }
   .quick-field-group { grid-row: auto; grid-template-rows: none; gap: 16px; }
   .quick-fields { grid-template-rows: none; }
+  .writer-locked-notice { align-items: stretch; flex-direction: column; }
 }
 
 /* Narrow desktop-class layouts: stack the simulator and keep every control reachable. */
