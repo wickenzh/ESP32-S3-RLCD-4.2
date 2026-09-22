@@ -1,7 +1,45 @@
 // 单色天气装饰：晴天光晕、雨天云层雨线、雪天复用用户雪花位图。
 #pragma once
 #include "aggregate_snowflake_bits.h"
+#include "ui_aggregate_cloud_paths.h"
+
+inline int aggregate_cloud_depth(bool overcast,int x,int y) {
+    if(x<2 || x>219 || y<28 || y>118)return 0;
+    const auto &shape=overcast?aggregate_cloud_paths::overcast:aggregate_cloud_paths::cloudy;
+    if(y<=shape.top[x])return 1+shape.top[x]-y;
+    if(y>=shape.bottom[x])return 1+y-shape.bottom[x];
+    return 0;
+}
+
+inline bool aggregate_cloud_pixel(int kind,int x,int y,int read_right,int weather_width=88,int range_width=208) {
+    if(x<2 || x>219 || y<28 || y>=99)return false;
+    // Clear margins protect the icon, weather text, temperature and high/low row.
+    const int reading[][4]={{10,40,65,79},{8,79,12+weather_width,98},
+                            {86,44,read_right+2,88},{7,99,10+range_width,117}};
+    int clearance=4;
+    for(const auto &r:reading) {
+        const int dx=x<r[0]?r[0]-x:x>r[2]?x-r[2]:0;
+        const int dy=y<r[1]?r[1]-y:y>r[3]?y-r[3]:0;
+        const int distance=dx>dy?dx:dy;
+        if(distance<clearance)clearance=distance;
+    }
+    if(clearance==0)return false;
+    const bool overcast=kind==5;
+    const int depth=aggregate_cloud_depth(overcast,x,y);
+    if(!depth)return false;
+    const bool outline=!aggregate_cloud_depth(overcast,x-1,y) || !aggregate_cloud_depth(overcast,x+1,y) ||
+                       !aggregate_cloud_depth(overcast,x,y-1) || !aggregate_cloud_depth(overcast,x,y+1);
+    // Coordinate-anchored grain avoids a mechanical grid without temporal noise.
+    unsigned grain=static_cast<unsigned>(x)*374761393U+static_cast<unsigned>(y)*668265263U;
+    grain=(grain^(grain>>13))*1274126177U;
+    grain^=grain>>16;
+    if(outline)return !overcast || (x+2*y)%5!=0;
+    const unsigned density=static_cast<unsigned>((overcast?20:10)+(depth<24?depth:24)*(overcast?6:4)/24);
+    return grain%100U < density;
+}
+
 inline bool aggregate_weather_texture_pixel(int kind,int x,int y,int cloud_bottom=40,int read_right=0) {
+    if(kind==4 || kind==5)return aggregate_cloud_pixel(kind,x,y,read_right);
     if(x<2 || x>219 || y<28 || y>98) return false;
     if(kind==2 || kind==3) {
         static constexpr int widths[]={35,53,29,47,41,17};

@@ -40,8 +40,20 @@ int main() {
         const bool rain=code<=318 || code==350 || code==351 || code==399;
         assert(aggregate_weather_kind(text)==(rain?2:0));
     }
-    assert(aggregate_weather_kind("101")==0);
-    assert(aggregate_weather_kind("104")==0);
+    for(const char *code:{"101","102","103","151","152","153"})
+        assert(aggregate_weather_kind(code)==4);
+    assert(aggregate_weather_kind("104")==5);
+    int cloud_pixels=0,overcast_pixels=0;
+    for(int y=0;y<120;++y) for(int x=0;x<222;++x) {
+        const bool cloudy=aggregate_weather_texture_pixel(4,x,y,40,215);
+        const bool overcast=aggregate_weather_texture_pixel(5,x,y,40,215);
+        cloud_pixels+=cloudy;overcast_pixels+=overcast;
+        if(x>=86 && x<=217 && y>=44 && y<=88)assert(!cloudy && !overcast);
+        if(x>=7 && x<=215 && y>=99 && y<=117)assert(!cloudy && !overcast);
+    }
+    assert(cloud_pixels>100 && overcast_pixels>cloud_pixels);
+    for(int y=28;y<44;++y)for(int x=63;x<175;++x)
+        assert(!aggregate_weather_texture_pixel(4,x,y,40,215));
     assert(aggregate_weather_kind("501")==0);
     assert(aggregate_weather_kind("9999")==0);
     assert(aggregate_weather_kind(nullptr)==0);
@@ -110,7 +122,7 @@ int main() {
     for(int i=0;i<5000;++i) {
         aggregate_clock_set_text(view.temperature,i%2?"-2 C":"26 C");
         aggregate_clock_set_text(view.weather,i%2?"晴":"小雨");
-        aggregate_clock_weather_theme(view,i%4);
+        aggregate_clock_weather_theme(view,i%6);
         aggregate_clock_view_time(view,(i/3600)%24,(i/60)%60,i%60);
     }
     lv_refr_now(nullptr);
@@ -126,6 +138,12 @@ int main() {
     assert(!aggregate_clock_weather_theme(view,2));
     lv_refr_now(nullptr); assert(areas.empty());
     // Canvas allocation failure must leave recoverable objects, not missing slots.
+    aggregate_clock_set_text(view.temperature,"26 C");
+    aggregate_clock_set_text(view.range,"最高 29 C  最低 22 C");
+    aggregate_clock_weather_theme(view,4);
+    assert(view.texture_read_width>90);
+    assert(view.texture_range_width>150);
+    aggregate_clock_weather_theme(view,1);
     lv_obj_clean(lv_scr_act());
     lv_color_t *missing[3]={nullptr,nullptr,nullptr};
     aggregate_clock_view_build(lv_scr_act(),view,missing);

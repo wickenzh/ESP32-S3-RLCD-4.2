@@ -6,6 +6,8 @@ struct AggregateClockView {
     lv_obj_t *weather_panel = nullptr;
     int weather_kind = -1;
     int texture_read_width = -1;
+    int texture_weather_width = 88;
+    int texture_range_width = 208;
     lv_obj_t *digits[3] = {};
     int values[3] = {-1, -1, -1};
     lv_obj_t *city = nullptr;

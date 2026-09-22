@@ -138,13 +138,17 @@ void aggregate_clock_view_build(lv_obj_t *root,AggregateClockView &v,lv_color_t 
         lv_draw_rect_dsc_t ink; lv_draw_rect_dsc_init(&ink);
         ink.bg_color=lv_color_black();
         // Leave a clean reading zone around the temperature, including long/negative values.
-        for(int y=28;y<=98;++y) for(int x=2;x<=219;++x) {
+        const int texture_bottom=v.weather_kind>=4?118:98;
+        for(int y=28;y<=texture_bottom;++y) for(int x=2;x<=219;++x) {
             if(y>=44 && y<=88 && x>=88 && x<=92+v.texture_read_width)continue;
             // Taper the lobes into the reading zone instead of flattening the whole band.
             const int left=88,right=92+v.texture_read_width;
             const int distance=x<left?left-x:x>right?x-right:0;
             const int cloud_bottom=distance>=10?40:35+distance/2;
-            if(!aggregate_weather_texture_pixel(v.weather_kind,x,y,cloud_bottom,right))continue;
+            const bool pixel=v.weather_kind>=4?
+                aggregate_cloud_pixel(v.weather_kind,x,y,right,v.texture_weather_width,v.texture_range_width):
+                aggregate_weather_texture_pixel(v.weather_kind,x,y,cloud_bottom,right);
+            if(!pixel)continue;
             const int px=a.x1+x,py=a.y1+y;
             lv_area_t p={(lv_coord_t)px,(lv_coord_t)py,(lv_coord_t)px,(lv_coord_t)py};
             lv_draw_rect(lv_event_get_draw_ctx(e),&ink,&p);
@@ -199,11 +203,22 @@ bool aggregate_clock_set_text(lv_obj_t *label,const char *text) {
 
 bool aggregate_clock_weather_theme(AggregateClockView &v,int kind) {
     if(!v.weather_panel || !v.temperature)return false;
-    if(kind<0 || kind>3)kind=0;
+    if(kind<0 || kind>5)kind=0;
+    lv_obj_update_layout(v.weather_panel);
     lv_point_t size={};
     lv_txt_get_size(&size,lv_label_get_text(v.temperature),
                     lv_obj_get_style_text_font(v.temperature,0),0,0,400,LV_TEXT_FLAG_NONE);
-    if(v.weather_kind==kind && (kind==0 || v.texture_read_width==size.x)) {
+    const auto text_width=[](lv_obj_t *label) {
+        lv_point_t text={};
+        lv_txt_get_size(&text,lv_label_get_text(label),lv_obj_get_style_text_font(label,0),0,0,400,LV_TEXT_FLAG_NONE);
+        return static_cast<int>(text.x);
+    };
+    const int weather_width=text_width(v.weather),range_width=text_width(v.range);
+    const bool cloud_text_changed=kind>=4 &&
+        (weather_width!=v.texture_weather_width || range_width!=v.texture_range_width);
+    v.texture_weather_width=weather_width;
+    v.texture_range_width=range_width;
+    if(v.weather_kind==kind && !cloud_text_changed && (kind==0 || v.texture_read_width==size.x)) {
         v.texture_read_width=size.x;
         return false;
     }
