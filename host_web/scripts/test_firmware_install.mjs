@@ -6,13 +6,15 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const tabOrder = [...html.matchAll(/data-tab="([^"]+)"/g)].map(match => match[1]);
 assert.deepEqual(tabOrder, ['firmware', 'assets', 'writer', 'serial', 'screens', 'settings']);
-for (const id of ['firmwareInstallConnectBtn', 'firmwareInstallBtn', 'firmwareInstallConfirm', 'firmwareInstallConfirmBtn', 'firmwareInstallCancelBtn', 'firmwareInstallProgress', 'firmwareAdvancedPanel']) {
+for (const id of ['firmwareInstallConnectBtn', 'firmwareInstallBtn', 'firmwareInstallConfirm', 'firmwareInstallConfirmBtn', 'firmwareInstallCancelBtn', 'firmwareInstallProgress', 'firmwareAdvancedPanel', 'firmwareInstallNotesLink']) {
   assert.match(html, new RegExp(`id="${id}"`), id);
 }
 assert.match(html, /id="firmwareTarget"[\s\S]*?value="merged"/);
 assert.match(html, /在线完整安装/);
 assert.match(html, /完整 merged 固件会覆盖/);
 assert.match(html, /firmwareInstallNotes/);
+assert.match(html, /id="hostVersion">v1\.0\.0/);
+assert.match(app, /const HOST_WEB_VERSION = "v1\.0\.0"/);
 assert.match(app, /firmwareInstallBusy/);
 assert.match(app, /firmwareChipVerified/);
 assert.match(app, /firmwareFlashSizeBytes/);
@@ -24,4 +26,6 @@ assert.match(app, /eraseAll: false/);
 assert.doesNotMatch(app, /eraseAll:\s*true/);
 assert.match(app, /return true;/);
 assert.match(app, /return false;/);
+assert.match(app, /summarizeFirmwareNotes/);
+assert.match(app, /releaseUrl/);
 console.log('Firmware install UI order, confirmation, chip/flash guards, busy state and no-erase contract passed.');

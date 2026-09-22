@@ -19,6 +19,8 @@ const MAX_OTA_MANIFEST_URL_BYTES = 255;
 const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
+const FIRMWARE_RELEASES_SOURCE_URL = "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases";
+const HOST_WEB_VERSION = "v1.0.0";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
@@ -41,6 +43,9 @@ const serialCommand = $("#serialCommand");
 const rxBytes = $("#rxBytes");
 const lastLineTime = $("#lastLineTime");
 const cacheState = $("#cacheState");
+const hostVersion = $("#hostVersion");
+
+if (hostVersion) setText(hostVersion, () => HOST_WEB_VERSION);
 
 let port;
 let reader;
@@ -1240,6 +1245,36 @@ function normalizeFirmwareMirrorAsset(asset, version, kind) {
   };
 }
 
+function fallbackFirmwareReleaseUrl(version) {
+  return `${FIRMWARE_RELEASES_SOURCE_URL}/tag/${encodeURIComponent(String(version || "").trim())}`;
+}
+
+function normalizeFirmwareReleaseUrl(value, version) {
+  const fallback = fallbackFirmwareReleaseUrl(version);
+  try {
+    const resolved = new URL(String(value || ""), window.location.href);
+    const expectedPath = "/wickenzh/ESP32-S3-RLCD-4.2/releases";
+    if (resolved.origin === "https://github.com" && (resolved.pathname === expectedPath || resolved.pathname.startsWith(`${expectedPath}/`))) {
+      return resolved.href;
+    }
+  } catch {}
+  return fallback;
+}
+
+function summarizeFirmwareNotes(notes, version, maxLength = 160) {
+  const versionText = String(version || "").trim();
+  const introPattern = /^ESP32-S3 RLCD 4\.2.*(?:源码发布|source release)/i;
+  const lines = String(notes || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !/^#{1,6}\s/.test(line))
+    .map((line) => line.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "").replace(/[`*_]/g, "").replace(/\s+/g, " ").trim())
+    .filter((line) => line && line !== versionText && !/^v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(line) && !introPattern.test(line) && !line.startsWith("固件源码位于"));
+  const summary = lines.slice(0, 2).join(" ");
+  return summary ? truncateMiddle(summary, maxLength) : tr("暂无详细发布说明");
+}
+
 function normalizeFirmwareMirrorItem(item) {
   if (!item || typeof item !== "object") return undefined;
   const version = String(item.version || "").trim();
@@ -1250,6 +1285,7 @@ function normalizeFirmwareMirrorItem(item) {
   return {
     version,
     notes: String(item.notes || "").trim(),
+    releaseUrl: normalizeFirmwareReleaseUrl(item.release_url || item.releaseUrl, version),
     app,
     merged
   };
@@ -1346,7 +1382,13 @@ function normalizeFlashCapacity(value) {
 function updateFirmwareInstallSummary() {
   const manifest = remoteFirmwareManifest;
   setText($("#firmwareInstallVersion"), () => manifest?.version || tr("在线固件加载失败"));
-  setText($("#firmwareInstallNotes"), () => manifest?.notes ? truncateMiddle(manifest.notes, 72) : tr("等待固件清单"));
+  setText($("#firmwareInstallNotes"), () => manifest?.notes ? summarizeFirmwareNotes(manifest.notes, manifest.version) : tr("等待固件清单"));
+  setAttr($("#firmwareInstallNotes"), "title", () => manifest?.notes || "");
+  const notesLink = $("#firmwareInstallNotesLink");
+  if (notesLink) {
+    notesLink.hidden = !manifest;
+    setAttr(notesLink, "href", () => manifest?.releaseUrl || FIRMWARE_RELEASES_SOURCE_URL);
+  }
   setText($("#firmwareInstallDevice"), () => firmwareDevicePort
     ? (firmwareFlashSizeText === "-" ? describePort(firmwareDevicePort) : `${describePort(firmwareDevicePort)} / ${firmwareFlashSizeText}`)
     : tr("未连接"));
@@ -1472,7 +1514,7 @@ function setRemoteFirmwareManifest(index = 0, note = "") {
   setText($("#firmwareWriteState"), () => firmwareImage
     ? tr`在线固件：${remoteFirmwareManifest.version} / ${target.kind === "merged" ? "merged" : "OTA app"} ${formatBytes(firmwareImage.size)}`
     : tr("当前目标没有可用在线固件"));
-  const notes = () => remoteFirmwareManifest.notes ? tr`说明：${remoteFirmwareManifest.notes}。` : "";
+  const notes = () => remoteFirmwareManifest.notes ? tr`说明：${summarizeFirmwareNotes(remoteFirmwareManifest.notes, remoteFirmwareManifest.version)}。` : "";
   if (firmwareImage) {
     setText($("#flashResult"), () => tr`${note}已选择 GitHub Release 固件：${remoteFirmwareManifest.version}。当前目标：${target.label}。将自动下载 ${target.kind === "merged" ? tr("merged 完整固件") : tr("OTA app 固件")} ${truncateMiddle(firmwareImage.assetName)}，SHA-256 ${formatSha(firmwareImage.sha256)}。${merged && app ? `merged ${formatBytes(merged.size)}, app ${formatBytes(app.size)}. ` : ""}${notes()}${firmwareTargetHint(target)}点击“下载并校验固件”后，网页会在浏览器内完成下载与校验，通过后可直接烧录。`);
   } else {

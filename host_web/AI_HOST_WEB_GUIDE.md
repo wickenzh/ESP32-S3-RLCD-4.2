@@ -2,6 +2,11 @@
 
 This document is for future AI agents or developers taking over `host_web/`.
 
+The visible Host Web version is `HOST_WEB_VERSION` in `app.js`, mirrored by
+`#hostVersion` in `index.html`. Update both the displayed version and the
+Service Worker cache revision for each web release, then run the version and
+Pages tests so stale offline assets are not mistaken for the new release.
+
 ## Local UI Languages
 
 `i18n.js` owns the zh-CN / zh-TW / ja / en selector between Web Serial status and

@@ -18,7 +18,7 @@
     </div>
     <div class="top-meta">
       <span>使用 Edge / Chrome · 素材与配置本地处理，不上传服务器</span>
-      <span class="top-version"><b>v0.0.30</b> · <span id="cacheState">离线缓存准备中</span> · <span class="hosting-note">页面服务托管于 GitHub Pages</span></span>
+      <span class="top-version"><b id="hostVersion">v1.0.0</b> · <span id="cacheState">离线缓存准备中</span> · <span class="hosting-note">页面服务托管于 GitHub Pages</span></span>
     </div>
     <div class="top-actions">
       <span id="serialSupport" class="status-pill">检测中</span>
@@ -351,7 +351,11 @@
           </div>
           <div class="firmware-install-summary">
             <div><span>最新版本</span><strong id="firmwareInstallVersion">加载中</strong></div>
-            <div><span>版本说明</span><strong id="firmwareInstallNotes">-</strong></div>
+            <div class="firmware-notes-summary">
+              <span>版本说明</span>
+              <p id="firmwareInstallNotes">-</p>
+              <a id="firmwareInstallNotesLink" href="https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases" target="_blank" rel="noopener noreferrer" hidden>查看完整发布说明</a>
+            </div>
             <div><span>已选设备</span><strong id="firmwareInstallDevice">未连接</strong></div>
           </div>
           <p class="firmware-install-warning">完整 merged 固件会覆盖设备固件、分区表和资源内容，设备配置与自定义资源可能被清除。需要保留时，请取消并在高级固件烧录中选择 App 更新。</p>

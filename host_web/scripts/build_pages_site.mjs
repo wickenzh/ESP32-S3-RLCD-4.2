@@ -36,6 +36,21 @@ function normalizeAsset(asset) {
   return { name, sha256, size, downloadUrl };
 }
 
+function releaseNotes(release, version) {
+  const body = String(release?.body || "").trim();
+  if (body) return body;
+  const name = String(release?.name || "").trim();
+  return name && name !== version ? name : "";
+}
+
+function releaseUrl(release, version) {
+  const expectedPrefix = `https://github.com/${SOURCE_REPOSITORY}/releases`;
+  const value = String(release?.html_url || "").trim();
+  return value === expectedPrefix || value.startsWith(`${expectedPrefix}/`)
+    ? value
+    : `${expectedPrefix}/tag/${encodeURIComponent(version)}`;
+}
+
 async function fetchWithRetry(url, options, label) {
   let lastError;
   for (let attempt = 1; attempt <= 4; attempt += 1) {
@@ -99,7 +114,8 @@ async function buildFirmwareMirror() {
     .filter((release) => !release.draft && !release.prerelease)
     .map((release) => ({
       version: String(release.tag_name || "").trim(),
-      notes: String(release.name || release.body || "").trim(),
+      notes: releaseNotes(release, String(release.tag_name || "").trim()),
+      releaseUrl: releaseUrl(release, String(release.tag_name || "").trim()),
       app: normalizeAsset(findReleaseAsset(release, false)),
       merged: normalizeAsset(findReleaseAsset(release, true))
     }))
@@ -126,6 +142,7 @@ async function buildFirmwareMirror() {
     items.push({
       version: release.version,
       notes: release.notes,
+      release_url: release.releaseUrl,
       app: manifestAsset(release.app),
       merged: manifestAsset(release.merged)
     });

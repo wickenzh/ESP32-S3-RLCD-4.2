@@ -2,7 +2,7 @@
 
 这是一个纯静态网页上位机，可直接通过 GitHub Pages 使用，用于给 WeatherClock 制作并写入自定义首页 GIF 动图、图库静图资源，也可辅助进行固件烧录和串口日志查看。
 
-网页 v0.0.27 默认使用深色桌面界面，面向桌面 Chrome / Edge 的 Web Serial 操作。GIF 和静图的浅色预览仍展示实际黑白转换结果；窄屏支持浏览和编辑，资源写入、固件烧录和串口操作仍需桌面 Web Serial。
+网页 v1.0.0 默认使用深色桌面界面，面向桌面 Chrome / Edge 的 Web Serial 操作。GIF 和静图的浅色预览仍展示实际黑白转换结果；窄屏支持浏览和编辑，资源写入、固件烧录和串口操作仍需桌面 Web Serial。
 
 ## 快速使用
 
@@ -166,6 +166,7 @@ https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases
 - `weather_clock_vX.Y.Z_merged.bin`：完整 merged 固件，只写入 `0x0`。
 
 GitHub Pages 部署工作流会读取 GitHub Release，下载最近 10 个完整版本，在部署阶段核对文件大小和 Release asset 的 `sha256` digest，再把固件放入 Pages 部署产物。大体积 bin 不会提交到 Git 历史。网页从同源 Pages 地址自动读取固件到浏览器内存，再次计算 SHA-256；大小和摘要完全一致后才会启用烧录，用户不需要把在线固件下载到本地或手动选择文件。自定义固件仍通过“自定义固件文件”来源手动选择。
+在线完整安装卡片会显示对应 Release 正文的摘要；点击“查看完整发布说明”会在新标签页打开该版本的 GitHub Release 页面。Release 标题若仅为版本号，不会再被当作说明显示。
 
 部署模板在 `host_web/.github/workflows/static.yml`，同步到公开仓库根目录 `.github/workflows/pages.yml`。上位机文件更新或正式固件构建成功后部署，另保留手动入口，不使用定时同步。`host_web/scripts/build_pages_site.mjs` 只复制站点文件，并生成最近 10 个完整正式版本的同源固件镜像。部署校验失败时保留上一版站点。
 

@@ -2,6 +2,8 @@
 export const staticMessages = [
 ['最新版本','最新版本','最新バージョン','Latest version'],
 ['版本说明','版本說明','バージョンの説明','Release notes'],
+['查看完整发布说明','查看完整發布說明','完全なリリースノートを見る','View full release notes'],
+['暂无详细发布说明','暫無詳細發布說明','詳細なリリース説明はありません','No detailed release notes'],
 ['已选设备','已選裝置','選択したデバイス','Selected device'],
 ['① 连接设备并识别','① 連線並識別裝置','① デバイスを接続・識別','① Connect and identify device'],
 ['① 选择并读取分区表','① 選擇並讀取分割表','① 選択してパーティション表を読む','① Select and read partitions'],

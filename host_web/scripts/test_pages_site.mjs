@@ -17,7 +17,10 @@ globalThis.fetch = async (url) => {
   }
   if (parsed.hostname === 'api.github.com' && parsed.pathname === '/repos/wickenzh/ESP32-S3-RLCD-4.2/releases') {
     const releases = Array.from({ length: 12 }, (_, i) => ({
-      tag_name: `v1.0.${12 - i}`, draft: false, prerelease: i === 0,
+    tag_name: `v1.0.${12 - i}`, draft: false, prerelease: i === 0,
+      name: `v1.0.${12 - i}`,
+      body: `WeatherClock release v1.0.${12 - i}.\n\n1. Improved firmware installation flow.`,
+      html_url: `https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/tag/v1.0.${12 - i}`,
       assets: ['', '_merged'].map(suffix => ({
         name: `weather_clock_v1.0.${12 - i}${suffix}.bin`, size: bytes.length,
         digest: `sha256:${badHash ? '0'.repeat(64) : digest}`,
@@ -55,6 +58,8 @@ try {
   const manifest = JSON.parse(await readFile(path.join(process.argv[2], 'firmware/releases.json')));
   assert.equal(manifest.items.length, 10);
   assert.equal(manifest.items[0].version, 'v1.0.11');
+  assert.equal(manifest.items[0].notes, 'WeatherClock release v1.0.11.\n\n1. Improved firmware installation flow.');
+  assert.equal(manifest.items[0].release_url, 'https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/tag/v1.0.11');
   assert.equal(manifest.items[0].app.sha256, digest);
   assert(!(await readdir(process.argv[2])).includes('scripts'));
   assert(!(await readdir(process.argv[2])).includes('AI_HOST_WEB_GUIDE.md'));
