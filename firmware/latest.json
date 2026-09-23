@@ -1,7 +1,7 @@
 {
-  "version": "v1.6.9",
-  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.9/weather_clock_v1.6.9.bin",
-  "sha256": "981766b25ca914654d92c44ce216463dbf6c82ac798b25a6ed75e069314eb3f4",
-  "size": 6304432,
-  "notes": "v1.6.9：共 1 项更新。\n1. 优化天气自动定位：天气同步可复用最多 6 小时的定位结果；网络配置或手动城市变更后重新…\n完整说明见源码仓库同版本 Release。"
+  "version": "v1.6.10",
+  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.10/weather_clock_v1.6.10.bin",
+  "sha256": "78f9930da268b078ca1c72094ac02d162d39ed573cfcd6a6ea759dd99c91b10a",
+  "size": 6305104,
+  "notes": "v1.6.10：共 3 项更新。\n1. 优化自动天气同步在主、备 Wi-Fi 均不可用时的连接等待：本轮最多等待 30 秒后进…\n2. 优化整点提醒开启时的联网错峰：自动天气同步在整点第 8 秒后启动，降低报时、Wi-Fi…\n3. 优化聚合时钟秒牌：普通秒跳仅重绘变化数字，降低秒级绘制与 RLCD 局部传输量；显示效…\n完整说明见源码仓库同版本 Release。"
 }

@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.9",
+  "latest": "v1.6.10",
   "items": [
+    {
+      "version": "v1.6.10",
+      "notes": "v1.6.10：共 3 项更新。\n1. 优化自动天气同步在主、备 Wi-Fi 均不可用时的连接等待：本轮最多等待 30 秒后进…\n2. 优化整点提醒开启时的联网错峰：自动天气同步在整点第 8 秒后启动，降低报时、Wi-Fi…\n3. 优化聚合时钟秒牌：普通秒跳仅重绘变化数字，降低秒级绘制与 RLCD 局部传输量；显示效…\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.10/weather_clock_v1.6.10.bin",
+        "sha256": "78f9930da268b078ca1c72094ac02d162d39ed573cfcd6a6ea759dd99c91b10a",
+        "size": 6305104
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.10/weather_clock_v1.6.10_merged.bin",
+        "sha256": "a81e0258d4e472a4c55e167aaaca4cd391eb54e5a23926d0d6c316171eb5c784",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.9",
       "notes": "v1.6.9：共 1 项更新。\n1. 优化天气自动定位：天气同步可复用最多 6 小时的定位结果；网络配置或手动城市变更后重新…\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.1/weather_clock_v1.6.1_merged.bin",
         "sha256": "285d247c198f8d1bfe09fff10377d1ba0df1581cb00c3f0db354a14ce340d8b8",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.0",
-      "notes": "v1.6.0：共 8 项更新。\n1. 新增“聚合时钟”页面，将秒级时间、当天天气、日期农历和本地温湿度集中显示，支持页面开关…\n2. 聚合时钟采用灰度点阵信息区、天气图标与温湿度图标，数字和农历加粗，单日日期不补零。\n3. 修复连续浏览多个页面后进入设置可能崩溃的问题，完善界面内存分配与低内存保护。\n4. 修复聚合时钟日期被裁切、冒号偏移及图标边缘异常，统一信息区留白和边界。\n5. 修正农历月份与日期的对应关系，并支持闰月显示。\n6. 补充时间画布申请失败后的恢复机制，避免时间区持续空白。\n其余 2 项见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.0/weather_clock_v1.6.0.bin",
-        "sha256": "67b00e2f571ab32ec0ae5f9c0cdefe10c711d60294934ed646b6471f7ad280eb",
-        "size": 6285968
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.0/weather_clock_v1.6.0_merged.bin",
-        "sha256": "37843ab52555d7564221935a16db6782f140ff3e57771c190db2bc6af72fc39f",
         "size": 16509951
       }
     }
