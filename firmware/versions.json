@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.8",
+  "latest": "v1.6.9",
   "items": [
+    {
+      "version": "v1.6.9",
+      "notes": "v1.6.9：共 1 项更新。\n1. 优化天气自动定位：天气同步可复用最多 6 小时的定位结果；网络配置或手动城市变更后重新…\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.9/weather_clock_v1.6.9.bin",
+        "sha256": "981766b25ca914654d92c44ce216463dbf6c82ac798b25a6ed75e069314eb3f4",
+        "size": 6304432
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.9/weather_clock_v1.6.9_merged.bin",
+        "sha256": "612108130a5412f88f448bf8751f4b99b6fbcec4b9df22083f8a5692e67cc4e0",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.8",
       "notes": "v1.6.8：共 4 项更新。\n1. 聚合时钟新增多云与阴天静态手工云层，保留原高低温点阵与页面布局，仅随天气变化更新，不增…\n2. 修复聚合天气装饰层按布局前省略号宽度进行避让不准确的问题，避免云层与温度读数区域重叠。\n3. 修复 WeatherClock Studio 更新后旧 Service Worker…\n4. 优化 Studio 在线固件安装流程、芯片与容量识别、覆盖确认和资源写入前置门禁；发布…\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.0/weather_clock_v1.6.0_merged.bin",
         "sha256": "37843ab52555d7564221935a16db6782f140ff3e57771c190db2bc6af72fc39f",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.5.41",
-      "notes": "v1.5.41：共 2 项更新。\n1. 修复 RLCD 像素 LUT 初始化中的循环类型边界，避免极端显示尺寸下窄类型与宽类型…\n2. 修复 Bosch SensorLib 在大长度 FIFO 和 KLIO 模式列表下可能…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.41/weather_clock_v1.5.41.bin",
-        "sha256": "20d7e5047890bf634a4e10aab003cb1953b18a7b9d2a0f2b8860891360f2cc48",
-        "size": 6266880
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.5.41/weather_clock_v1.5.41_merged.bin",
-        "sha256": "91098e4343421f4430ab62cec0d77b86d7683049774fbc8e8c011300672bbed1",
         "size": 16509951
       }
     }
