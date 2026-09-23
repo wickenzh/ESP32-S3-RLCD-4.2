@@ -1,5 +1,6 @@
 // 计算联网同步任务本轮应执行的项目，不访问 Wi-Fi、事件组或全局状态。
 #include "network_sync_schedule.h"
+#include "wifi_failover_policy.h"
 
 #include <limits.h>
 
@@ -25,6 +26,9 @@ constexpr uint32_t kWeatherRequestSettleDelayMs = 120;
 constexpr uint32_t kStartupWeatherRequestSettleDelayMs = 300;
 constexpr uint32_t kNetworkOperationSettleDelayMs = 250;
 constexpr uint32_t kStartupNetworkOperationSettleDelayMs = 1000;
+constexpr uint32_t kAutomaticWifiConnectTimeoutMs = 30000;
+constexpr uint32_t kInteractiveWifiConnectTimeoutMs = 45000;
+constexpr uint32_t kHourlyWeatherStaggerSeconds = 8;
 constexpr uint8_t kAutomaticBootHttpsWeatherBit = 1u << 0;
 constexpr uint8_t kAutomaticBootHttpsSayingBit = 1u << 1;
 static_assert(kIdleMinimumWaitMs > 0, "network idle minimum wait must be positive");
@@ -59,6 +63,13 @@ static_assert(kStartupWeatherRequestSettleDelayMs > kWeatherRequestSettleDelayMs
               "startup HTTPS requests must use the longer settle delay");
 static_assert(kStartupNetworkOperationSettleDelayMs > kNetworkOperationSettleDelayMs,
               "startup network operations must use the longer settle delay");
+static_assert(kAutomaticWifiConnectTimeoutMs > kWifiPrimaryAttemptWindowMs,
+              "automatic Wi-Fi timeout must leave time for the backup profile");
+static_assert(kInteractiveWifiConnectTimeoutMs > kAutomaticWifiConnectTimeoutMs,
+              "interactive Wi-Fi timeout must retain the longest recovery window");
+static_assert(kHourlyWeatherStaggerSeconds > 2 &&
+                  kHourlyWeatherStaggerSeconds < kSecondsPerMinute,
+              "hourly weather stagger must follow the chime window and fit one minute");
 
 time_t earliest_pending_boot_sync(const NetworkSyncScheduleInput &input)
 {
@@ -325,6 +336,26 @@ uint32_t network_inter_operation_settle_delay_ms(bool startup_pressure_active)
     return startup_pressure_active
                ? kStartupNetworkOperationSettleDelayMs
                : kNetworkOperationSettleDelayMs;
+}
+
+uint32_t network_sync_connection_timeout_ms(bool interactive_request)
+{
+    return interactive_request
+               ? kInteractiveWifiConnectTimeoutMs
+               : kAutomaticWifiConnectTimeoutMs;
+}
+
+uint32_t network_hourly_weather_stagger_delay_ms(bool automatic_weather_due,
+                                                 bool hourly_chime_enabled,
+                                                 int minute,
+                                                 int second)
+{
+    if (!automatic_weather_due || !hourly_chime_enabled || minute != 0 ||
+        second < 0 || second >= static_cast<int>(kHourlyWeatherStaggerSeconds)) {
+        return 0;
+    }
+    return (kHourlyWeatherStaggerSeconds - static_cast<uint32_t>(second)) *
+           kMillisecondsPerSecond;
 }
 
 bool network_visible_auto_sync_allowed(int64_t uptime_us)

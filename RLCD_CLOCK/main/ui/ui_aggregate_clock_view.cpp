@@ -1,6 +1,7 @@
 // 绘制聚合时钟四块差异化信息区，数字仅按变化的两位时间局部失效。
 #include "ui_aggregate_clock_view.h"
 #include "ui_celsius_marker.h"
+#include "ui_canvas_primitives.h"
 #include "aggregate_sensor_icons.h"
 #include "ui_aggregate_weather_texture.h"
 #include "dseg_digits.h"
@@ -86,26 +87,60 @@ void sensor_icon(lv_obj_t *root,int x,int y,const uint8_t *bits) {
         }
     },LV_EVENT_DRAW_MAIN,const_cast<uint8_t *>(bits));
 }
+constexpr int kAggregatePairDigitCount=2;
+constexpr int kAggregateDigitSlotWidth=kAggregateDigitWidth/kAggregatePairDigitCount;
+
+void clear_digit_slot(lv_img_dsc_t *image,int slot) {
+    if(!image || slot<0 || slot>=kAggregatePairDigitCount)return;
+    const int x0=slot*kAggregateDigitSlotWidth;
+    for(int y=0;y<kAggregateDigitHeight;++y)
+        for(int x=0;x<kAggregateDigitSlotWidth;++x)
+            lv_img_buf_set_px_color(image,x0+x,y,lv_color_black());
+}
+
+void draw_digit_slot(lv_img_dsc_t *image,int slot,int digit) {
+    if(!image || slot<0 || slot>=kAggregatePairDigitCount || digit<0 || digit>9)return;
+    const DsegGlyph &g=kDSEG84Glyphs[digit];
+    const int x0=slot*kAggregateDigitSlotWidth;
+    for(int y=0;y<63;++y) for(int x=0;x<kAggregateDigitSlotWidth;++x) {
+        int sx=x*4/3-g.x_offset;
+        int sy=y*4/3-84-g.y_offset;
+        if(sx<0 || sy<0 || sx>=g.width || sy>=g.height)continue;
+        unsigned bit=sy*g.width+sx;
+        if(kDSEG84Bitmaps[g.bitmap_offset+bit/8] & (128U>>(bit%8)))
+            lv_img_buf_set_px_color(image,x0+x,8+y,lv_color_white());
+    }
+}
+
 void draw_pair(lv_obj_t *canvas,int value) {
     lv_img_dsc_t *image=lv_canvas_get_img(canvas);
-    for(int y=0;y<kAggregateDigitHeight;++y)
-        for(int x=0;x<kAggregateDigitWidth;++x)
-            lv_img_buf_set_px_color(image,x,y,lv_color_black());
+    if(!image)return;
+    for(int slot=0;slot<kAggregatePairDigitCount;++slot)clear_digit_slot(image,slot);
     if(value>=0 && value<=99) {
-        const int digits[2]={value/10,value%10};
-        for(int d=0;d<2;++d) {
-            const DsegGlyph &g=kDSEG84Glyphs[digits[d]];
-            for(int y=0;y<63;++y) for(int x=0;x<52;++x) {
-                int sx=x*4/3-g.x_offset;
-                int sy=y*4/3-84-g.y_offset;
-                if(sx<0 || sy<0 || sx>=g.width || sy>=g.height) continue;
-                unsigned bit=sy*g.width+sx;
-                if(kDSEG84Bitmaps[g.bitmap_offset+bit/8] & (128U>>(bit%8)))
-                    lv_img_buf_set_px_color(image,d*52+x,8+y,lv_color_white());
-            }
-        }
+        draw_digit_slot(image,0,value/10);
+        draw_digit_slot(image,1,value%10);
     }
     lv_obj_invalidate(canvas);
+}
+
+void draw_pair_transition(lv_obj_t *canvas,int previous,int next) {
+    if(!canvas)return;
+    lv_img_dsc_t *image=lv_canvas_get_img(canvas);
+    if(!image)return;
+    if(previous<0 || previous>99 || next<0 || next>99) {
+        draw_pair(canvas,next);
+        return;
+    }
+    const int previous_digits[kAggregatePairDigitCount]={previous/10,previous%10};
+    const int next_digits[kAggregatePairDigitCount]={next/10,next%10};
+    for(int slot=0;slot<kAggregatePairDigitCount;++slot) {
+        if(previous_digits[slot]==next_digits[slot])continue;
+        clear_digit_slot(image,slot);
+        draw_digit_slot(image,slot,next_digits[slot]);
+        const int x1=slot*kAggregateDigitSlotWidth;
+        invalidate_canvas_rect(canvas,x1,0,x1+kAggregateDigitSlotWidth-1,
+                               kAggregateDigitHeight-1);
+    }
 }
 }
 
@@ -192,7 +227,7 @@ bool aggregate_clock_view_time(AggregateClockView &v,int hour,int minute,int sec
     bool changed=false;
     const int next[3]={hour,minute,second};
     for(int i=0;i<3;++i) if(v.digits[i] && lv_canvas_get_img(v.digits[i])->data && next[i]!=v.values[i]) {
-        draw_pair(v.digits[i],next[i]); v.values[i]=next[i]; changed=true;
+        draw_pair_transition(v.digits[i],v.values[i],next[i]); v.values[i]=next[i]; changed=true;
     }
     return changed;
 }

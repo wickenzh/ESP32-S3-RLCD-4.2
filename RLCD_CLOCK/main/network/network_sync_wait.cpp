@@ -21,6 +21,13 @@ constexpr EventBits_t kNetworkSyncWakeBits = kProvisioningSyncBit |
                                              kNetworkStateChangedBit |
                                              kSetupPortalStartBit;
 constexpr EventBits_t kSetupPortalRetryWakeBits = kNetworkStateChangedBit;
+constexpr EventBits_t kNetworkStaggerWakeBits = kProvisioningSyncBit |
+                                                kManualNtpSyncBit |
+                                                kManualWeatherSyncBit |
+                                                kManualSayingSyncBit |
+                                                kNetworkDiagBit |
+                                                kNetworkStateChangedBit |
+                                                kSetupPortalStartBit;
 constexpr EventBits_t kActiveSetupPortalWakeBits =
     kProvisioningSyncBit | kNetworkStateChangedBit;
 constexpr EventBits_t kNetworkConnectionWakeBits =
@@ -31,6 +38,9 @@ static_assert((kNetworkSyncWakeBits & kNetworkStateChangedBit) != 0,
               "network sync wait must wake on runtime state changes");
 static_assert((kSetupPortalRetryWakeBits & kSetupPortalStartBit) == 0,
               "setup portal retry wait must ignore its pending level bit");
+static_assert((kNetworkStaggerWakeBits &
+               (kVisibleWeatherSyncBit | kVisibleSayingSyncBit)) == 0,
+              "automatic sync bits must not interrupt their own stagger");
 static_assert((kSetupPortalRetryWakeBits &
                (kProvisioningSyncBit |
                 kManualNtpSyncBit |
@@ -69,6 +79,14 @@ bool wait_for_network_runtime_change(uint32_t timeout_ms)
 void wait_for_network_sync_event(uint32_t timeout_ms)
 {
     app_event_group_wait_bits(kNetworkSyncWakeBits,
+                              pdFALSE,
+                              pdFALSE,
+                              pdMS_TO_TICKS(timeout_ms));
+}
+
+void wait_for_network_stagger_interrupt(uint32_t timeout_ms)
+{
+    app_event_group_wait_bits(kNetworkStaggerWakeBits,
                               pdFALSE,
                               pdFALSE,
                               pdMS_TO_TICKS(timeout_ms));

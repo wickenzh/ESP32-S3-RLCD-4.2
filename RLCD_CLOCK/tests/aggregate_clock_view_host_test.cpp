@@ -12,6 +12,14 @@ static std::vector<lv_area_t> areas;
 static void flush(lv_disp_drv_t *driver,const lv_area_t *area,lv_color_t *) {
     areas.push_back(*area); lv_disp_flush_ready(driver);
 }
+void invalidate_canvas_rect(lv_obj_t *canvas,int x1,int y1,int x2,int y2) {
+    lv_area_t coords={}; lv_obj_get_coords(canvas,&coords);
+    lv_area_t area={static_cast<lv_coord_t>(coords.x1+x1),
+                    static_cast<lv_coord_t>(coords.y1+y1),
+                    static_cast<lv_coord_t>(coords.x1+x2),
+                    static_cast<lv_coord_t>(coords.y1+y2)};
+    lv_obj_invalidate_area(canvas,&area);
+}
 int main() {
     int sun_pixels=0,rain_pixels=0;
     for(int y=0;y<120;++y) for(int x=0;x<222;++x) {
@@ -94,6 +102,7 @@ int main() {
     lv_refr_now(nullptr);
     std::vector<lv_color_t> hour(pixels[0],pixels[0]+104*80);
     std::vector<lv_color_t> minute(pixels[1],pixels[1]+104*80);
+    std::vector<lv_color_t> second_zero(pixels[2],pixels[2]+104*80);
     areas.clear();
     assert(!aggregate_clock_view_time(view,14,36,0));
     lv_refr_now(nullptr); assert(areas.empty());
@@ -107,12 +116,32 @@ int main() {
     lv_refr_now(nullptr); assert(!areas.empty());
     for(const auto &area:areas) {
         std::fprintf(stderr,"second flush: %d,%d-%d,%d\n",area.x1,area.y1,area.x2,area.y2);
-        // LVGL canvas reserves five pixels of transform draw margin.
-        assert(area.x1>=267 && area.x2<=380);
+        // 00 -> 01 changes only the right digit. LVGL reserves five pixels
+        // of transform draw margin around the invalidated half-card.
+        assert(area.x1>=319 && area.x2<=380);
         assert(area.y1>=71 && area.y2<=160);
     }
     assert(std::memcmp(hour.data(),pixels[0],sizeof(pixels[0]))==0);
     assert(std::memcmp(minute.data(),pixels[1],sizeof(pixels[1]))==0);
+    for(int y=0;y<80;++y)
+        assert(std::memcmp(second_zero.data()+y*104,
+                           pixels[2]+y*104,
+                           52*sizeof(lv_color_t))==0);
+    areas.clear();
+    assert(aggregate_clock_view_time(view,14,36,9));
+    lv_refr_now(nullptr); areas.clear();
+    assert(aggregate_clock_view_time(view,14,36,10));
+    lv_refr_now(nullptr); assert(!areas.empty());
+    bool tens_covered=false,ones_covered=false;
+    for(const auto &area:areas) {
+        tens_covered |= area.x1<=277 && area.x2>=318;
+        ones_covered |= area.x1<=329 && area.x2>=370;
+    }
+    assert(tens_covered && ones_covered);
+    std::vector<lv_color_t> transitioned_ten(pixels[2],pixels[2]+104*80);
+    view.values[2]=-1;
+    assert(aggregate_clock_view_time(view,14,36,10));
+    assert(std::memcmp(transitioned_ten.data(),pixels[2],sizeof(pixels[2]))==0);
     assert(aggregate_clock_view_time(view,23,59,59));
     assert(aggregate_clock_view_time(view,0,0,0));
     assert(!aggregate_clock_view_time(view,0,0,0));

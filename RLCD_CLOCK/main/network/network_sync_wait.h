@@ -37,6 +37,7 @@ constexpr uint32_t setup_portal_retry_delay_ms(uint8_t failure_count)
 }
 
 void wait_for_network_sync_event(uint32_t timeout_ms);
+void wait_for_network_stagger_interrupt(uint32_t timeout_ms);
 void wait_for_setup_portal_retry(uint8_t failure_count);
 void wait_for_active_setup_portal_request();
 void wait_for_network_runtime_request();

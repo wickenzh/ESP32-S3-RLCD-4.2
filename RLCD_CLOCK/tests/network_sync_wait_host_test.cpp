@@ -39,6 +39,13 @@ constexpr EventBits_t kExpectedSyncWakeBits = kProvisioningSyncBit |
                                                kNetworkDiagBit |
                                                kNetworkStateChangedBit |
                                                kSetupPortalStartBit;
+constexpr EventBits_t kExpectedStaggerWakeBits = kProvisioningSyncBit |
+                                                 kManualNtpSyncBit |
+                                                 kManualWeatherSyncBit |
+                                                 kManualSayingSyncBit |
+                                                 kNetworkDiagBit |
+                                                 kNetworkStateChangedBit |
+                                                 kSetupPortalStartBit;
 
 void reset_wait_call()
 {
@@ -141,6 +148,18 @@ int main()
     reset_wait_call();
     wait_for_network_sync_event(4321);
     assert_wait(kExpectedSyncWakeBits, pdFALSE, pdMS_TO_TICKS(4321));
+
+    reset_wait_call();
+    s_wait_result = kVisibleWeatherSyncBit | kVisibleSayingSyncBit;
+    wait_for_network_stagger_interrupt(8000);
+    assert_wait(kExpectedStaggerWakeBits, pdFALSE, pdMS_TO_TICKS(8000));
+    assert(s_now_us == 8000000);
+
+    reset_wait_call();
+    s_wait_result = kManualWeatherSyncBit;
+    wait_for_network_stagger_interrupt(8000);
+    assert_wait(kExpectedStaggerWakeBits, pdFALSE, pdMS_TO_TICKS(8000));
+    assert(s_now_us == 0);
 
     static_assert(setup_portal_retry_delay_ms(0) == 0);
     static_assert(setup_portal_retry_delay_ms(1) == 1000);

@@ -5,6 +5,7 @@
 
 int main()
 {
+    static_assert(kWifiPrimaryAttemptWindowMs == 12000);
     assert(wifi_credential_slot_valid(WifiCredentialSlot::kSlotA));
     assert(wifi_credential_slot_valid(WifiCredentialSlot::kSlotB));
     assert(!wifi_credential_slot_valid(

@@ -23,6 +23,7 @@ struct WifiFailoverState {
 };
 
 inline constexpr uint8_t kWifiFailoverFailuresPerSlot = 3;
+inline constexpr uint32_t kWifiPrimaryAttemptWindowMs = 12000;
 
 constexpr bool wifi_credential_slot_valid(WifiCredentialSlot slot)
 {

@@ -93,6 +93,11 @@ bool network_startup_pressure_window_active(bool startup_screen_active,
                                             int64_t uptime_us);
 uint32_t network_weather_request_settle_delay_ms(bool startup_pressure_active);
 uint32_t network_inter_operation_settle_delay_ms(bool startup_pressure_active);
+uint32_t network_sync_connection_timeout_ms(bool interactive_request);
+uint32_t network_hourly_weather_stagger_delay_ms(bool automatic_weather_due,
+                                                 bool hourly_chime_enabled,
+                                                 int minute,
+                                                 int second);
 bool network_visible_auto_sync_allowed(int64_t uptime_us);
 bool network_startup_followup_https_allowed(bool startup_pressure_active,
                                             size_t internal_free,

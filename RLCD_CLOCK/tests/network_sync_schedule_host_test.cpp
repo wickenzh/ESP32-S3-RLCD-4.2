@@ -46,6 +46,18 @@ int main()
     assert(network_weather_request_settle_delay_ms(false) == 120);
     assert(network_inter_operation_settle_delay_ms(true) == 1000);
     assert(network_inter_operation_settle_delay_ms(false) == 250);
+    assert(network_sync_connection_timeout_ms(false) == 30000);
+    assert(network_sync_connection_timeout_ms(true) == 45000);
+    assert(network_sync_connection_timeout_ms(false) <
+           network_sync_connection_timeout_ms(true));
+    assert(network_hourly_weather_stagger_delay_ms(true, true, 0, 0) == 8000);
+    assert(network_hourly_weather_stagger_delay_ms(true, true, 0, 7) == 1000);
+    assert(network_hourly_weather_stagger_delay_ms(true, true, 0, 8) == 0);
+    assert(network_hourly_weather_stagger_delay_ms(true, true, 1, 0) == 0);
+    assert(network_hourly_weather_stagger_delay_ms(false, true, 0, 0) == 0);
+    assert(network_hourly_weather_stagger_delay_ms(true, false, 0, 0) == 0);
+    assert(network_hourly_weather_stagger_delay_ms(true, true, -1, 0) == 0);
+    assert(network_hourly_weather_stagger_delay_ms(true, true, 0, -1) == 0);
     assert(network_ntp_retry_delay_seconds(false, 0) == 15);
     assert(network_ntp_retry_delay_seconds(false, 1) == 15);
     assert(network_ntp_retry_delay_seconds(false, 2) == 30);

@@ -1,5 +1,6 @@
 // 实现 SDL 预览显示后端和确定性 PPM 截图写出。
 #include "sdl_preview_backend.h"
+#include "ui_canvas_primitives.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -18,6 +19,32 @@ uint32_t lv_color_to_argb(lv_color_t color)
            blue;
 }
 } // namespace
+
+void invalidate_canvas_rect(lv_obj_t *canvas, int x1, int y1, int x2, int y2)
+{
+    if (!canvas) {
+        return;
+    }
+    if (x1 > x2) {
+        const int tmp = x1;
+        x1 = x2;
+        x2 = tmp;
+    }
+    if (y1 > y2) {
+        const int tmp = y1;
+        y1 = y2;
+        y2 = tmp;
+    }
+    lv_area_t coords = {};
+    lv_obj_get_coords(canvas, &coords);
+    lv_area_t area = {
+        static_cast<lv_coord_t>(coords.x1 + x1),
+        static_cast<lv_coord_t>(coords.y1 + y1),
+        static_cast<lv_coord_t>(coords.x1 + x2),
+        static_cast<lv_coord_t>(coords.y1 + y2),
+    };
+    lv_obj_invalidate_area(canvas, &area);
+}
 
 SdlPreviewBackend::SdlPreviewBackend(int display_width, int display_height)
     : width(display_width),

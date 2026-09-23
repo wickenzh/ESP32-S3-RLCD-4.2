@@ -217,7 +217,6 @@ constexpr uint32_t kWifiPowerSaveRetryMs = 10;
 constexpr unsigned kWifiPowerSaveAttempts = 3;
 constexpr TickType_t kWifiPowerSaveRetryDelay =
     pdMS_TO_TICKS(kWifiPowerSaveRetryMs);
-constexpr uint32_t kWifiPrimaryAttemptWindowMs = 12000;
 constexpr TickType_t kWifiPrimaryAttemptWindowTicks =
     pdMS_TO_TICKS(kWifiPrimaryAttemptWindowMs);
 static_assert(kSetupResultDeliveryAttempts > 0,

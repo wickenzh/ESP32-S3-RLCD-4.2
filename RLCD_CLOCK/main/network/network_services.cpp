@@ -4,6 +4,7 @@
 #include "app_constexpr.h"
 #include "app_event_group.h"
 #include "app_metadata.h"
+#include "chime_runtime_state.h"
 #include "daily_saying_state.h"
 #include "daily_saying_service.h"
 #include "ota_runtime_state.h"
@@ -39,7 +40,6 @@
 #include <esp_timer.h>
 
 static constexpr uint32_t kNetworkShortRetryWaitMs = 1000;
-static constexpr uint32_t kNetworkWifiConnectTimeoutMs = 45000;
 static constexpr uint32_t kNetworkTaskStartupDelayMs = 2500;
 static constexpr time_t kBootWeatherRefreshDelaySec = 10;
 static constexpr time_t kBootSayingRefreshDelaySec = 25;
@@ -502,7 +502,7 @@ static bool execute_network_diagnostics_window(
         const NetworkSyncConnectionWaitResult connection_wait =
             wait_for_valid_network_sync_connection(scheduled_runtime,
                                                    requests,
-                                                   kNetworkWifiConnectTimeoutMs);
+                                                   network_sync_connection_timeout_ms(true));
         if (connection_wait == NetworkSyncConnectionWaitResult::kRuntimeChanged) {
             ESP_LOGI(TAG, "%s", kNetworkSyncContextChangedLog);
             finish_network_radio_session(awake_lock);
@@ -752,6 +752,22 @@ void network_sync_task(void *)
             continue;
         }
 
+        const bool interactive_request = requests.provisioning ||
+                                         requests.manual_ntp ||
+                                         requests.manual_weather ||
+                                         requests.manual_saying;
+        const ChimeRuntimeSnapshot chime = chime_runtime_snapshot_load();
+        const uint32_t hourly_weather_stagger_ms =
+            network_hourly_weather_stagger_delay_ms(
+                schedule.weather_due && !interactive_request,
+                chime.hourly_enabled,
+                time_valid ? local.tm_min : -1,
+                time_valid ? local.tm_sec : -1);
+        if (hourly_weather_stagger_ms > 0) {
+            wait_for_network_stagger_interrupt(hourly_weather_stagger_ms);
+            continue;
+        }
+
         const NetworkSyncAvailability current_runtime =
             capture_network_runtime_availability();
         if (network_sync_start_context_changed(runtime, current_runtime)) {
@@ -791,7 +807,8 @@ void network_sync_task(void *)
         const NetworkSyncConnectionWaitResult connection_wait =
             wait_for_valid_network_sync_connection(current_runtime,
                                                    requests,
-                                                   kNetworkWifiConnectTimeoutMs);
+                                                   network_sync_connection_timeout_ms(
+                                                       interactive_request));
         if (connection_wait == NetworkSyncConnectionWaitResult::kRuntimeChanged) {
             ESP_LOGI(TAG, "%s", kNetworkSyncContextChangedLog);
             finish_network_radio_session(awake_lock);
