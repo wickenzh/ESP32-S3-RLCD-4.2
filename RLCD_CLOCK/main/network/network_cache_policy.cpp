@@ -88,3 +88,33 @@ bool network_weather_city_resolution_cache_matches(
            city_id && city_id[0] != '\0' &&
            strcmp(cached_location, current_location) == 0;
 }
+
+bool network_ip_geolocation_cache_matches(
+    bool valid,
+    int64_t now_us,
+    int64_t expires_at_us,
+    uint32_t cached_generation,
+    uint32_t current_generation,
+    const char *cached_preferred_ssid,
+    const char *current_preferred_ssid,
+    const char *cached_alternate_ssid,
+    const char *current_alternate_ssid,
+    const char *cached_current_ssid,
+    const char *current_ssid,
+    const char *cached_local_ip,
+    const char *current_local_ip)
+{
+    return valid && now_us >= 0 && expires_at_us > now_us &&
+           cached_generation == current_generation &&
+           cached_preferred_ssid && current_preferred_ssid &&
+           cached_preferred_ssid[0] != '\0' &&
+           strcmp(cached_preferred_ssid, current_preferred_ssid) == 0 &&
+           cached_alternate_ssid && current_alternate_ssid &&
+           strcmp(cached_alternate_ssid, current_alternate_ssid) == 0 &&
+           cached_current_ssid && current_ssid &&
+           cached_current_ssid[0] != '\0' &&
+           strcmp(cached_current_ssid, current_ssid) == 0 &&
+           cached_local_ip && current_local_ip &&
+           cached_local_ip[0] != '\0' &&
+           strcmp(cached_local_ip, current_local_ip) == 0;
+}

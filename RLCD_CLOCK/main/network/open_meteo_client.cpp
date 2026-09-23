@@ -47,7 +47,7 @@ bool resolve_location(WeatherData *out)
         return true;
     }
     char pair[40]={};
-    if(!ip_geolocation_lookup(pair,sizeof(pair),out->city,sizeof(out->city)))return false;
+    if(!ip_geolocation_lookup_cached(pair,sizeof(pair),out->city,sizeof(out->city)))return false;
     const char *comma=std::strchr(pair,',');
     if(!comma || std::strchr(comma+1,','))return false;
     const size_t n=static_cast<size_t>(comma-pair);

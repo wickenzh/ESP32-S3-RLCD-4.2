@@ -87,6 +87,35 @@ int main()
         "120.2999,30.4183",
         "120.2999,30.4183",
         "101210101"));
+
+    assert(network_ip_geolocation_cache_matches(
+        true, kNowUs, kExpiresAtUs, 7, 7,
+        "Home", "Home", "Guest", "Guest", "Home", "Home",
+        "10.0.0.8", "10.0.0.8"));
+    assert(!network_ip_geolocation_cache_matches(
+        false, kNowUs, kExpiresAtUs, 7, 7,
+        "Home", "Home", "Guest", "Guest", "Home", "Home",
+        "10.0.0.8", "10.0.0.8"));
+    assert(!network_ip_geolocation_cache_matches(
+        true, kExpiresAtUs, kExpiresAtUs, 7, 7,
+        "Home", "Home", "Guest", "Guest", "Home", "Home",
+        "10.0.0.8", "10.0.0.8"));
+    assert(!network_ip_geolocation_cache_matches(
+        true, kNowUs, kExpiresAtUs, 7, 8,
+        "Home", "Home", "Guest", "Guest", "Home", "Home",
+        "10.0.0.8", "10.0.0.8"));
+    assert(!network_ip_geolocation_cache_matches(
+        true, kNowUs, kExpiresAtUs, 7, 7,
+        "Home", "Home", "Guest", "Other", "Home", "Home",
+        "10.0.0.8", "10.0.0.8"));
+    assert(!network_ip_geolocation_cache_matches(
+        true, kNowUs, kExpiresAtUs, 7, 7,
+        "Home", "Home", "Guest", "Guest", "Home", "Home",
+        "10.0.0.8", "10.0.0.9"));
+    assert(!network_ip_geolocation_cache_matches(
+        true, kNowUs, kExpiresAtUs, 7, 7,
+        "Home", "Home", "Guest", "Guest", "Guest", "Home",
+        "10.0.0.8", "10.0.0.8"));
     assert(!network_weather_city_resolution_cache_matches(
         true,
         kNowUs,

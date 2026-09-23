@@ -28,5 +28,6 @@ bool network_weather_configuration_configured();
 bool network_all_online_credentials_configured();
 bool network_wifi_ssid_snapshot(char *out, size_t out_len);
 bool network_wifi_alternate_ssid_snapshot(char *out, size_t out_len);
+bool network_wifi_current_ssid_snapshot(char *out, size_t out_len);
 bool network_weather_api_key_snapshot(char *out, size_t out_len);
 bool network_weather_api_host_snapshot(char *out, size_t out_len);

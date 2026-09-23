@@ -374,10 +374,10 @@ WeatherUpdateResult update_weather_by_ip_location(WeatherUpdateWorkspace &worksp
                                                   WeatherUpdateScope scope)
 {
     if (!restore_weather_ip_retry_context(&workspace)) {
-        if (!ip_geolocation_lookup(workspace.location,
-                                   sizeof(workspace.location),
-                                   workspace.ip_city,
-                                   sizeof(workspace.ip_city))) {
+        if (!ip_geolocation_lookup_cached(workspace.location,
+                                          sizeof(workspace.location),
+                                          workspace.ip_city,
+                                          sizeof(workspace.ip_city))) {
             clear_weather_ip_retry_context();
             log_weather_update_warning(kWeatherIpGeolocationLookupFailedLog);
             return WeatherUpdateResult::kFailed;

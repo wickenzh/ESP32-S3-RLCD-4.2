@@ -120,11 +120,15 @@ int main()
     assert(credentials_match(ssid, password, kSsidB, kPasswordB));
     assert(network_wifi_ssid_snapshot(ssid, sizeof(ssid)));
     assert(strcmp(ssid, kSsidB) == 0);
+    assert(network_wifi_current_ssid_snapshot(ssid, sizeof(ssid)));
+    assert(strcmp(ssid, kSsidB) == 0);
     assert(network_wifi_alternate_ssid_snapshot(ssid, sizeof(ssid)));
     assert(strcmp(ssid, kSsidA) == 0);
     assert(network_wifi_alternate_slot_configured());
     assert(network_wifi_select_slot(WifiCredentialSlot::kSlotA));
     assert(network_wifi_current_slot() == WifiCredentialSlot::kSlotA);
+    assert(network_wifi_current_ssid_snapshot(ssid, sizeof(ssid)));
+    assert(strcmp(ssid, kSsidA) == 0);
     assert(network_wifi_preferred_slot() == WifiCredentialSlot::kSlotB);
     assert(network_wifi_credentials_copy(
         ssid, sizeof(ssid), password, sizeof(password)));
@@ -232,6 +236,9 @@ int main()
     assert(password[0] == '\0');
     memset(ssid, 'x', sizeof(ssid));
     assert(!network_wifi_ssid_snapshot(ssid, sizeof(ssid)));
+    assert(ssid[0] == '\0');
+    memset(ssid, 'x', sizeof(ssid));
+    assert(!network_wifi_current_ssid_snapshot(ssid, sizeof(ssid)));
     assert(ssid[0] == '\0');
     assert(network_credentials_availability().wifi_configured ==
            availability_before_failure.wifi_configured);

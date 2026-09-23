@@ -24,6 +24,7 @@
 #include "network_sync_requests.h"
 #include "network_page_storage_policy.h"
 #include "network_weather_city_storage.h"
+#include "ip_geolocation_client.h"
 #include "qweather_api_host.h"
 #include "ui_work_page_catalog_internal.h"
 #include "weather_city_text.h"
@@ -174,6 +175,7 @@ static bool finish_manual_weather_city_save(ScopedNvsHandle &nvs,
     }
     manual_weather_city_store(city);
     weather_provider_store(weather_provider_load());
+    ip_geolocation_cache_invalidate();
     invalidate_weather_configuration();
     return true;
 }
@@ -183,6 +185,7 @@ static void reset_saved_config_runtime_state()
     weather_provider_store(WeatherProvider::kQweather);
     network_credentials_clear();
     manual_weather_city_store("");
+    ip_geolocation_cache_invalidate();
     invalidate_weather_configuration();
     clear_wifi_station_ip();
     offline_mode_enabled_store(false);
@@ -409,6 +412,7 @@ bool save_config(const char *ssid,
         normalized_api_host,
         city);
     weather_provider_store(provider);
+    ip_geolocation_cache_invalidate();
     invalidate_weather_configuration();
     offline_mode_enabled_store(false);
     xiaozhi_ai_notify_network_configuration_changed();
@@ -443,6 +447,7 @@ bool persist_preferred_wifi_slot(WifiCredentialSlot slot)
         return false;
     }
     network_wifi_preferred_slot_store(slot);
+    ip_geolocation_cache_invalidate();
     ESP_LOGI(TAG,
              "preferred Wi-Fi slot updated: %c",
              slot == WifiCredentialSlot::kSlotA ? 'A' : 'B');
@@ -491,6 +496,7 @@ bool clear_manual_weather_city()
     }
     manual_weather_city_store("");
     weather_provider_store(weather_provider_load());
+    ip_geolocation_cache_invalidate();
     invalidate_weather_configuration();
     return true;
 }

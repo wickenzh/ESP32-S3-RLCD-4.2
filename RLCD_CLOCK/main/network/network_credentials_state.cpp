@@ -376,6 +376,27 @@ bool network_wifi_alternate_ssid_snapshot(char *out, size_t out_len)
     return entry.configured && out[0] != '\0';
 }
 
+bool network_wifi_current_ssid_snapshot(char *out, size_t out_len)
+{
+    ScopedSemaphoreLock state_lock(s_credentials_mutex);
+    if (!state_lock) {
+        if (out && out_len > 0) {
+            out[0] = '\0';
+        }
+        return false;
+    }
+    const WifiCredentialEntry &entry =
+        s_credentials.wifi[wifi_slot_index(s_credentials.current_slot)];
+    if (!out || out_len < sizeof(entry.ssid)) {
+        if (out && out_len > 0) {
+            out[0] = '\0';
+        }
+        return false;
+    }
+    memcpy(out, entry.ssid, sizeof(entry.ssid));
+    return entry.configured && out[0] != '\0';
+}
+
 bool network_weather_api_key_snapshot(char *out, size_t out_len)
 {
     return copy_field_snapshot(

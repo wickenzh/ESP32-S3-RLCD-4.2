@@ -55,6 +55,8 @@ Two Wi-Fi profiles are supported. After repeated failure of the preferred profil
 
 An empty city field uses automatic IP-based location, which may be inaccurate. Set a city through setup, WeatherClock Studio, or the AI weather-city tool. Use a real, unambiguous place name and check the resolved city, especially for duplicate names.
 
+Automatic IP location is kept in memory for up to six hours on the same Wi-Fi slot, SSID, and local address. A profile/slot change or a changed local address triggers a fresh lookup. If the result is still inaccurate, set a manual city.
+
 The weather-city item in Network settings can clear the manual city after confirmation and return to automatic location. Weather refresh is then requested; it can be deferred while voice or other resource-heavy work is active.
 
 For offline setup, leave Wi-Fi blank and supply a valid local date and time. No weather Key or Host is needed. When using Wi-Fi, the offline date/time fields may remain empty.

@@ -16,3 +16,17 @@ bool network_weather_city_resolution_cache_matches(
     const char *cached_location,
     const char *current_location,
     const char *city_id);
+bool network_ip_geolocation_cache_matches(
+    bool valid,
+    int64_t now_us,
+    int64_t expires_at_us,
+    uint32_t cached_generation,
+    uint32_t current_generation,
+    const char *cached_preferred_ssid,
+    const char *current_preferred_ssid,
+    const char *cached_alternate_ssid,
+    const char *current_alternate_ssid,
+    const char *cached_current_ssid,
+    const char *current_ssid,
+    const char *cached_local_ip,
+    const char *current_local_ip);
