@@ -1,7 +1,7 @@
 {
-  "version": "v1.6.10",
-  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.10/weather_clock_v1.6.10.bin",
-  "sha256": "78f9930da268b078ca1c72094ac02d162d39ed573cfcd6a6ea759dd99c91b10a",
-  "size": 6305104,
-  "notes": "v1.6.10：共 3 项更新。\n1. 优化自动天气同步在主、备 Wi-Fi 均不可用时的连接等待：本轮最多等待 30 秒后进…\n2. 优化整点提醒开启时的联网错峰：自动天气同步在整点第 8 秒后启动，降低报时、Wi-Fi…\n3. 优化聚合时钟秒牌：普通秒跳仅重绘变化数字，降低秒级绘制与 RLCD 局部传输量；显示效…\n完整说明见源码仓库同版本 Release。"
+  "version": "v1.6.11",
+  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.11/weather_clock_v1.6.11.bin",
+  "sha256": "de28a3f41883570c7d44135806dfce3a2c948fd40aa91391e4ebf76f64a2ec80",
+  "size": 6309392,
+  "notes": "v1.6.11：共 3 项更新。\n1. 修复和风天气单次更新的首个 API 请求遇到瞬时 TLS 建连超时或等待响应超时后只能…\n2. 优化和风天气单次更新的 HTTPS 连接复用，减少重复 TLS 建连与联网时间，同时保…\n3. 优化 OTA 启动确认：核心服务就绪后才确认新固件有效，启动异常时保留回滚资格。\n完整说明见源码仓库同版本 Release。"
 }
