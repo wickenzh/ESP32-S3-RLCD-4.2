@@ -6,6 +6,8 @@
 
 #include <stddef.h>
 
+class HttpTextSession;
+
 QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
                                                       char *city_id,
                                                       size_t city_id_len,
@@ -14,10 +16,19 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
                                                       char *lat_out = nullptr,
                                                       size_t lat_len = 0,
                                                       char *lon_out = nullptr,
-                                                      size_t lon_len = 0);
-bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *alert);
-bool qweather_fetch_now(const char *city_id, WeatherData *weather);
-bool qweather_fetch_daily(const char *city_id, WeatherForecastData *forecast);
+                                                      size_t lon_len = 0,
+                                                      HttpTextSession *session = nullptr);
+bool qweather_fetch_alert(const char *lat,
+                          const char *lon,
+                          WeatherAlertData *alert,
+                          HttpTextSession *session = nullptr);
+bool qweather_fetch_now(const char *city_id,
+                        WeatherData *weather,
+                        HttpTextSession *session = nullptr);
+bool qweather_fetch_daily(const char *city_id,
+                          WeatherForecastData *forecast,
+                          HttpTextSession *session = nullptr);
 bool qweather_fetch_air(const char *lat,
                         const char *lon,
-                        WeatherAirData *air);
+                        WeatherAirData *air,
+                        HttpTextSession *session = nullptr);

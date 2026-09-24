@@ -5,6 +5,7 @@
 #include "app_constexpr.h"
 #include "app_metadata.h"
 #include "app_runtime_timing.h"
+#include "app_task_readiness.h"
 
 #include "alarm_services.h"
 #include "app_event_group.h"
@@ -21,6 +22,7 @@
 #include "ota_download_policy.h"
 #include "ota_runtime_state.h"
 #include "ota_services.h"
+#include "runtime_health.h"
 #include "sensor_time.h"
 #include "ui_battery.h"
 #include "ui_battery_blink.h"
@@ -154,8 +156,10 @@ void ui_task(void *)
     int low_battery_resume_page = kWorkPageWeatherClock;
     bool low_battery_resume_pending = false;
     uint8_t lvgl_lock_failures = 0;
+    regular_app_task_mark_ready(RegularAppTaskId::kUi);
 
     for (;;) {
+        runtime_health_record_current_task_stack(RegularAppTaskId::kUi);
         time_t now;
         time(&now);
         if (ui_local_time_cache_refresh_due(now,

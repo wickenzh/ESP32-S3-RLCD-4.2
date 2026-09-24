@@ -7,6 +7,7 @@
 #include "network_https_resources.h"
 #include "network_https_resources_internal.h"
 #include "network_credentials_state.h"
+#include "network_http_client.h"
 #include "qweather_client.h"
 
 #include "app_constexpr.h"
@@ -19,12 +20,14 @@
 #include "ascii_text.h"
 #include "qweather_location_text.h"
 #include "startup_state.h"
+#include "runtime_health.h"
 #include "weather_state_internal.h"
 
 #include <esp_attr.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include <inttypes.h>
 #include <string.h>
 
 namespace {
@@ -207,6 +210,19 @@ void log_weather_runtime_change_deferred(const char *stage)
              cstr_nonempty(stage) ? stage : "follow-up");
 }
 
+void log_qweather_session_stats(const HttpTextSession &session)
+{
+    const HttpTextSessionStats stats = session.stats();
+    ESP_LOGI(TAG,
+             "qweather session: requests=%u clients=%u connects=%u reused=%u transient=%u elapsed_ms=%" PRIu64,
+             stats.request_count,
+             stats.client_create_count,
+             stats.connection_count,
+             stats.reused_request_count,
+             stats.transient_retry_count,
+             stats.elapsed_ms);
+}
+
 bool weather_sync_can_continue(const char *stage)
 {
     if (network_sync_continuation_allowed()) {
@@ -248,13 +264,15 @@ bool prepare_weather_followup_request(const char *stage)
              static_cast<unsigned>(memory.internal_free),
              static_cast<unsigned>(memory.internal_largest),
              static_cast<unsigned>(memory.dma_largest));
+    runtime_health_note_event(RuntimeHealthEvent::kHttpsResourceDeferred);
     return false;
 }
 
 QweatherCityLookupStatus lookup_weather_city(const char *location,
                                              char *city_id,
                                              char *city_name,
-                                             WeatherData *weather)
+                                             WeatherData *weather,
+                                             HttpTextSession *session)
 {
     if (!city_id || !city_name || !weather) {
         return kQweatherCityLookupError;
@@ -267,12 +285,14 @@ QweatherCityLookupStatus lookup_weather_city(const char *location,
                                        weather->lat,
                                        sizeof(weather->lat),
                                        weather->lon,
-                                       sizeof(weather->lon));
+                                       sizeof(weather->lon),
+                                       session);
 }
 
 WeatherUpdateResult fetch_and_commit_weather(const char *city_id,
                                              WeatherUpdateWorkspace &workspace,
-                                             WeatherUpdateScope scope)
+                                             WeatherUpdateScope scope,
+                                             HttpTextSession *session)
 {
     if (!city_id) {
         return WeatherUpdateResult::kFailed;
@@ -280,7 +300,7 @@ WeatherUpdateResult fetch_and_commit_weather(const char *city_id,
     if (!prepare_weather_followup_request("current")) {
         return WeatherUpdateResult::kResourceDeferred;
     }
-    if (!qweather_fetch_now(city_id, &workspace.weather)) {
+    if (!qweather_fetch_now(city_id, &workspace.weather, session)) {
         return WeatherUpdateResult::kFailed;
     }
     workspace.weather.configuration_generation = workspace.configuration_generation;
@@ -297,7 +317,8 @@ WeatherUpdateResult fetch_and_commit_weather(const char *city_id,
     }
     alert_updated = qweather_fetch_alert(workspace.weather.lat,
                                          workspace.weather.lon,
-                                         &workspace.alert);
+                                         &workspace.alert,
+                                         session);
     if (scope == WeatherUpdateScope::kCurrentAndAlerts) {
         commit_weather_basic_snapshot(workspace.weather,
                                       workspace.alert,
@@ -312,7 +333,9 @@ WeatherUpdateResult fetch_and_commit_weather(const char *city_id,
                                                   forecast_ok);
         return WeatherUpdateResult::kResourceDeferred;
     }
-    forecast_ok = qweather_fetch_daily(city_id, &workspace.forecast);
+    forecast_ok = qweather_fetch_daily(city_id,
+                                       &workspace.forecast,
+                                       session);
     if (!prepare_weather_followup_request("air")) {
         commit_weather_resource_deferred_snapshot(workspace.weather,
                                                   workspace.alert,
@@ -323,7 +346,8 @@ WeatherUpdateResult fetch_and_commit_weather(const char *city_id,
     }
     bool air_ok = qweather_fetch_air(workspace.weather.lat,
                                      workspace.weather.lon,
-                                     &workspace.air);
+                                     &workspace.air,
+                                     session);
     commit_weather_update_snapshot(workspace.weather,
                                    workspace.alert,
                                    workspace.forecast,
@@ -336,7 +360,8 @@ WeatherUpdateResult fetch_and_commit_weather(const char *city_id,
 
 WeatherUpdateResult update_weather_by_manual_city(const char *manual_city,
                                                   WeatherUpdateWorkspace &workspace,
-                                                  WeatherUpdateScope scope)
+                                                  WeatherUpdateScope scope,
+                                                  HttpTextSession *session)
 {
     ESP_LOGI(TAG, WEATHER_UPDATE_MANUAL_CITY_FORMAT, manual_city);
     strlcpy(workspace.location, manual_city, sizeof(workspace.location));
@@ -346,7 +371,8 @@ WeatherUpdateResult update_weather_by_manual_city(const char *manual_city,
             lookup_weather_city(manual_city,
                                 workspace.city_id,
                                 workspace.lookup_city,
-                                &workspace.weather) ==
+                                &workspace.weather,
+                                session) ==
             kQweatherCityLookupOk;
         if (have_city_id) {
             store_weather_city_resolution_cache(workspace);
@@ -361,7 +387,10 @@ WeatherUpdateResult update_weather_by_manual_city(const char *manual_city,
                              workspace.lookup_city,
                              manual_city);
     WeatherUpdateResult result =
-        fetch_and_commit_weather(workspace.city_id, workspace, scope);
+        fetch_and_commit_weather(workspace.city_id,
+                                 workspace,
+                                 scope,
+                                 session);
     if (result == WeatherUpdateResult::kSuccess ||
         result == WeatherUpdateResult::kResourceDeferred) {
         return result;
@@ -371,7 +400,8 @@ WeatherUpdateResult update_weather_by_manual_city(const char *manual_city,
 }
 
 WeatherUpdateResult update_weather_by_ip_location(WeatherUpdateWorkspace &workspace,
-                                                  WeatherUpdateScope scope)
+                                                  WeatherUpdateScope scope,
+                                                  HttpTextSession *session)
 {
     if (!restore_weather_ip_retry_context(&workspace)) {
         if (!ip_geolocation_lookup_cached(workspace.location,
@@ -394,7 +424,8 @@ WeatherUpdateResult update_weather_by_ip_location(WeatherUpdateWorkspace &worksp
             lookup_weather_city(workspace.location,
                                 workspace.city_id,
                                 workspace.lookup_city,
-                                &workspace.weather);
+                                &workspace.weather,
+                                session);
         have_city_id = city_status == kQweatherCityLookupOk;
         if (qweather_city_lookup_should_try_alternate(city_status) &&
             workspace.ip_city[0] != '\0') {
@@ -405,7 +436,8 @@ WeatherUpdateResult update_weather_by_ip_location(WeatherUpdateWorkspace &worksp
             city_status = lookup_weather_city(workspace.ip_city,
                                               workspace.city_id,
                                               workspace.lookup_city,
-                                              &workspace.weather);
+                                              &workspace.weather,
+                                              session);
             have_city_id = city_status == kQweatherCityLookupOk;
         }
         if (have_city_id) {
@@ -425,7 +457,10 @@ WeatherUpdateResult update_weather_by_ip_location(WeatherUpdateWorkspace &worksp
         ESP_LOGW(TAG, WEATHER_USING_IP_COORDINATES_FORMAT, workspace.city_id);
     }
     WeatherUpdateResult result =
-        fetch_and_commit_weather(workspace.city_id, workspace, scope);
+        fetch_and_commit_weather(workspace.city_id,
+                                 workspace,
+                                 scope,
+                                 session);
     if (result == WeatherUpdateResult::kResourceDeferred) {
         return result;
     }
@@ -457,15 +492,28 @@ WeatherUpdateResult perform_weather_update(WeatherUpdateScope scope)
     WeatherUpdateWorkspace &workspace = s_weather_update_workspace;
     memset(&workspace, 0, sizeof(workspace));
     workspace.configuration_generation = weather_provider_generation();
+    const bool startup_pressure = network_startup_pressure_window_active(
+        startup_screen_active(),
+        esp_timer_get_time());
+    HttpTextSession session(!startup_pressure);
     if (manual_weather_city_snapshot(workspace.manual_city,
                                      sizeof(workspace.manual_city))) {
         trim_ascii_whitespace(workspace.manual_city);
     }
     if (workspace.manual_city[0] != '\0') {
         clear_weather_ip_retry_context();
-        return update_weather_by_manual_city(workspace.manual_city,
-                                             workspace,
-                                             scope);
+        const WeatherUpdateResult result = update_weather_by_manual_city(
+            workspace.manual_city,
+            workspace,
+            scope,
+            &session);
+        log_qweather_session_stats(session);
+        return result;
     }
-    return update_weather_by_ip_location(workspace, scope);
+    const WeatherUpdateResult result = update_weather_by_ip_location(
+        workspace,
+        scope,
+        &session);
+    log_qweather_session_stats(session);
+    return result;
 }

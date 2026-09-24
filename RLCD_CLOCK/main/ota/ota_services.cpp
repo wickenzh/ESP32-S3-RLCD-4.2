@@ -3,6 +3,7 @@
 
 #include "app_event_group.h"
 #include "app_metadata.h"
+#include "app_task_readiness.h"
 #include "battery_policy.h"
 #include "battery_runtime_state.h"
 #include "ota_download_policy.h"
@@ -16,6 +17,7 @@
 #include "ota_runtime_guards.h"
 #include "ota_runtime_state_internal.h"
 #include "ota_validation.h"
+#include "runtime_health.h"
 
 #include "app_constexpr.h"
 #include "app_text_format.h"
@@ -720,7 +722,9 @@ void ota_task(void *)
         vTaskDelete(nullptr);
         return;
     }
+    regular_app_task_mark_ready(RegularAppTaskId::kOta);
     for (;;) {
+        runtime_health_record_current_task_stack(RegularAppTaskId::kOta);
         EventBits_t bits = app_event_group_wait_bits(kOtaCheckBit | kOtaInstallBit,
                                                      pdTRUE,
                                                      pdFALSE,

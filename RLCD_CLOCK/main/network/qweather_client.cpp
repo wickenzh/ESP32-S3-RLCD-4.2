@@ -137,13 +137,17 @@ void log_qweather_fixed_warning(const char *message)
     ESP_LOGW(TAG, "%s", cstr_nonempty(message) ? message : kQweatherUnknownStage);
 }
 
-esp_err_t qweather_http_get_text(const char *url, char *response, size_t response_len)
+esp_err_t qweather_http_get_text(HttpTextSession *session,
+                                 const char *url,
+                                 char *response,
+                                 size_t response_len)
 {
     char api_key[kNetworkWeatherApiKeyLen] = {};
     if (!network_weather_api_key_snapshot(api_key, sizeof(api_key))) {
         return ESP_ERR_INVALID_STATE;
     }
-    return http_get_text(url, response, response_len, api_key);
+    return session ? session->get(url, response, response_len, api_key)
+                   : http_get_text(url, response, response_len, api_key);
 }
 
 bool load_qweather_api_host(char *host, size_t host_len)
@@ -165,7 +169,8 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
                                                       char *lat_out,
                                                       size_t lat_len,
                                                       char *lon_out,
-                                                      size_t lon_len)
+                                                      size_t lon_len,
+                                                      HttpTextSession *session)
 {
     if (!location ||
         !app_text::output_buffer_available(city_id, city_id_len) ||
@@ -196,7 +201,7 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
                    : kQweatherCityLookupError;
     }
     ESP_LOGI(TAG, QWEATHER_CITY_LOOKUP_FORMAT, location);
-    if (qweather_http_get_text(url, response.get(), response.size()) != ESP_OK) {
+    if (qweather_http_get_text(session, url, response.get(), response.size()) != ESP_OK) {
         log_qweather_fixed_warning(kQweatherCityHttpFailedLog);
         return kQweatherCityLookupError;
     }
@@ -231,7 +236,10 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
                                                 qweather_code_text(code));
 }
 
-bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *alert)
+bool qweather_fetch_alert(const char *lat,
+                          const char *lon,
+                          WeatherAlertData *alert,
+                          HttpTextSession *session)
 {
     if (!alert) {
         log_qweather_fixed_warning(kQweatherAlertInvalidArgLog);
@@ -265,7 +273,7 @@ bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *al
         return false;
     }
     ESP_LOGI(TAG, QWEATHER_ALERT_LOOKUP_FORMAT, lat, lon);
-    if (qweather_http_get_text(url, response.get(), response.size()) != ESP_OK) {
+    if (qweather_http_get_text(session, url, response.get(), response.size()) != ESP_OK) {
         log_qweather_fixed_warning(kQweatherAlertHttpFailedLog);
         return false;
     }
@@ -314,7 +322,9 @@ bool qweather_fetch_alert(const char *lat, const char *lon, WeatherAlertData *al
     return true;
 }
 
-bool qweather_fetch_now(const char *city_id, WeatherData *weather)
+bool qweather_fetch_now(const char *city_id,
+                        WeatherData *weather,
+                        HttpTextSession *session)
 {
     if (!city_id || !weather) {
         log_qweather_fixed_warning(kQweatherNowInvalidArgLog);
@@ -342,7 +352,7 @@ bool qweather_fetch_now(const char *city_id, WeatherData *weather)
         return false;
     }
     ESP_LOGI(TAG, QWEATHER_NOW_LOOKUP_FORMAT, city_id);
-    if (qweather_http_get_text(url, response.get(), response.size()) != ESP_OK) {
+    if (qweather_http_get_text(session, url, response.get(), response.size()) != ESP_OK) {
         log_qweather_fixed_warning(kQweatherNowHttpFailedLog);
         return false;
     }
@@ -365,7 +375,8 @@ bool qweather_fetch_now(const char *city_id, WeatherData *weather)
 static QweatherDailyAttemptStatus qweather_fetch_daily_days(
     const char *city_id,
     int days,
-    WeatherForecastData *forecast)
+    WeatherForecastData *forecast,
+    HttpTextSession *session)
 {
     if (!city_id || !forecast ||
         (days != kQweatherDaily3DayEndpointDays && days != kQweatherDaily7DayEndpointDays)) {
@@ -396,7 +407,10 @@ static QweatherDailyAttemptStatus qweather_fetch_daily_days(
         return QweatherDailyAttemptStatus::kFailed;
     }
     ESP_LOGI(TAG, QWEATHER_DAILY_LOOKUP_FORMAT, city_id, days);
-    esp_err_t http_err = qweather_http_get_text(url, response.get(), response.size());
+    esp_err_t http_err = qweather_http_get_text(session,
+                                                url,
+                                                response.get(),
+                                                response.size());
     if (http_err != ESP_OK) {
         ESP_LOGW(TAG, QWEATHER_DAILY_HTTP_FAILED_FORMAT, esp_err_to_name(http_err));
         return QweatherDailyAttemptStatus::kFailed;
@@ -431,12 +445,15 @@ static QweatherDailyAttemptStatus qweather_fetch_daily_days(
     return qweather_daily_attempt_status(ok, qweather_code_text(code));
 }
 
-bool qweather_fetch_daily(const char *city_id, WeatherForecastData *forecast)
+bool qweather_fetch_daily(const char *city_id,
+                          WeatherForecastData *forecast,
+                          HttpTextSession *session)
 {
     const QweatherDailyAttemptStatus preferred =
         qweather_fetch_daily_days(city_id,
                                   kQweatherDaily7DayEndpointDays,
-                                  forecast);
+                                  forecast,
+                                  session);
     if (preferred == QweatherDailyAttemptStatus::kSuccess) {
         return true;
     }
@@ -446,13 +463,15 @@ bool qweather_fetch_daily(const char *city_id, WeatherForecastData *forecast)
     ESP_LOGI(TAG, "%s", kQweatherDailyShorterFallbackLog);
     return qweather_fetch_daily_days(city_id,
                                      kQweatherDaily3DayEndpointDays,
-                                     forecast) ==
+                                     forecast,
+                                     session) ==
            QweatherDailyAttemptStatus::kSuccess;
 }
 
 bool qweather_fetch_air(const char *lat,
                         const char *lon,
-                        WeatherAirData *air)
+                        WeatherAirData *air,
+                        HttpTextSession *session)
 {
     if (!lat || !lon || lat[0] == '\0' || lon[0] == '\0' || !air) {
         log_qweather_fixed_warning(kQweatherAirInvalidArgLog);
@@ -481,7 +500,10 @@ bool qweather_fetch_air(const char *lat,
         return false;
     }
     ESP_LOGI(TAG, QWEATHER_AIR_LOOKUP_FORMAT, lat, lon);
-    esp_err_t http_err = qweather_http_get_text(url, response.get(), response.size());
+    esp_err_t http_err = qweather_http_get_text(session,
+                                                url,
+                                                response.get(),
+                                                response.size());
     if (http_err != ESP_OK) {
         ESP_LOGW(TAG, QWEATHER_AIR_HTTP_FAILED_FORMAT, esp_err_to_name(http_err));
         return false;

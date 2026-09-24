@@ -19,6 +19,7 @@
 #include "wifi_portal_dns.h"
 #include "wifi_portal_http.h"
 #include "wifi_portal_state_internal.h"
+#include "runtime_health.h"
 #include "wifi_radio_services_internal.h"
 #include "wifi_radio_state_internal.h"
 
@@ -1067,6 +1068,7 @@ static bool stop_wifi_radio_internal(WifiRadioStopAttempt attempt)
     err = esp_wifi_stop();
     if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
         ESP_LOGW(TAG, WIFI_STOP_FAILED_FORMAT, esp_err_to_name(err));
+        runtime_health_note_event(RuntimeHealthEvent::kWifiStopFailure);
         // Keep deliberate-stop ownership while the retry is pending. Clearing
         // it here lets the asynchronous disconnect event reconnect the STA
         // between failed stop attempts and extends the high-power window.

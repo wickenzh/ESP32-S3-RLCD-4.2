@@ -5,18 +5,21 @@
 #include "app_metadata.h"
 #include "app_text_format.h"
 #include "http_response_policy.h"
+#include "http_session_policy.h"
 #include "http_tls_retry_policy.h"
 #include "http_timeout_policy.h"
 #include "network_boot_sync.h"
 #include "network_gzip.h"
-#include "network_task_guards.h"
+#include "network_http_transaction_lock.h"
 #include "qweather_ca.h"
+#include "runtime_health.h"
 #include "scoped_heap_buffer.h"
-#include "scoped_http_client.h"
 
 #include "esp_attr.h"
 #include "esp_crt_bundle.h"
 #include "esp_log.h"
+#include "esp_tls_errors.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "miniz.h"
@@ -46,6 +49,9 @@ constexpr const char *kHttpTransactionLockTimeoutLog = "http transaction deferre
 constexpr const char *kHttpQweatherTlsFallbackLog =
     "qweather TLS certificate verification failed, retrying with legacy CA";
 constexpr TickType_t kHttpTlsFallbackDelay = pdMS_TO_TICKS(350);
+constexpr TickType_t kQweatherTransientRetryDelay = pdMS_TO_TICKS(200);
+constexpr const char *kQweatherTransientRetryLog =
+    "qweather initial request timed out transiently, retrying once";
 
 // All HTTPS/WSS activity is serialized by NetworkHttpTransactionGuard. Keep
 // the relatively large ESP-IDF request descriptor out of the network task
@@ -191,6 +197,14 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
     if (!evt) {
         return ESP_OK;
     }
+    if (evt->event_id == HTTP_EVENT_ON_CONNECTED && evt->user_data) {
+        HttpBuffer *buffer = static_cast<HttpBuffer *>(evt->user_data);
+        if (buffer->connection_count &&
+            *buffer->connection_count != UINT32_MAX) {
+            ++(*buffer->connection_count);
+        }
+        return ESP_OK;
+    }
     if (evt->event_id != HTTP_EVENT_ON_DATA || !evt->user_data) {
         return ESP_OK;
     }
@@ -261,7 +275,110 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
     return ESP_OK;
 }
 
-esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *api_key)
+HttpTextSession::HttpTextSession(bool allow_reuse)
+    : started_us_(esp_timer_get_time()), allow_reuse_(allow_reuse)
+{
+}
+
+HttpTextSession::~HttpTextSession()
+{
+    cleanup_client();
+    release_transaction_lock();
+}
+
+bool HttpTextSession::ensure_transaction_lock(int timeout_ms)
+{
+    if (transaction_locked_) {
+        return true;
+    }
+    transaction_locked_ = acquire_network_http_transaction_lock(
+        pdMS_TO_TICKS(timeout_ms));
+    if (!transaction_locked_) {
+        ESP_LOGW(TAG, "%s", kHttpTransactionLockTimeoutLog);
+    }
+    return transaction_locked_;
+}
+
+void HttpTextSession::cleanup_client()
+{
+    if (client_) {
+        esp_http_client_cleanup(
+            static_cast<esp_http_client_handle_t>(client_));
+        client_ = nullptr;
+    }
+    origin_url_[0] = '\0';
+}
+
+void HttpTextSession::release_transaction_lock()
+{
+    if (!transaction_locked_) {
+        return;
+    }
+    release_network_http_transaction_lock();
+    transaction_locked_ = false;
+}
+
+bool HttpTextSession::prepare_client(const char *url,
+                                     int timeout_ms,
+                                     const char *api_key,
+                                     uint8_t trust_mode_value,
+                                     bool *reused_client)
+{
+    if (!reused_client) {
+        return false;
+    }
+    *reused_client = false;
+    const HttpTlsTrustMode trust_mode =
+        static_cast<HttpTlsTrustMode>(trust_mode_value);
+    const bool can_reuse = allow_reuse_ && client_ &&
+                           trust_mode_ == trust_mode_value &&
+                           http_urls_share_origin(origin_url_, url);
+    if (can_reuse) {
+        esp_http_client_handle_t handle =
+            static_cast<esp_http_client_handle_t>(client_);
+        if (esp_http_client_set_url(handle, url) == ESP_OK &&
+            esp_http_client_set_user_data(handle, &buffer_) == ESP_OK &&
+            esp_http_client_set_timeout_ms(handle, timeout_ms) == ESP_OK &&
+            configure_http_request_headers(handle, api_key) == ESP_OK) {
+            *reused_client = true;
+            ++reused_request_count_;
+            return true;
+        }
+        cleanup_client();
+    }
+
+    cleanup_client();
+    HttpTextConfigWorkspaceGuard config_workspace;
+    esp_http_client_config_t &config = config_workspace.config();
+    config.url = url;
+    config.event_handler = http_event_handler;
+    config.user_data = &buffer_;
+    config.timeout_ms = timeout_ms;
+    if (trust_mode == HttpTlsTrustMode::kQweatherLegacyCa) {
+        config.cert_pem = kQweatherCaDvR36Pem;
+    } else {
+        config.crt_bundle_attach = esp_crt_bundle_attach;
+    }
+    client_ = esp_http_client_init(&config);
+    if (!client_) {
+        ESP_LOGW(TAG, "%s", kHttpClientInitFailedLog);
+        return false;
+    }
+    ++client_create_count_;
+    trust_mode_ = trust_mode_value;
+    strlcpy(origin_url_, url, sizeof(origin_url_));
+    if (configure_http_request_headers(
+            static_cast<esp_http_client_handle_t>(client_), api_key) != ESP_OK) {
+        cleanup_client();
+        return false;
+    }
+    return true;
+}
+
+esp_err_t HttpTextSession::get(const char *url,
+                               char *out,
+                               size_t out_len,
+                               const char *api_key)
 {
     if (!http_get_text_args_valid(url, out, out_len)) {
         ESP_LOGW(TAG, "%s", kHttpGetInvalidArgLog);
@@ -272,98 +389,170 @@ esp_err_t http_get_text(const char *url, char *out, size_t out_len, const char *
     if (!compute_http_timeout_ms(&timeout_ms)) {
         return ESP_ERR_TIMEOUT;
     }
-    NetworkHttpTransactionGuard transaction_lock(pdMS_TO_TICKS(timeout_ms));
-    if (!transaction_lock.locked()) {
-        ESP_LOGW(TAG, "%s", kHttpTransactionLockTimeoutLog);
+    if (!ensure_transaction_lock(timeout_ms)) {
         return ESP_ERR_TIMEOUT;
     }
-    HttpTextConfigWorkspaceGuard config_workspace;
-    esp_http_client_config_t &config = config_workspace.config();
-    HttpBuffer buffer = {out, 0, out_len, false};
-    config.url = url;
-    config.event_handler = http_event_handler;
-    config.user_data = &buffer;
-    config.timeout_ms = timeout_ms;
+    ++request_count_;
+    buffer_ = {out, 0, out_len, false, &connection_count_};
     const bool qweather_url = is_qweather_url(url);
-    const size_t attempt_count = http_tls_attempt_count(qweather_url);
     esp_err_t err = ESP_FAIL;
     int status = 0;
     int64_t content_length = 0;
-    for (size_t attempt = 0; attempt < attempt_count; ++attempt) {
-        // Lock acquisition and the first handshake may consume the boot budget.
+    HttpTlsTrustMode trust_mode =
+        client_ && qweather_url && http_urls_share_origin(origin_url_, url)
+            ? static_cast<HttpTlsTrustMode>(trust_mode_)
+            : HttpTlsTrustMode::kCertificateBundle;
+    bool reconnect_attempted = false;
+    bool transient_retry_attempt = false;
+    for (size_t attempt = 0; attempt < 3; ++attempt) {
         if (!compute_http_timeout_ms(&timeout_ms)) {
-            return ESP_ERR_TIMEOUT;
-        }
-        config.timeout_ms = timeout_ms;
-        int tls_error = 0;
-        int tls_flags = 0;
-        buffer.len = 0;
-        buffer.truncated = false;
-        out[0] = '\0';
-        config.cert_pem = nullptr;
-        config.crt_bundle_attach = nullptr;
-        if (http_tls_trust_mode(qweather_url, attempt) ==
-            HttpTlsTrustMode::kQweatherLegacyCa) {
-            config.cert_pem = kQweatherCaDvR36Pem;
-        } else {
-            config.crt_bundle_attach = esp_crt_bundle_attach;
-        }
-        {
-            ScopedHttpClient client(&config);
-            if (!client) {
-                ESP_LOGW(TAG, "%s", kHttpClientInitFailedLog);
-                return ESP_FAIL;
-            }
-            esp_err_t header_err = configure_http_request_headers(client.get(), api_key);
-            if (header_err != ESP_OK) {
-                return header_err;
-            }
-            err = esp_http_client_perform(client.get());
-            if (err == ESP_ERR_HTTP_CONNECT) {
-                const esp_err_t tls_result = esp_http_client_get_and_clear_last_tls_error(
-                    client.get(), &tls_error, &tls_flags);
-                ESP_LOGW(TAG, "http TLS failure: detail=%s code=%d flags=0x%x",
-                         esp_err_to_name(tls_result), tls_error,
-                         static_cast<unsigned>(tls_flags));
-            }
-            status = esp_http_client_get_status_code(client.get());
-            content_length = esp_http_client_get_content_length(client.get());
-        }
-        if (err == ESP_OK || !http_tls_should_retry(
-                                 qweather_url,
-                                 attempt,
-                                 err == ESP_ERR_HTTP_CONNECT,
-                                 tls_flags != 0)) {
+            err = ESP_ERR_TIMEOUT;
             break;
         }
-        ESP_LOGW(TAG, "%s", kHttpQweatherTlsFallbackLog);
-        vTaskDelay(kHttpTlsFallbackDelay);
+        const int attempt_timeout_ms = http_session_attempt_timeout_ms(
+            timeout_ms,
+            transient_retry_attempt);
+        buffer_.len = 0;
+        buffer_.truncated = false;
+        out[0] = '\0';
+        bool reused_client = false;
+        if (!prepare_client(url,
+                            attempt_timeout_ms,
+                            api_key,
+                            static_cast<uint8_t>(trust_mode),
+                            &reused_client)) {
+            err = ESP_FAIL;
+            break;
+        }
+        int tls_error = 0;
+        int tls_flags = 0;
+        esp_err_t tls_result = ESP_OK;
+        esp_http_client_handle_t handle =
+            static_cast<esp_http_client_handle_t>(client_);
+        err = esp_http_client_perform(handle);
+        if (err == ESP_ERR_HTTP_CONNECT) {
+            tls_result = esp_http_client_get_and_clear_last_tls_error(
+                handle, &tls_error, &tls_flags);
+            ESP_LOGW(TAG, "http TLS failure: detail=%s code=%d flags=0x%x",
+                     esp_err_to_name(tls_result), tls_error,
+                     static_cast<unsigned>(tls_flags));
+        }
+        status = esp_http_client_get_status_code(handle);
+        content_length = esp_http_client_get_content_length(handle);
+        if (err == ESP_OK) {
+            break;
+        }
+        const bool transient_timeout =
+            request_count_ == 1 &&
+            (err == ESP_ERR_HTTP_EAGAIN ||
+             (err == ESP_ERR_HTTP_CONNECT &&
+              tls_result == ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT &&
+              tls_flags == 0));
+        const HttpSessionRetryAction retry = http_session_retry_action(
+            qweather_url,
+            reused_client,
+            reconnect_attempted,
+            err == ESP_ERR_HTTP_CONNECT,
+            transient_timeout,
+            tls_flags != 0,
+            trust_mode);
+        if (retry == HttpSessionRetryAction::kReconnectSameTrust) {
+            reconnect_attempted = true;
+            cleanup_client();
+            continue;
+        }
+        if (retry == HttpSessionRetryAction::kRetryQweatherTransient) {
+            reconnect_attempted = true;
+            transient_retry_attempt = true;
+            ++transient_retry_count_;
+            cleanup_client();
+            ESP_LOGW(TAG, "%s", kQweatherTransientRetryLog);
+            vTaskDelay(kQweatherTransientRetryDelay);
+            continue;
+        }
+        if (retry == HttpSessionRetryAction::kRetryQweatherLegacyCa) {
+            trust_mode = HttpTlsTrustMode::kQweatherLegacyCa;
+            cleanup_client();
+            ESP_LOGW(TAG, "%s", kHttpQweatherTlsFallbackLog);
+            vTaskDelay(kHttpTlsFallbackDelay);
+            continue;
+        }
+        break;
     }
     if (err != ESP_OK || !http_status_ok(status)) {
-        if (buffer.len > 0) {
+        if (buffer_.len > 0) {
             char preview[kHttpPreviewBufferSize] = {};
             copy_log_preview(preview, sizeof(preview), out);
             ESP_LOGW(TAG, HTTP_GET_FAILED_WITH_BODY_FORMAT, status, esp_err_to_name(err), preview);
         } else {
             ESP_LOGW(TAG, HTTP_GET_FAILED_FORMAT, status, esp_err_to_name(err));
         }
+        runtime_health_note_event(RuntimeHealthEvent::kHttpFailure);
+        if (!allow_reuse_) {
+            cleanup_client();
+            release_transaction_lock();
+        } else {
+            buffer_ = {};
+        }
         return err == ESP_OK ? ESP_FAIL : err;
     }
-    if (http_response_is_truncated(buffer.truncated, content_length, out_len)) {
+    const size_t body_len = buffer_.len;
+    const bool truncated = buffer_.truncated;
+    if (http_response_is_truncated(truncated, content_length, out_len)) {
         ESP_LOGW(TAG, HTTP_RESPONSE_TRUNCATED_FORMAT,
                  status,
                  (long long)content_length,
-                 (unsigned)buffer.len,
+                 (unsigned)body_len,
                  (unsigned)out_len,
-                 buffer.truncated);
+                 truncated);
         out[0] = '\0';
+        runtime_health_note_event(RuntimeHealthEvent::kHttpFailure);
+        if (!allow_reuse_) {
+            cleanup_client();
+            release_transaction_lock();
+        } else {
+            buffer_ = {};
+        }
         return ESP_ERR_INVALID_SIZE;
     }
     ESP_LOGI(TAG, HTTP_GET_OK_FORMAT,
              status,
-             (unsigned)buffer.len,
-             network_gzip_detail::has_magic_prefix(out, buffer.len));
-    return decode_http_body(out, out_len, &buffer.len);
+             (unsigned)body_len,
+             network_gzip_detail::has_magic_prefix(out, body_len));
+    size_t decoded_len = body_len;
+    const esp_err_t decode_result = decode_http_body(out, out_len, &decoded_len);
+    if (decode_result != ESP_OK) {
+        runtime_health_note_event(RuntimeHealthEvent::kHttpFailure);
+    }
+    if (!allow_reuse_) {
+        cleanup_client();
+        release_transaction_lock();
+    } else {
+        buffer_ = {};
+    }
+    return decode_result;
+}
+
+HttpTextSessionStats HttpTextSession::stats() const
+{
+    const int64_t elapsed_us = esp_timer_get_time() - started_us_;
+    return {
+        request_count_,
+        client_create_count_,
+        connection_count_,
+        reused_request_count_,
+        transient_retry_count_,
+        elapsed_us > 0 ? static_cast<uint64_t>(elapsed_us / 1000) : 0,
+    };
+}
+
+esp_err_t http_get_text(const char *url,
+                        char *out,
+                        size_t out_len,
+                        const char *api_key)
+{
+    HttpTextSession session(false);
+    return session.get(url, out, out_len, api_key);
 }
 
 void log_response_preview(const char *stage, const char *response)

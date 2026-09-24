@@ -8,6 +8,7 @@
 #include "network_sync_task.h"
 #include "ota_services.h"
 #include "pomodoro_services.h"
+#include "runtime_health.h"
 #include "sensor_services_internal.h"
 #include "ui_task.h"
 #include "ui_task_notify.h"
@@ -49,6 +50,7 @@ constexpr const char *kAlarmTaskName = "alarm_task";
 constexpr const char *kPomodoroTaskName = "pomodoro_task";
 
 struct AppTaskSpec {
+    RegularAppTaskId id;
     TaskFunction_t task;
     const char *name;
     uint32_t stack_depth;
@@ -58,13 +60,13 @@ struct AppTaskSpec {
 };
 
 constexpr AppTaskSpec kRegularAppTasks[] = {
-    {network_sync_task, kNetworkSyncTaskName, kNetworkSyncTaskStack, kHighServiceTaskPriority, false, kNetworkTaskCore},
-    {ota_task, kOtaTaskName, kOtaTaskStack, kHighServiceTaskPriority, false, kNetworkTaskCore},
-    {housekeeping_task, kHousekeepingTaskName, kHousekeepingTaskStack, kNormalServiceTaskPriority, false, kUiTaskCore},
-    {ui_task, kUiTaskName, kUiTaskStack, kNormalServiceTaskPriority, true, kUiTaskCore},
-    {button_task, kButtonTaskName, kButtonTaskStack, kInputTaskPriority, false, kUiTaskCore},
-    {alarm_task, kAlarmTaskName, kAlarmTaskStack, kNormalServiceTaskPriority, false, kUiTaskCore},
-    {pomodoro_task, kPomodoroTaskName, kPomodoroTaskStack, kNormalServiceTaskPriority, false, kUiTaskCore},
+    {RegularAppTaskId::kNetworkSync, network_sync_task, kNetworkSyncTaskName, kNetworkSyncTaskStack, kHighServiceTaskPriority, false, kNetworkTaskCore},
+    {RegularAppTaskId::kOta, ota_task, kOtaTaskName, kOtaTaskStack, kHighServiceTaskPriority, false, kNetworkTaskCore},
+    {RegularAppTaskId::kHousekeeping, housekeeping_task, kHousekeepingTaskName, kHousekeepingTaskStack, kNormalServiceTaskPriority, false, kUiTaskCore},
+    {RegularAppTaskId::kUi, ui_task, kUiTaskName, kUiTaskStack, kNormalServiceTaskPriority, true, kUiTaskCore},
+    {RegularAppTaskId::kButton, button_task, kButtonTaskName, kButtonTaskStack, kInputTaskPriority, false, kUiTaskCore},
+    {RegularAppTaskId::kAlarm, alarm_task, kAlarmTaskName, kAlarmTaskStack, kNormalServiceTaskPriority, false, kUiTaskCore},
+    {RegularAppTaskId::kPomodoro, pomodoro_task, kPomodoroTaskName, kPomodoroTaskStack, kNormalServiceTaskPriority, false, kUiTaskCore},
 };
 
 constexpr bool app_task_specs_valid()
@@ -72,6 +74,7 @@ constexpr bool app_task_specs_valid()
     for (const AppTaskSpec &spec : kRegularAppTasks) {
         if (!spec.task || !spec.name || spec.name[0] == '\0' ||
             spec.stack_depth == 0 || spec.priority >= configMAX_PRIORITIES ||
+            (regular_app_task_bit(spec.id) & kAllRegularAppTaskBits) == 0 ||
             spec.core_id < 0 || spec.core_id >= portNUM_PROCESSORS ||
             (spec.register_ui_handle && spec.task != ui_task)) {
             return false;
@@ -84,7 +87,8 @@ constexpr bool app_task_specs_are_unique()
 {
     for (size_t i = 0; i < array_count(kRegularAppTasks); ++i) {
         for (size_t j = i + 1; j < array_count(kRegularAppTasks); ++j) {
-            if (kRegularAppTasks[i].task == kRegularAppTasks[j].task ||
+            if (kRegularAppTasks[i].id == kRegularAppTasks[j].id ||
+                kRegularAppTasks[i].task == kRegularAppTasks[j].task ||
                 cstr_equal(kRegularAppTasks[i].name,
                            kRegularAppTasks[j].name)) {
                 return false;
@@ -110,6 +114,9 @@ constexpr bool app_task_specs_have_single_ui_owner()
 
 static_assert(array_count(kRegularAppTasks) > 0,
               "regular task table must not be empty");
+static_assert(array_count(kRegularAppTasks) ==
+                  static_cast<size_t>(RegularAppTaskId::kCount),
+              "regular task table must cover every task id");
 static_assert(array_count(kRegularAppTasks) < 32,
               "regular task retry mask must fit in uint32_t");
 static_assert(kRegularTaskCreateRetryDelayMs > 0,
@@ -138,27 +145,28 @@ TaskHandle_t create_app_task(const AppTaskSpec &spec)
                                 &handle,
                                 spec.core_id) != pdPASS) {
         ESP_LOGE(TAG, APP_TASK_CREATE_FAILED_LOG_FORMAT, task_name);
+        runtime_health_note_event(RuntimeHealthEvent::kTaskCreateFailure);
+        runtime_health_log_snapshot("task-create-failed");
         return nullptr;
     }
     return handle;
 }
 } // namespace
 
-void create_regular_app_tasks()
+AppTaskStartupResult create_regular_app_tasks()
 {
-    constexpr uint32_t kAllRegularTaskBits =
-        (uint32_t{1} << array_count(kRegularAppTasks)) - 1;
-    uint32_t pending = kAllRegularTaskBits;
+    AppTaskStartupResult result = {};
+    uint32_t pending = kAllRegularAppTaskBits;
     for (uint32_t attempt = 1;
          attempt <= kRegularTaskCreateMaxAttempts && pending != 0;
          ++attempt) {
         uint32_t failed = 0;
         for (size_t index = 0; index < array_count(kRegularAppTasks); ++index) {
-            const uint32_t task_bit = uint32_t{1} << index;
+            const AppTaskSpec &task = kRegularAppTasks[index];
+            const uint32_t task_bit = regular_app_task_bit(task.id);
             if ((pending & task_bit) == 0) {
                 continue;
             }
-            const AppTaskSpec &task = kRegularAppTasks[index];
             TaskHandle_t handle = create_app_task(task);
             if (!handle) {
                 failed |= task_bit;
@@ -167,6 +175,7 @@ void create_regular_app_tasks()
             if (task.register_ui_handle) {
                 register_ui_task_handle(handle);
             }
+            result.created_mask |= task_bit;
         }
         pending = failed;
         if (pending != 0 && attempt < kRegularTaskCreateMaxAttempts) {
@@ -184,4 +193,6 @@ void create_regular_app_tasks()
                  APP_TASK_CREATE_EXHAUSTED_LOG_FORMAT,
                  static_cast<unsigned long>(pending));
     }
+    result.failed_mask = pending;
+    return result;
 }

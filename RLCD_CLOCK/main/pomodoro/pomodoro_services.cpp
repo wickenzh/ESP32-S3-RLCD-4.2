@@ -3,12 +3,14 @@
 
 #include "alarm_services.h"
 #include "app_metadata.h"
+#include "app_task_readiness.h"
 #include "app_tick_time.h"
 #include "audio_services.h"
 #include "battery_runtime_state.h"
 #include "ota_runtime_state.h"
 #include "pomodoro_runtime_state_internal.h"
 #include "reminder_schedule.h"
+#include "runtime_health.h"
 #include "sensor_time.h"
 #include "task_notification_target.h"
 #include "ui_task_notify.h"
@@ -175,7 +177,10 @@ bool pomodoro_services_init()
 void pomodoro_task(void *)
 {
     s_task_target.publish(xTaskGetCurrentTaskHandle());
+    regular_app_task_mark_ready(RegularAppTaskId::kPomodoro);
     for (;;) {
+        runtime_health_record_current_task_stack(
+            RegularAppTaskId::kPomodoro);
         const int64_t now_us = esp_timer_get_time();
         PomodoroRuntimeSnapshot runtime = {};
         if (!pomodoro_runtime_snapshot(now_us, &runtime)) {

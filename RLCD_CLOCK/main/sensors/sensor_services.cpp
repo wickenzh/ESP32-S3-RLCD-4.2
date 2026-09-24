@@ -2,6 +2,7 @@
 #include "sensor_services_internal.h"
 
 #include "app_metadata.h"
+#include "app_task_readiness.h"
 #include "app_tick_time.h"
 #include "battery_policy.h"
 #include "battery_runtime_state.h"
@@ -11,6 +12,7 @@
 #include "local_sensor_state.h"
 #include "local_sensor_state_internal.h"
 #include "ota_runtime_state.h"
+#include "runtime_health.h"
 #include "sensor_time.h"
 #include "task_notification_target.h"
 #include "ui_task_notify.h"
@@ -159,6 +161,7 @@ void housekeeping_task(void *)
                                   &next_sensor,
                                   &next_battery);
     bool last_time_valid = is_system_time_plausible();
+    regular_app_task_mark_ready(RegularAppTaskId::kHousekeeping);
     if (!initial_battery_status.low_battery_mode &&
         !local_sensor_sample_available()) {
         if (sample_sensor()) {
@@ -166,6 +169,9 @@ void housekeeping_task(void *)
         }
     }
     for (;;) {
+        runtime_health_record_current_task_stack(
+            RegularAppTaskId::kHousekeeping);
+        runtime_health_service_periodic();
         TickType_t now = xTaskGetTickCount();
         const uint32_t schedule_generation =
             s_housekeeping_schedule_generation.load(std::memory_order_acquire);

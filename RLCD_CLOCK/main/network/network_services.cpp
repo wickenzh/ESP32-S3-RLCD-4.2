@@ -4,10 +4,12 @@
 #include "app_constexpr.h"
 #include "app_event_group.h"
 #include "app_metadata.h"
+#include "app_task_readiness.h"
 #include "chime_runtime_state.h"
 #include "daily_saying_state.h"
 #include "daily_saying_service.h"
 #include "ota_runtime_state.h"
+#include "runtime_health.h"
 
 #include "network_https_resources.h"
 #include "network_https_resources_internal.h"
@@ -579,8 +581,11 @@ void network_sync_task(void *)
                  sync_runtime.boot_refresh.weather_due,
                  sync_runtime.boot_refresh.saying_due);
     }
+    regular_app_task_mark_ready(RegularAppTaskId::kNetworkSync);
 
     for (;;) {
+        runtime_health_record_current_task_stack(
+            RegularAppTaskId::kNetworkSync);
         // Consume only the edge-like state notification before reading the
         // latest runtime state. Sync request bits stay level-triggered.
         app_event_group_clear_bits(kNetworkStateChangedBit);

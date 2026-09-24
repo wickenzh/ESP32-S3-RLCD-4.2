@@ -7,10 +7,12 @@
 #include "alarm_task_wait_policy.h"
 #include "app_constexpr.h"
 #include "app_metadata.h"
+#include "app_task_readiness.h"
 #include "app_tick_time.h"
 #include "audio_services.h"
 #include "pomodoro_services.h"
 #include "reminder_schedule.h"
+#include "runtime_health.h"
 #include "scoped_semaphore_lock.h"
 #include "sensor_time.h"
 #include "task_notification_target.h"
@@ -431,10 +433,12 @@ bool alarm_services_init()
 void alarm_task(void *)
 {
     s_alarm_task_target.publish(xTaskGetCurrentTaskHandle());
+    regular_app_task_mark_ready(RegularAppTaskId::kAlarm);
     uint8_t deferred_save_failures = 0;
     TickType_t deferred_save_retry_at = 0;
     bool deferred_save_retry_scheduled = false;
     for (;;) {
+        runtime_health_record_current_task_stack(RegularAppTaskId::kAlarm);
         const bool save_retry_pending =
             s_save_retry_pending.load(std::memory_order_acquire);
         const bool auto_disable_save_pending =

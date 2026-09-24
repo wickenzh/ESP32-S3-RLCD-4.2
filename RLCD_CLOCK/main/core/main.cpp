@@ -5,6 +5,7 @@
 #include "app_hardware.h"
 #include "app_constexpr.h"
 #include "app_metadata.h"
+#include "app_task_readiness.h"
 #include "app_task_startup.h"
 #include "lvgl_bsp.h"
 #include "alarm_services_internal.h"
@@ -28,6 +29,7 @@
 #include "ota_services.h"
 #include "power_services_internal.h"
 #include "rtc_services.h"
+#include "runtime_health.h"
 #include "sensor_services_internal.h"
 #include "startup_state_internal.h"
 #include "ui_boot_screen.h"
@@ -89,6 +91,8 @@
     "%s completion delayed; holding startup until resources are released"
 #define MAIN_STARTUP_RESOURCE_CLEANUP_LOG_FORMAT \
     "startup failed after resource activation; stopping Wi-Fi and parking audio"
+#define MAIN_REGULAR_TASK_HEALTH_INCOMPLETE_LOG_FORMAT \
+    "regular tasks incomplete; OTA remains pending: created=0x%08lx ready=0x%08lx failed=0x%08lx missing=0x%08lx"
 
 namespace {
 constexpr uint32_t kBootAnimTaskStack = 6144;
@@ -98,6 +102,7 @@ constexpr uint32_t kBootAnimStopWaitMs = 1500;
 constexpr uint32_t kBootScreenFinishRetryDelayMs = 50;
 constexpr uint32_t kBootScreenFinishMaxAttempts = 3;
 constexpr uint32_t kSetupPromptStartDelayMs = 350;
+constexpr uint32_t kRegularTaskReadyTimeoutMs = 10U * 1000U;
 constexpr UBaseType_t kHighServiceTaskPriority = 4;
 constexpr BaseType_t kNetworkTaskCore = 0;
 constexpr BaseType_t kUiTaskCore = 1;
@@ -108,6 +113,8 @@ constexpr const char *kBootAnimTaskCreateFailed = "boot animation task create fa
 constexpr const char *kBootConnectivityTaskCreateFailed = "boot connectivity task create failed";
 constexpr const char *kBootReadyStatus = "Ready";
 constexpr const char *kBootReadyDetail = "Starting clock";
+static_assert(kRegularTaskReadyTimeoutMs > 0,
+              "regular task ready timeout must be positive");
 struct AppInitializerSpec {
     bool (*initialize)();
     const char *failure_log;
@@ -318,7 +325,6 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, MAIN_OTA_RUNTIME_STATE_INIT_FAILED_LOG_FORMAT);
         return;
     }
-    ota_mark_running_app_valid();
     if (!init_system_event_services()) {
         return;
     }
@@ -403,7 +409,24 @@ extern "C" void app_main(void)
     // disable runtime sleep or network/audio protection. Successful resources
     // are retained, so the normal path only checks the ready catalog.
     init_power_management();
-    create_regular_app_tasks();
+    regular_app_task_readiness_begin();
+    const AppTaskStartupResult task_startup = create_regular_app_tasks();
+    const uint32_t ready_mask = wait_for_regular_app_tasks_ready(
+        task_startup.created_mask,
+        pdMS_TO_TICKS(kRegularTaskReadyTimeoutMs));
+    if (regular_app_tasks_healthy_for_ota(task_startup, ready_mask)) {
+        ota_mark_running_app_valid();
+        runtime_health_log_snapshot("startup-ready");
+    } else {
+        ESP_LOGE(TAG,
+                 MAIN_REGULAR_TASK_HEALTH_INCOMPLETE_LOG_FORMAT,
+                 static_cast<unsigned long>(task_startup.created_mask),
+                 static_cast<unsigned long>(ready_mask),
+                 static_cast<unsigned long>(task_startup.failed_mask),
+                 static_cast<unsigned long>(
+                     regular_app_task_missing_ready_mask(task_startup,
+                                                         ready_mask)));
+    }
 
     if (setup_prompt_playback_pending()) {
         vTaskDelay(pdMS_TO_TICKS(kSetupPromptStartDelayMs));

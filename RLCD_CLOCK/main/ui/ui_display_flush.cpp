@@ -6,19 +6,23 @@
 #include "app_hardware.h"
 #include "app_metadata.h"
 #include "ota_runtime_state.h"
+#include "runtime_health.h"
 #include "ui_display_diag_policy.h"
 
 #include <esp_attr.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+
+#include <inttypes.h>
 
 namespace {
 constexpr uint32_t kDisplayFullReasonSingleWide = 1U << 0;
 constexpr uint32_t kDisplayFullReasonTooManyRanges = 1U << 1;
 constexpr uint32_t kDisplayFullReasonCoveredWide = 1U << 2;
 constexpr uint16_t kRlcdBlackThreshold = 0xC618;
-#define DISPLAY_FLUSH_DIAG_LOG_FORMAT "display flush diag: page=%d partial=%lu ranges=%lu full=%lu reason_single=%lu reason_covered=%lu reason_ranges=%lu"
+#define DISPLAY_FLUSH_DIAG_LOG_FORMAT "display flush diag: page=%d partial=%lu ranges=%lu partial_us=%" PRIu64 " full=%lu full_us=%" PRIu64 " reason_single=%lu reason_covered=%lu reason_ranges=%lu"
 #define DISPLAY_FULL_REASON_OVERLAP_ASSERT "display full-refresh reason bits must not overlap"
 
 struct FlushRange {
@@ -37,6 +41,8 @@ struct DisplayFlushRuntimeState {
     uint32_t full_single_wide;
     uint32_t full_covered_wide;
     uint32_t full_too_many_ranges;
+    uint64_t partial_transfer_us;
+    uint64_t full_transfer_us;
     TickType_t last_diag_tick;
     int last_diag_page;
     uint32_t initialized_magic;
@@ -114,7 +120,7 @@ static_assert((kDisplayFullReasonTooManyRanges & kDisplayFullReasonCoveredWide) 
 static_assert(kRlcdBlackThreshold > 0, "RLCD black threshold must be nonzero");
 static_assert(kMaxFlushRanges > 0, "display flush range capacity must be positive");
 static_assert(kFlushRangeMergeGap >= 0, "display flush range merge gap must be non-negative");
-static_assert(sizeof(DisplayFlushRuntimeState) == 112,
+static_assert(sizeof(DisplayFlushRuntimeState) == 136,
               "display flush runtime state must remain compact");
 static_assert(bridged_flush_ranges_merge_once(),
               "bridging flush ranges must collapse into one covered interval");
@@ -194,14 +200,24 @@ void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color
             if (runtime.full_reason_mask & kDisplayFullReasonCoveredWide) {
                 ++runtime.full_covered_wide;
             }
+            const int64_t transfer_started_us = esp_timer_get_time();
             display.RLCD_Display();
+            const uint32_t transfer_us = static_cast<uint32_t>(
+                esp_timer_get_time() - transfer_started_us);
+            runtime.full_transfer_us += transfer_us;
+            runtime_health_record_display_flush(true, transfer_us);
         } else if (runtime.range_count > 0) {
             ++runtime.partial_cycles;
             runtime.partial_ranges += runtime.range_count;
+            const int64_t transfer_started_us = esp_timer_get_time();
             for (int i = 0; i < runtime.range_count; ++i) {
                 display.RLCD_DisplayXRange(runtime.ranges[i].x1,
                                            runtime.ranges[i].x2);
             }
+            const uint32_t transfer_us = static_cast<uint32_t>(
+                esp_timer_get_time() - transfer_started_us);
+            runtime.partial_transfer_us += transfer_us;
+            runtime_health_record_display_flush(false, transfer_us);
         }
         TickType_t now_tick = xTaskGetTickCount();
         int active_page = active_work_page_load();
@@ -229,7 +245,9 @@ void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color
                      active_page,
                      (unsigned long)runtime.partial_cycles,
                      (unsigned long)runtime.partial_ranges,
+                     runtime.partial_transfer_us,
                      (unsigned long)runtime.full_cycles,
+                     runtime.full_transfer_us,
                      (unsigned long)runtime.full_single_wide,
                      (unsigned long)runtime.full_covered_wide,
                      (unsigned long)runtime.full_too_many_ranges);
@@ -241,6 +259,8 @@ void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color
             runtime.full_single_wide = 0;
             runtime.full_covered_wide = 0;
             runtime.full_too_many_ranges = 0;
+            runtime.partial_transfer_us = 0;
+            runtime.full_transfer_us = 0;
             runtime.last_diag_tick = now_tick;
             runtime.last_diag_page = active_page;
         }
