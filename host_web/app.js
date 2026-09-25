@@ -20,7 +20,7 @@ const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
 const FIRMWARE_RELEASES_SOURCE_URL = "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases";
-const HOST_WEB_VERSION = "v1.0.3";
+const HOST_WEB_VERSION = "v1.0.4";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
@@ -1729,21 +1729,24 @@ async function inspectAssetDevice() {
     appendWriteLog(assetPartitionVerified
       ? tr`[${nowText()}] 分区核对通过：assets ${hex(assetPartition.address)} / ${formatBytes(assetPartition.size)}\n`
       : tr`[${nowText()}] 分区核对未通过：未找到 data/subtype 0x40 的 assets 分区，或资源包超过分区大小。\n`);
-    await resetDeviceAfterFlash(transport, selectedPort, appendWriteLog);
   } catch (error) {
     assetPartitionVerified = false;
     setText($("#assetPartitionState"), () => tr("失败"));
     setText($("#assetWriteState"), () => tr("设备核对失败"));
     appendWriteLog(tr`[${nowText()}] 设备核对失败：${error.message}\n`);
   } finally {
-    updateAssetWriteButtons();
     if (transport) {
       try {
-        await transport.disconnect();
-      } catch (error) {
-        console.warn(error);
+        await resetDeviceAfterFlash(transport, selectedPort, appendWriteLog);
+      } finally {
+        try {
+          await transport.disconnect();
+        } catch (error) {
+          console.warn(error);
+        }
       }
     }
+    updateAssetWriteButtons();
     if (assetPartitionVerified) hintNextStep("#writeAssetsBtn");
   }
 }
@@ -1792,9 +1795,7 @@ async function inspectFirmwareDevice() {
     setText($("#firmwareChipName"), () => chipName || tr("已连接"));
     setText($("#firmwareMacAddress"), () => macAddress || "-");
     firmwareChipVerified = /ESP32-S3/i.test(String(chipName || ""));
-    const rawFlashSize = typeof loader.chip.getFlashSize === "function"
-      ? await loader.chip.getFlashSize(loader)
-      : loader.chip.flashSize;
+    const rawFlashSize = await loader.getFlashSize();
     firmwareFlashSizeBytes = normalizeFlashCapacity(rawFlashSize);
     firmwareFlashSizeText = firmwareFlashSizeBytes ? formatBytes(firmwareFlashSizeBytes) : "-";
     updateFirmwareInstallSummary();
@@ -1828,7 +1829,6 @@ async function inspectFirmwareDevice() {
     setText($("#flashResult"), () => appCount
       ? tr`分区表读取完成：${[ota0, ota1].filter(Boolean).map((partition) => `${partition.label} ${hex(partition.address)} / ${formatBytes(partition.size)}`).join("，")}。App 固件只能写入这些分区；merged 固件仍写入 0x0。`
       : tr("分区表为空或不可用。完整安装可继续；高级 App 更新需要有效分区表。"));
-    await resetDeviceAfterFlash(transport, selectedPort, (text) => { setText($("#flashResult"), () => text.trim() || $("#flashResult").textContent); });
   } catch (error) {
     firmwareDevicePort = undefined;
     firmwarePartitions = [];
@@ -1840,17 +1840,22 @@ async function inspectFirmwareDevice() {
     setText($("#flashResult"), () => tr`设备分区表读取失败：${error.message}`);
     renderFirmwareTargets();
   } finally {
-    refreshFirmwareTargetState();
+    if (transport) {
+      try {
+        // Always leave download mode, including identification failures.
+        await resetDeviceAfterFlash(transport, selectedPort, (text) => console.info(text.trim()));
+      } finally {
+        try {
+          await transport.disconnect();
+        } catch (error) {
+          console.warn(error);
+        }
+      }
+    }
+    updateFirmwareWriteButton();
     updateFirmwareInstallSummary();
     $("#selectFirmwareDeviceBtn").disabled = !("serial" in navigator);
     $("#firmwareInstallConnectBtn").disabled = !("serial" in navigator);
-    if (transport) {
-      try {
-        await transport.disconnect();
-      } catch (error) {
-        console.warn(error);
-      }
-    }
     if (firmwareDevicePort && firmwarePartitions.length) {
       hintNextStep($("#firmwareSource").value === "remote" ? "#downloadFirmwareBtn" : "#firmwareInput");
     }

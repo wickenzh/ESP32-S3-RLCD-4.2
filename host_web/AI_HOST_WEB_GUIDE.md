@@ -2,6 +2,11 @@
 
 This document is for future AI agents or developers taking over `host_web/`.
 
+Device identification: esptool-js 0.5.6 exposes getFlashSize() on ESPLoader,
+not chip. Use the bundled implementation in regression tests. Both inspection
+paths must attempt reset in finally before releasing the serial transport,
+including failed identification. Preserve the original error in the UI.
+
 The visible Host Web version is `HOST_WEB_VERSION` in `app.js`, mirrored by
 `#hostVersion` in `index.html`. Update both the displayed version and the
 Service Worker cache revision for each web release, then run the version and
