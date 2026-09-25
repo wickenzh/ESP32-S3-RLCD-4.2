@@ -50,6 +50,7 @@ constexpr const char *kHttpQweatherTlsFallbackLog =
     "qweather TLS certificate verification failed, retrying with legacy CA";
 constexpr TickType_t kHttpTlsFallbackDelay = pdMS_TO_TICKS(350);
 constexpr TickType_t kQweatherTransientRetryDelay = pdMS_TO_TICKS(200);
+constexpr uint32_t kQweatherSlowRequestLogMs = 3000;
 constexpr const char *kQweatherTransientRetryLog =
     "qweather initial request timed out transiently, retrying once";
 
@@ -110,6 +111,8 @@ static_assert(kHttpPreviewBufferSize == kHttpPreviewMaxChars + kCStringTerminato
     "http response truncated status=%d content_len=%lld received=%u buffer=%u overflow=%d"
 #define HTTP_GET_OK_FORMAT "http get ok status=%d len=%u gzip=%d"
 #define HTTP_SET_HEADER_FAILED_FORMAT "http set header failed name=%s err=%s"
+#define QWEATHER_REQUEST_TIMING_FORMAT \
+    "qweather request timing: stage=%s index=%u attempts=%u reused=%d transient=%d connect_ms=%lld first_data_ms=%lld elapsed_ms=%u status=%d err=%s phase=%s"
 
 bool is_qweather_url(const char *url)
 {
@@ -119,6 +122,35 @@ bool is_qweather_url(const char *url)
 bool http_status_ok(int status)
 {
     return status >= kHttpStatusOkMin && status < kHttpStatusOkMax;
+}
+
+int64_t request_timing_log_value(uint32_t value)
+{
+    return value == kHttpRequestTimingUnavailableMs
+               ? -1
+               : static_cast<int64_t>(value);
+}
+
+const char *request_failure_phase(const HttpTextRequestStats &stats)
+{
+    const HttpRequestTimingPhase phase = http_request_timing_phase(
+        stats.result == ESP_OK && http_status_ok(stats.status_code),
+        stats.reused_client,
+        stats.connected_ms,
+        stats.first_data_ms);
+    switch (phase) {
+    case HttpRequestTimingPhase::kOk:
+        return "ok";
+    case HttpRequestTimingPhase::kConnect:
+        return "connect";
+    case HttpRequestTimingPhase::kReusedConnect:
+        return "reused-connect";
+    case HttpRequestTimingPhase::kFirstData:
+        return "first-data";
+    case HttpRequestTimingPhase::kResponse:
+        return "response";
+    }
+    return "unknown";
 }
 
 bool compute_http_timeout_ms(int *timeout_ms)
@@ -203,6 +235,8 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
             *buffer->connection_count != UINT32_MAX) {
             ++(*buffer->connection_count);
         }
+        http_request_timing_note_connected(buffer->timing,
+                                           esp_timer_get_time());
         return ESP_OK;
     }
     if (evt->event_id != HTTP_EVENT_ON_DATA || !evt->user_data) {
@@ -212,6 +246,8 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
     if (!evt->data || evt->data_len <= 0) {
         return ESP_OK;
     }
+    http_request_timing_note_first_data(buffer->timing,
+                                        esp_timer_get_time());
     if (!buffer->data || buffer->cap == 0 || buffer->len >= buffer->cap) {
         buffer->truncated = true;
         return ESP_OK;
@@ -275,8 +311,13 @@ esp_err_t decode_http_body(char *out, size_t out_len, size_t *body_len)
     return ESP_OK;
 }
 
-HttpTextSession::HttpTextSession(bool allow_reuse)
-    : started_us_(esp_timer_get_time()), allow_reuse_(allow_reuse)
+HttpTextSession::HttpTextSession(bool allow_reuse,
+                                 HttpTextSessionPolicy policy)
+    : started_us_(esp_timer_get_time()),
+      first_qweather_timeout_ms_(policy.first_qweather_timeout_ms > 0
+                                     ? policy.first_qweather_timeout_ms
+                                     : 0),
+      allow_reuse_(allow_reuse)
 {
 }
 
@@ -316,6 +357,64 @@ void HttpTextSession::release_transaction_lock()
     }
     release_network_http_transaction_lock();
     transaction_locked_ = false;
+}
+
+void HttpTextSession::finish_request_timing(const char *diagnostic_stage,
+                                            uint32_t attempt_count,
+                                            bool reused_client,
+                                            bool transient_retry,
+                                            int status_code,
+                                            esp_err_t result)
+{
+    const HttpRequestTimingSnapshot timing = http_request_timing_snapshot(
+        request_timing_,
+        esp_timer_get_time());
+    last_request_stats_ = {
+        request_count_,
+        attempt_count,
+        timing.connected_ms,
+        timing.first_data_ms,
+        timing.elapsed_ms,
+        status_code,
+        result,
+        reused_client,
+        transient_retry,
+    };
+    if (!cstr_nonempty(diagnostic_stage) ||
+        (result == ESP_OK && http_status_ok(status_code) &&
+         timing.elapsed_ms < kQweatherSlowRequestLogMs)) {
+        return;
+    }
+    const char *phase = request_failure_phase(last_request_stats_);
+    if (result == ESP_OK && http_status_ok(status_code)) {
+        ESP_LOGI(TAG,
+                 QWEATHER_REQUEST_TIMING_FORMAT,
+                 diagnostic_stage,
+                 static_cast<unsigned>(last_request_stats_.request_index),
+                 static_cast<unsigned>(attempt_count),
+                 reused_client,
+                 transient_retry,
+                 request_timing_log_value(timing.connected_ms),
+                 request_timing_log_value(timing.first_data_ms),
+                 static_cast<unsigned>(timing.elapsed_ms),
+                 status_code,
+                 esp_err_to_name(result),
+                 phase);
+    } else {
+        ESP_LOGW(TAG,
+                 QWEATHER_REQUEST_TIMING_FORMAT,
+                 diagnostic_stage,
+                 static_cast<unsigned>(last_request_stats_.request_index),
+                 static_cast<unsigned>(attempt_count),
+                 reused_client,
+                 transient_retry,
+                 request_timing_log_value(timing.connected_ms),
+                 request_timing_log_value(timing.first_data_ms),
+                 static_cast<unsigned>(timing.elapsed_ms),
+                 status_code,
+                 esp_err_to_name(result),
+                 phase);
+    }
 }
 
 bool HttpTextSession::prepare_client(const char *url,
@@ -378,7 +477,8 @@ bool HttpTextSession::prepare_client(const char *url,
 esp_err_t HttpTextSession::get(const char *url,
                                char *out,
                                size_t out_len,
-                               const char *api_key)
+                               const char *api_key,
+                               const char *diagnostic_stage)
 {
     if (!http_get_text_args_valid(url, out, out_len)) {
         ESP_LOGW(TAG, "%s", kHttpGetInvalidArgLog);
@@ -393,7 +493,13 @@ esp_err_t HttpTextSession::get(const char *url,
         return ESP_ERR_TIMEOUT;
     }
     ++request_count_;
-    buffer_ = {out, 0, out_len, false, &connection_count_};
+    http_request_timing_begin(&request_timing_, esp_timer_get_time());
+    buffer_ = {out,
+               0,
+               out_len,
+               false,
+               &connection_count_,
+               &request_timing_};
     const bool qweather_url = is_qweather_url(url);
     esp_err_t err = ESP_FAIL;
     int status = 0;
@@ -404,18 +510,25 @@ esp_err_t HttpTextSession::get(const char *url,
             : HttpTlsTrustMode::kCertificateBundle;
     bool reconnect_attempted = false;
     bool transient_retry_attempt = false;
+    bool initial_reused_client = false;
+    uint32_t attempt_count = 0;
     for (size_t attempt = 0; attempt < 3; ++attempt) {
         if (!compute_http_timeout_ms(&timeout_ms)) {
             err = ESP_ERR_TIMEOUT;
             break;
         }
-        const int attempt_timeout_ms = http_session_attempt_timeout_ms(
+        int attempt_timeout_ms = http_session_attempt_timeout_ms(
             timeout_ms,
             transient_retry_attempt);
+        attempt_timeout_ms = http_session_first_qweather_timeout_ms(
+            attempt_timeout_ms,
+            qweather_url && request_count_ == 1 && attempt == 0,
+            first_qweather_timeout_ms_);
         buffer_.len = 0;
         buffer_.truncated = false;
         out[0] = '\0';
         bool reused_client = false;
+        ++attempt_count;
         if (!prepare_client(url,
                             attempt_timeout_ms,
                             api_key,
@@ -423,6 +536,9 @@ esp_err_t HttpTextSession::get(const char *url,
                             &reused_client)) {
             err = ESP_FAIL;
             break;
+        }
+        if (attempt == 0) {
+            initial_reused_client = reused_client;
         }
         int tls_error = 0;
         int tls_flags = 0;
@@ -487,6 +603,13 @@ esp_err_t HttpTextSession::get(const char *url,
         } else {
             ESP_LOGW(TAG, HTTP_GET_FAILED_FORMAT, status, esp_err_to_name(err));
         }
+        const esp_err_t result = err == ESP_OK ? ESP_FAIL : err;
+        finish_request_timing(diagnostic_stage,
+                              attempt_count,
+                              initial_reused_client,
+                              transient_retry_attempt,
+                              status,
+                              result);
         runtime_health_note_event(RuntimeHealthEvent::kHttpFailure);
         if (!allow_reuse_) {
             cleanup_client();
@@ -494,7 +617,7 @@ esp_err_t HttpTextSession::get(const char *url,
         } else {
             buffer_ = {};
         }
-        return err == ESP_OK ? ESP_FAIL : err;
+        return result;
     }
     const size_t body_len = buffer_.len;
     const bool truncated = buffer_.truncated;
@@ -506,6 +629,12 @@ esp_err_t HttpTextSession::get(const char *url,
                  (unsigned)out_len,
                  truncated);
         out[0] = '\0';
+        finish_request_timing(diagnostic_stage,
+                              attempt_count,
+                              initial_reused_client,
+                              transient_retry_attempt,
+                              status,
+                              ESP_ERR_INVALID_SIZE);
         runtime_health_note_event(RuntimeHealthEvent::kHttpFailure);
         if (!allow_reuse_) {
             cleanup_client();
@@ -521,6 +650,12 @@ esp_err_t HttpTextSession::get(const char *url,
              network_gzip_detail::has_magic_prefix(out, body_len));
     size_t decoded_len = body_len;
     const esp_err_t decode_result = decode_http_body(out, out_len, &decoded_len);
+    finish_request_timing(diagnostic_stage,
+                          attempt_count,
+                          initial_reused_client,
+                          transient_retry_attempt,
+                          status,
+                          decode_result);
     if (decode_result != ESP_OK) {
         runtime_health_note_event(RuntimeHealthEvent::kHttpFailure);
     }
@@ -544,6 +679,11 @@ HttpTextSessionStats HttpTextSession::stats() const
         transient_retry_count_,
         elapsed_us > 0 ? static_cast<uint64_t>(elapsed_us / 1000) : 0,
     };
+}
+
+HttpTextRequestStats HttpTextSession::last_request_stats() const
+{
+    return last_request_stats_;
 }
 
 esp_err_t http_get_text(const char *url,

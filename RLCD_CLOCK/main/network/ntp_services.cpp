@@ -29,12 +29,12 @@ static constexpr const char *kNtpRuntimeChangedLog =
 namespace {
 bool s_ntp_started = false;
 constexpr const char *const kNtpServers[] = {
-    "pool.ntp.org",
     "ntp.aliyun.com",
-    "time.windows.com",
+    "ntp.tencent.com",
+    "pool.ntp.org",
 };
 constexpr size_t kNtpServerCount = array_count(kNtpServers);
-constexpr size_t kDefaultConfiguredNtpServerSlots = 1;
+constexpr size_t kDefaultConfiguredNtpServerSlots = kNtpServerCount;
 #ifdef CONFIG_LWIP_SNTP_MAX_SERVERS
 constexpr size_t kConfiguredNtpServerSlots = CONFIG_LWIP_SNTP_MAX_SERVERS;
 #else

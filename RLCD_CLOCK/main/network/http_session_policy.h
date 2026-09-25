@@ -11,6 +11,7 @@ enum class HttpSessionRetryAction {
 };
 
 inline constexpr int kQweatherTransientRetryTimeoutMs = 3000;
+inline constexpr int kQweatherTimeoutAbCandidateMs = 5000;
 
 constexpr int http_session_attempt_timeout_ms(int timeout_ms,
                                               bool transient_retry)
@@ -19,6 +20,21 @@ constexpr int http_session_attempt_timeout_ms(int timeout_ms,
                ? kQweatherTransientRetryTimeoutMs
                : timeout_ms;
 }
+
+constexpr int http_session_first_qweather_timeout_ms(
+    int timeout_ms,
+    bool first_qweather_attempt,
+    int configured_cap_ms)
+{
+    return first_qweather_attempt && configured_cap_ms > 0 &&
+                   timeout_ms > configured_cap_ms
+               ? configured_cap_ms
+               : timeout_ms;
+}
+
+static_assert(kQweatherTimeoutAbCandidateMs >
+                  kQweatherTransientRetryTimeoutMs,
+              "candidate first timeout must exceed the recovery retry cap");
 
 bool http_urls_share_origin(const char *left, const char *right);
 

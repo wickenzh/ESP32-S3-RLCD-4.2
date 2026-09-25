@@ -140,14 +140,26 @@ void log_qweather_fixed_warning(const char *message)
 esp_err_t qweather_http_get_text(HttpTextSession *session,
                                  const char *url,
                                  char *response,
-                                 size_t response_len)
+                                 size_t response_len,
+                                 const char *stage)
 {
     char api_key[kNetworkWeatherApiKeyLen] = {};
     if (!network_weather_api_key_snapshot(api_key, sizeof(api_key))) {
         return ESP_ERR_INVALID_STATE;
     }
-    return session ? session->get(url, response, response_len, api_key)
-                   : http_get_text(url, response, response_len, api_key);
+    if (session) {
+        return session->get(url,
+                            response,
+                            response_len,
+                            api_key,
+                            stage);
+    }
+    HttpTextSession one_shot(false);
+    return one_shot.get(url,
+                        response,
+                        response_len,
+                        api_key,
+                        stage);
 }
 
 bool load_qweather_api_host(char *host, size_t host_len)
@@ -201,7 +213,11 @@ QweatherCityLookupStatus qweather_lookup_city_status(const char *location,
                    : kQweatherCityLookupError;
     }
     ESP_LOGI(TAG, QWEATHER_CITY_LOOKUP_FORMAT, location);
-    if (qweather_http_get_text(session, url, response.get(), response.size()) != ESP_OK) {
+    if (qweather_http_get_text(session,
+                               url,
+                               response.get(),
+                               response.size(),
+                               kQweatherStageCity) != ESP_OK) {
         log_qweather_fixed_warning(kQweatherCityHttpFailedLog);
         return kQweatherCityLookupError;
     }
@@ -273,7 +289,11 @@ bool qweather_fetch_alert(const char *lat,
         return false;
     }
     ESP_LOGI(TAG, QWEATHER_ALERT_LOOKUP_FORMAT, lat, lon);
-    if (qweather_http_get_text(session, url, response.get(), response.size()) != ESP_OK) {
+    if (qweather_http_get_text(session,
+                               url,
+                               response.get(),
+                               response.size(),
+                               kQweatherStageAlert) != ESP_OK) {
         log_qweather_fixed_warning(kQweatherAlertHttpFailedLog);
         return false;
     }
@@ -352,7 +372,11 @@ bool qweather_fetch_now(const char *city_id,
         return false;
     }
     ESP_LOGI(TAG, QWEATHER_NOW_LOOKUP_FORMAT, city_id);
-    if (qweather_http_get_text(session, url, response.get(), response.size()) != ESP_OK) {
+    if (qweather_http_get_text(session,
+                               url,
+                               response.get(),
+                               response.size(),
+                               kQweatherStageNow) != ESP_OK) {
         log_qweather_fixed_warning(kQweatherNowHttpFailedLog);
         return false;
     }
@@ -410,7 +434,8 @@ static QweatherDailyAttemptStatus qweather_fetch_daily_days(
     esp_err_t http_err = qweather_http_get_text(session,
                                                 url,
                                                 response.get(),
-                                                response.size());
+                                                response.size(),
+                                                kQweatherStageDaily);
     if (http_err != ESP_OK) {
         ESP_LOGW(TAG, QWEATHER_DAILY_HTTP_FAILED_FORMAT, esp_err_to_name(http_err));
         return QweatherDailyAttemptStatus::kFailed;
@@ -503,7 +528,8 @@ bool qweather_fetch_air(const char *lat,
     esp_err_t http_err = qweather_http_get_text(session,
                                                 url,
                                                 response.get(),
-                                                response.size());
+                                                response.size(),
+                                                kQweatherStageAir);
     if (http_err != ESP_OK) {
         ESP_LOGW(TAG, QWEATHER_AIR_HTTP_FAILED_FORMAT, esp_err_to_name(http_err));
         return false;

@@ -11,6 +11,7 @@
 #include "network_sync_schedule.h"
 #include "ota_services.h"
 #include "qweather_icons.h"
+#include "qweather_timeout_ab_test.h"
 #include "ui_clock.h"
 #include "ui_clock_weather_text.h"
 #include "ui_text_format.h"
@@ -177,6 +178,15 @@ void update_visible_weather_sync(const ActiveWorkPageState &state,
     const int ab_slot = weather_wifi_ab_slot(esp_timer_get_time());
     if (ab_slot >= 0) {
         cache_fresh = weather_wifi_ab_last_slot.load() == ab_slot;
+    }
+#endif
+#ifdef WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_TEST
+    // One requested round per slot; keep existing visibility/safety gates.
+    const int timeout_ab_slot = qweather_timeout_ab_slot(
+        esp_timer_get_time());
+    if (timeout_ab_slot >= 0) {
+        cache_fresh = qweather_timeout_ab_last_slot.load() ==
+                      timeout_ab_slot;
     }
 #endif
     // The weather-state owner publishes ready together with the EventGroup

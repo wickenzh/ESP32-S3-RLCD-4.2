@@ -12,4 +12,10 @@ enum class WeatherUpdateScope {
     kFull,
 };
 
-WeatherUpdateResult perform_weather_update(WeatherUpdateScope scope);
+struct WeatherUpdateRequestPolicy {
+    int qweather_first_request_timeout_ms = 0;
+};
+
+WeatherUpdateResult perform_weather_update(
+    WeatherUpdateScope scope,
+    WeatherUpdateRequestPolicy request_policy = {});

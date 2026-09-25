@@ -32,6 +32,8 @@
 #include "startup_state.h"
 #include "ui_work_page_catalog.h"
 #include "weather_state.h"
+#include "weather_provider.h"
+#include "qweather_timeout_ab_test.h"
 #include "weather_update.h"
 #include "weather_wifi_ab_test.h"
 #include "wifi_idle_stop_policy.h"
@@ -415,6 +417,7 @@ static bool execute_connected_sync_window(const NetworkSyncSchedule &schedule,
                 : WeatherUpdateScope::kCurrentAndAlerts;
         const int64_t weather_started_us = esp_timer_get_time();
         WeatherUpdateResult result;
+        WeatherUpdateRequestPolicy request_policy;
         bool performance_enabled = false;
 #ifdef WEATHER_CLOCK_WIFI_AB_TEST
         const int ab_slot = weather_wifi_ab_slot(weather_started_us);
@@ -424,17 +427,53 @@ static bool execute_connected_sync_window(const NetworkSyncSchedule &schedule,
                      performance_enabled ? "NONE" : "MAX_MODEM");
         }
 #endif
+#ifdef WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_TEST
+        const bool timeout_ab_eligible =
+            weather_provider_load() == WeatherProvider::kQweather &&
+            !network_startup_pressure_window_active(startup_screen_active(),
+                                                    weather_started_us) &&
+            !schedule.ntp_due &&
+            !requests.provisioning &&
+            !requests.manual_weather;
+        const QweatherTimeoutAbDecision timeout_ab =
+            qweather_timeout_ab_decision(weather_started_us,
+                                         timeout_ab_eligible);
+        request_policy.qweather_first_request_timeout_ms =
+            timeout_ab.first_request_timeout_ms;
+        if (timeout_ab.slot >= 0) {
+            ESP_LOGI(TAG,
+                     "qweather timeout AB: slot=%d mode=%s eligible=%d cap_ms=%d",
+                     timeout_ab.slot,
+                     timeout_ab.candidate ? "CAP5" : "BASELINE",
+                     timeout_ab_eligible,
+                     timeout_ab.first_request_timeout_ms);
+        }
+#endif
         {
             WeatherWifiPerformanceGuard performance_guard(performance_enabled);
-            result = perform_weather_update(scope);
+            result = perform_weather_update(scope, request_policy);
         }
 #ifdef WEATHER_CLOCK_WIFI_AB_TEST
         if (ab_slot >= 0) {
             weather_wifi_ab_last_slot.store(ab_slot);
         }
 #endif
+        const int64_t weather_elapsed_ms =
+            (esp_timer_get_time() - weather_started_us) / 1000;
+#ifdef WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_TEST
+        if (timeout_ab.slot >= 0) {
+            qweather_timeout_ab_last_slot.store(timeout_ab.slot);
+            ESP_LOGI(TAG,
+                     "qweather timeout AB result: slot=%d mode=%s eligible=%d elapsed_ms=%lld result=%d",
+                     timeout_ab.slot,
+                     timeout_ab.candidate ? "CAP5" : "BASELINE",
+                     timeout_ab_eligible,
+                     static_cast<long long>(weather_elapsed_ms),
+                     static_cast<int>(result));
+        }
+#endif
         ESP_LOGI(TAG, "weather request window: elapsed_ms=%lld result=%d",
-                 static_cast<long long>((esp_timer_get_time() - weather_started_us) / 1000),
+                 static_cast<long long>(weather_elapsed_ms),
                  static_cast<int>(result));
         if (!network_sync_continuation_allowed()) {
             return false;

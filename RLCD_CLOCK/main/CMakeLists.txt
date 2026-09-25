@@ -18,6 +18,7 @@ idf_component_register(
         "core/ascii_text.cpp"
         "ui/ui_canvas.cpp"
         "ui/ui_bitmap.cpp"
+        "ui/packed_1bit_diff.cpp"
         "ui/ui_status_gif.cpp"
         "ui/ui_progress.cpp"
         "ui/ui_dseg_render.cpp"
@@ -254,9 +255,22 @@ string(TIMESTAMP WEATHER_CLOCK_BUILD_DATE "%Y-%m-%d")
 option(WEATHER_CLOCK_WIFI_AB_TEST "Temporary 8-hour weather Wi-Fi A/B test" OFF)
 set(WEATHER_CLOCK_WIFI_AB_SLOT_MINUTES "20" CACHE STRING
     "Weather Wi-Fi A/B slot duration in minutes")
+option(WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_TEST
+    "Temporary 12-hour QWeather first-request timeout A/B test" OFF)
+set(WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_SLOT_MINUTES "20" CACHE STRING
+    "QWeather timeout A/B slot duration in minutes")
+if(WEATHER_CLOCK_WIFI_AB_TEST AND WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_TEST)
+    message(FATAL_ERROR
+        "Weather Wi-Fi and QWeather timeout A/B tests cannot run together")
+endif()
 if(WEATHER_CLOCK_WIFI_AB_TEST)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
         WEATHER_CLOCK_WIFI_AB_TEST=1
         WEATHER_CLOCK_WIFI_AB_SLOT_MINUTES=${WEATHER_CLOCK_WIFI_AB_SLOT_MINUTES})
+endif()
+if(WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_TEST)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_TEST=1
+        WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_SLOT_MINUTES=${WEATHER_CLOCK_QWEATHER_TIMEOUT_AB_SLOT_MINUTES})
 endif()
 target_compile_definitions(${COMPONENT_LIB} PRIVATE WEATHER_CLOCK_BUILD_DATE="${WEATHER_CLOCK_BUILD_DATE}")

@@ -6,7 +6,7 @@ inline constexpr int kDisplayHeight = 300;
 inline constexpr int kDisplayPartialMaxWidth = (kDisplayWidth * 7) / 10;
 inline constexpr int kMaxFlushRanges = 8;
 inline constexpr int kFlushRangeMergeGap = 8;
-inline constexpr int kDisplayFlushDiagIntervalMs = 60 * 1000;
+inline constexpr int kDisplayFlushDiagIntervalMs = 60 * 60 * 1000;
 
 static_assert(kDisplayWidth > 0 && kDisplayHeight > 0,
               "display dimensions must be positive");

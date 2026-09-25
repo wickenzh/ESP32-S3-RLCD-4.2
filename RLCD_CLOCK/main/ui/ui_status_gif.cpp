@@ -5,8 +5,8 @@
 #include <esp_attr.h>
 
 #include "custom_assets.h"
+#include "packed_1bit_diff.h"
 #include "status_gif_60.h"
-#include "ui_bitmap.h"
 #include "ui_canvas_primitives.h"
 #include "ui_clock_surface_objects.h"
 #include "ui_draw_cache.h"
@@ -96,25 +96,27 @@ void draw_status_gif_frame(int frame)
         }
         s_custom_prev_valid = false;
     }
-    uint32_t bit = 0;
     bool changed = false;
     int min_x = STATUS_GIF_WIDTH;
     int min_y = STATUS_GIF_HEIGHT;
     int max_x = -1;
     int max_y = -1;
-    for (int y = 0; y < STATUS_GIF_HEIGHT; ++y) {
-        for (int x = 0; x < STATUS_GIF_WIDTH; ++x, ++bit) {
-            bool black = packed_1bit_bit_is_set(pixels, bit);
-            if (prev_pixels) {
-                bool prev_black = packed_1bit_bit_is_set(prev_pixels, bit);
-                if (black == prev_black) {
-                    continue;
-                }
-            }
-            lv_img_buf_set_px_color(image, x, y, black ? lv_color_black() : lv_color_white());
-            changed = true;
-            expand_area_to_include_pixel(x, y, &min_x, &min_y, &max_x, &max_y);
-        }
+    Packed1BitDiffCursor diff;
+    packed_1bit_diff_begin(&diff,
+                           pixels,
+                           prev_pixels,
+                           STATUS_GIF_WIDTH * STATUS_GIF_HEIGHT);
+    uint32_t bit = 0;
+    bool black = false;
+    while (packed_1bit_diff_next(&diff, &bit, &black)) {
+        const int y = static_cast<int>(bit / STATUS_GIF_WIDTH);
+        const int x = static_cast<int>(bit - y * STATUS_GIF_WIDTH);
+        lv_img_buf_set_px_color(image,
+                                x,
+                                y,
+                                black ? lv_color_black() : lv_color_white());
+        changed = true;
+        expand_area_to_include_pixel(x, y, &min_x, &min_y, &max_x, &max_y);
     }
     if (changed || s_last_status_gif_frame != frame) {
         if (change_area_valid(changed, min_x, min_y, max_x, max_y)) {

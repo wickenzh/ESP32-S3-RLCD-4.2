@@ -54,5 +54,11 @@ int main()
     assert(http_session_attempt_timeout_ms(10000, true) ==
            kQweatherTransientRetryTimeoutMs);
     assert(http_session_attempt_timeout_ms(2000, true) == 2000);
+    assert(http_session_first_qweather_timeout_ms(10000, false, 5000) ==
+           10000);
+    assert(http_session_first_qweather_timeout_ms(4900, true, 5000) == 4900);
+    assert(http_session_first_qweather_timeout_ms(5000, true, 5000) == 5000);
+    assert(http_session_first_qweather_timeout_ms(5100, true, 5000) == 5000);
+    assert(http_session_first_qweather_timeout_ms(10000, true, 0) == 10000);
     return 0;
 }

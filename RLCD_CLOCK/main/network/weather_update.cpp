@@ -473,7 +473,9 @@ WeatherUpdateResult update_weather_by_ip_location(WeatherUpdateWorkspace &worksp
 }
 } // namespace
 
-WeatherUpdateResult perform_weather_update(WeatherUpdateScope scope)
+WeatherUpdateResult perform_weather_update(
+    WeatherUpdateScope scope,
+    WeatherUpdateRequestPolicy request_policy)
 {
     if (weather_provider_load() == WeatherProvider::kOpenMeteo) {
         return perform_open_meteo_update(scope);
@@ -495,7 +497,10 @@ WeatherUpdateResult perform_weather_update(WeatherUpdateScope scope)
     const bool startup_pressure = network_startup_pressure_window_active(
         startup_screen_active(),
         esp_timer_get_time());
-    HttpTextSession session(!startup_pressure);
+    const HttpTextSessionPolicy http_policy = {
+        request_policy.qweather_first_request_timeout_ms,
+    };
+    HttpTextSession session(!startup_pressure, http_policy);
     if (manual_weather_city_snapshot(workspace.manual_city,
                                      sizeof(workspace.manual_city))) {
         trim_ascii_whitespace(workspace.manual_city);
