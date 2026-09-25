@@ -35,11 +35,18 @@ for (const failure of ['', 'flash', 'connect']) {
     parsePartitionTable: () => [], renderPartitionTable() {}, renderFirmwareTargets() {},
     findOtaPartition() {}, updateFirmwareWriteButton() {}, updateFirmwareInstallSummary() {}, hintNextStep() {},
     resetDeviceAfterFlash: async () => { events.push('reset'); },
+    closeFirmwareSession: async () => {},
+    firmwareInstallBusy: false,
     PARTITION_TABLE_OFFSET: 0x8000, PARTITION_TABLE_SIZE: 4096
   });
-  vm.runInContext('let firmwareDevicePort, firmwarePartitions, firmwareChipVerified, firmwareFlashSizeBytes, firmwareFlashSizeText;\n' + extract('inspectFirmwareDevice', 'showFirmwareOptionMessage'), context);
+  vm.runInContext('let firmwareSession, firmwareDevicePort, firmwarePartitions, firmwareChipVerified, firmwareFlashSizeBytes, firmwareFlashSizeText;\n' + extract('inspectFirmwareDevice', 'showFirmwareOptionMessage'), context);
   await context.inspectFirmwareDevice();
-  assert.deepEqual(events.slice(-2), ['reset', 'disconnect']);
+  if (failure) assert.deepEqual(events.slice(-2), ['reset', 'disconnect']);
+  else {
+    assert(!events.includes('reset'));
+    assert(!events.includes('disconnect'));
+    assert(vm.runInContext('Boolean(firmwareSession?.loader)', context));
+  }
   assert.equal(events.includes('partition'), !failure);
   if (failure) assert.match(elements.get('#flashResult').textContent, /failed/);
   else assert.equal(vm.runInContext('firmwareFlashSizeBytes', context), 16 * 1024 * 1024);

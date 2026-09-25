@@ -1,5 +1,5 @@
 import { tr, setText, setAttr, LocalizedError, getLanguage } from './i18n.js';
-const $ = (selector) => document.querySelector(selector);
+const $ = (selector) => document.querySelector(selector) || document.querySelector('#firmwareInternalState')?.content.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 const MAX_ASSETS_SIZE = 2 * 1024 * 1024;
@@ -20,7 +20,7 @@ const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
 const FIRMWARE_RELEASES_SOURCE_URL = "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases";
-const HOST_WEB_VERSION = "v1.0.4";
+const HOST_WEB_VERSION = "v1.0.5";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
@@ -80,6 +80,18 @@ let firmwareFlashSizeBytes = 0;
 let firmwareFlashSizeText = "-";
 let firmwareInstallBusy = false;
 let firmwareInstallSnapshot;
+let firmwareSession;
+
+async function closeFirmwareSession() {
+  const session = firmwareSession;
+  firmwareSession = undefined;
+  if (!session) return;
+  try {
+    await resetDeviceAfterFlash(session.transport, session.device, (text) => console.info(text.trim()));
+  } finally {
+    await session.transport.disconnect().catch(console.warn);
+  }
+}
 let nextStepElement;
 let nextStepTimer;
 
@@ -1411,7 +1423,7 @@ function updateFirmwareInstallSummary() {
   setText($("#firmwareInstallDevice"), () => firmwareDevicePort
     ? (firmwareFlashSizeText === "-" ? describePort(firmwareDevicePort) : `${describePort(firmwareDevicePort)} / ${firmwareFlashSizeText}`)
     : tr("未连接"));
-  const ready = Boolean(firmwareDevicePort && firmwareChipVerified && firmwareFlashSizeBytes > 0 && selectedRemoteFirmwareImage("merged"));
+  const ready = Boolean(firmwareSession && firmwareDevicePort && firmwareChipVerified && firmwareFlashSizeBytes > 0 && selectedRemoteFirmwareImage("merged"));
   $("#firmwareInstallConnectBtn").disabled = !("serial" in navigator) || firmwareInstallBusy;
   $("#firmwareInstallBtn").disabled = !ready || firmwareInstallBusy;
 }
@@ -1420,7 +1432,6 @@ function setFirmwareInstallBusy(busy) {
   firmwareInstallBusy = busy;
   $("#firmwareInstallBtn").disabled = busy || !firmwareDevicePort || !firmwareChipVerified || !firmwareFlashSizeBytes || !selectedRemoteFirmwareImage("merged");
   $("#firmwareInstallConnectBtn").disabled = busy || !("serial" in navigator);
-  $("#firmwareAdvancedPanel").querySelectorAll("input, select, button").forEach((control) => { control.disabled = busy; });
 }
 
 function setFirmwareInstallProgress(value, state) {
@@ -1456,13 +1467,14 @@ async function installLatestFirmware() {
     if (!verifiedFirmwareData || selectedFirmware?.version !== snapshot.version) throw new LocalizedError(() => tr("固件校验未通过，未执行写入。"));
     setFirmwareInstallProgress(60, tr("校验通过，准备写入"));
     const success = await writeFirmware();
-    if (!success) throw new LocalizedError(() => tr("安装失败，可重试。"));
+    if (!success) throw new Error($("#flashResult").textContent || tr("安装失败，可重试。"));
     setFirmwareInstallProgress(100, tr("安装完成，设备正在复位"));
     setText($("#firmwareInstallResult"), () => tr("安装完成。请按需打开配网或快捷配置；页面不会自动跳转。"));
   } catch (error) {
     setFirmwareInstallProgress(0, tr("安装失败，可重试"));
     setText($("#firmwareInstallResult"), () => error.message);
   } finally {
+    await closeFirmwareSession();
     firmwareInstallSnapshot = undefined;
     setFirmwareInstallBusy(false);
     updateFirmwareInstallSummary();
@@ -1768,6 +1780,8 @@ function resetFirmwareDeviceState(message = "未读取") {
 }
 
 async function inspectFirmwareDevice() {
+  if (firmwareInstallBusy) return;
+  await closeFirmwareSession();
   if (!("serial" in navigator)) {
     setText($("#flashResult"), () => tr("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。"));
     return;
@@ -1829,6 +1843,7 @@ async function inspectFirmwareDevice() {
     setText($("#flashResult"), () => appCount
       ? tr`分区表读取完成：${[ota0, ota1].filter(Boolean).map((partition) => `${partition.label} ${hex(partition.address)} / ${formatBytes(partition.size)}`).join("，")}。App 固件只能写入这些分区；merged 固件仍写入 0x0。`
       : tr("分区表为空或不可用。完整安装可继续；高级 App 更新需要有效分区表。"));
+    firmwareSession = { loader, transport, device: selectedPort };
   } catch (error) {
     firmwareDevicePort = undefined;
     firmwarePartitions = [];
@@ -1840,7 +1855,7 @@ async function inspectFirmwareDevice() {
     setText($("#flashResult"), () => tr`设备分区表读取失败：${error.message}`);
     renderFirmwareTargets();
   } finally {
-    if (transport) {
+    if (transport && !firmwareSession) {
       try {
         // Always leave download mode, including identification failures.
         await resetDeviceAfterFlash(transport, selectedPort, (text) => console.info(text.trim()));
@@ -2019,19 +2034,19 @@ async function resetDeviceAfterFlash(transport, device, log) {
   }
 }
 
-async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, percentId, progressId, log, eraseSize, devicePort }) {
+async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, percentId, progressId, log, eraseSize, devicePort, session }) {
   if (!("serial" in navigator)) throw new LocalizedError(() => tr("当前浏览器不支持 Web Serial。请使用 Chrome 或 Edge。"));
   const esptool = await importEsptool();
   const device = devicePort || await navigator.serial.requestPort();
   const Transport = esptool.Transport;
   const ESPLoader = esptool.ESPLoader;
-  const transport = new Transport(device, true);
+  const transport = session?.transport || new Transport(device, true);
   const terminal = { clean: () => {}, writeLine: (line) => log(`${line}\n`), write: (text) => log(text) };
-  const loader = new ESPLoader({ transport, baudrate: Number(baudRateValue), terminal });
+  const loader = session?.loader || new ESPLoader({ transport, baudrate: Number(baudRateValue), terminal });
   try {
     setText($(`#${stateId}`), () => tr("连接设备中"));
     log(tr`目标设备：${describePort(device)}\n`);
-    await loader.main();
+    if (!session) await loader.main();
     setText($(`#${stateId}`), () => tr("写入中"));
     const binary = data instanceof Uint8Array ? data : new Uint8Array(data);
     const binaryString = uint8ArrayToBinaryString(binary);
@@ -2040,6 +2055,8 @@ async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, pe
     await loader.writeFlash({
       fileArray: offsets.map((address) => ({ data: binaryString, address })),
       flashSize: "keep",
+      flashMode: "keep",
+      flashFreq: "keep",
       eraseAll: false,
       compress: true,
       reportProgress: (fileIndex, written, total) => {
@@ -2056,10 +2073,12 @@ async function writeBinaryWithEsptool({ data, offset, baudRateValue, stateId, pe
     $(`#${progressId}`).value = 100;
     setText($(`#${percentId}`), () => "100%");
     setText($(`#${stateId}`), () => tr("写入完成，正在复位"));
-    await resetDeviceAfterFlash(transport, device, log);
+    if (!session) await resetDeviceAfterFlash(transport, device, log);
     setText($(`#${stateId}`), () => tr("写入完成，设备已复位"));
   } finally {
+    if (session) await resetDeviceAfterFlash(transport, device, log);
     try {
+      if (session) firmwareSession = undefined;
       await transport.disconnect();
     } catch (error) {
       console.warn(error);
@@ -2184,6 +2203,7 @@ async function writeFirmware() {
       progressId: "firmwareWriteProgress",
       log: (text) => { if (text.trim()) setText($("#flashResult"), () => text.trim()); },
       eraseSize: data.byteLength,
+      session: firmwareSession,
       devicePort: target.kind === "app" ? firmwareDevicePort : firmwareDevicePort
     });
     setText($("#flashResult"), () => tr`${target.label} 烧录完成，设备正在重启。`);
@@ -2196,6 +2216,9 @@ async function writeFirmware() {
 }
 
 function activateTab(tabId, updateAddress = true) {
+  if (tabId !== "firmware" && firmwareSession && !firmwareInstallBusy) {
+    closeFirmwareSession().then(() => resetFirmwareDeviceState()).catch(console.warn);
+  }
   if (!$$(".tab").some(tab => tab.dataset.tab === tabId)) tabId = "firmware";
   clearNextStepHint();
   $$(".tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabId));
@@ -2225,6 +2248,7 @@ async function registerServiceWorker() {
     let hasExistingController = Boolean(navigator.serviceWorker.controller);
     let isRefreshing = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (firmwareSession || firmwareInstallBusy) return;
       if (!hasExistingController) {
         hasExistingController = true;
         return;
@@ -2344,7 +2368,9 @@ $("#eraseAssetsBtn").addEventListener("click", eraseAssets);
 $("#selectFirmwareDeviceBtn").addEventListener("click", inspectFirmwareDevice);
 $("#firmwareInstallConnectBtn").addEventListener("click", inspectFirmwareDevice);
 $("#firmwareInstallBtn").addEventListener("click", showFirmwareInstallConfirm);
-$("#firmwareInstallCancelBtn").addEventListener("click", () => {
+$("#firmwareInstallCancelBtn").addEventListener("click", async () => {
+  await closeFirmwareSession();
+  resetFirmwareDeviceState();
   firmwareInstallSnapshot = undefined;
   $("#firmwareInstallConfirm").hidden = true;
   updateFirmwareInstallSummary();

@@ -18,7 +18,7 @@
     </div>
     <div class="top-meta">
       <span>使用 Edge / Chrome · 素材与配置本地处理，不上传服务器</span>
-      <span class="top-version"><b id="hostVersion">v1.0.4</b> · <span id="cacheState">离线缓存准备中</span> · <span class="hosting-note">页面服务托管于 GitHub Pages</span></span>
+      <span class="top-version"><b id="hostVersion">v1.0.5</b> · <span id="cacheState">离线缓存准备中</span> · <span class="hosting-note">页面服务托管于 GitHub Pages</span></span>
     </div>
     <div class="top-actions">
       <span id="serialSupport" class="status-pill">检测中</span>
@@ -359,7 +359,7 @@
                 <div><span>最新版本</span><strong id="firmwareInstallVersion">加载中</strong></div>
                 <div><span>已选设备</span><strong id="firmwareInstallDevice">未连接</strong></div>
               </div>
-              <p class="firmware-install-warning">完整 merged 固件会覆盖设备固件、分区表和资源内容，设备配置与自定义资源可能被清除。需要保留时，请取消并在高级固件烧录中选择 App 更新。</p>
+              <p class="firmware-install-warning">这会覆盖固件、分区表和设备资源。确认后将下载、校验并写入最新 merged 固件。</p>
               <div class="firmware-install-actions">
                 <button id="firmwareInstallConnectBtn" class="primary-button" type="button">① 连接设备并识别</button>
                 <button id="firmwareInstallBtn" class="primary-button" type="button" disabled>② 安装最新固件</button>
@@ -384,8 +384,7 @@
             </aside>
           </div>
         </div>
-        <details id="firmwareAdvancedPanel" class="firmware-advanced">
-          <summary>高级固件烧录</summary>
+        <template id="firmwareInternalState">
         <div class="form-grid">
           <label>
             <span>固件来源</span>
@@ -455,7 +454,7 @@
           <progress id="firmwareWriteProgress" value="0" max="100"></progress>
         </div>
         <output id="flashResult" class="output-box">默认读取 GitHub Release 提供的最近版本固件。首次迁移到 v1.5.x 分区表时请使用完整 merged 固件写入 0x0。</output>
-        </details>
+        </template>
       </section>
     </section>
   </main>

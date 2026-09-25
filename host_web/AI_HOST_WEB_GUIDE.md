@@ -3,9 +3,12 @@
 This document is for future AI agents or developers taking over `host_web/`.
 
 Device identification: esptool-js 0.5.6 exposes getFlashSize() on ESPLoader,
-not chip. Use the bundled implementation in regression tests. Both inspection
-paths must attempt reset in finally before releasing the serial transport,
-including failed identification. Preserve the original error in the UI.
+not chip. Successful firmware inspection retains its loader and transport for
+online installation; cancel, tab departure and installation completion release
+the session. Failed inspection and resource inspection reset before disconnect.
+Preserve original installation errors. Do not reload on worker updates during
+firmware sessions. Advanced flashing is no longer exposed; its legacy DOM state
+is inert in firmwareInternalState, retained only for shared helper compatibility.
 
 The visible Host Web version is `HOST_WEB_VERSION` in `app.js`, mirrored by
 `#hostVersion` in `index.html`. Update both the displayed version and the
