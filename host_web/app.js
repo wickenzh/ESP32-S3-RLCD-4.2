@@ -20,7 +20,7 @@ const PARTITION_TABLE_OFFSET = 0x8000;
 const PARTITION_TABLE_SIZE = 0x1000;
 const FIRMWARE_RELEASES_MANIFEST_URL = "./firmware/releases.json";
 const FIRMWARE_RELEASES_SOURCE_URL = "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases";
-const HOST_WEB_VERSION = "v1.0.5";
+const HOST_WEB_VERSION = "v1.0.6";
 const DEFAULT_SUMMARY_NOTE = "资源包支持 GIF、静图和兜底配置。\n写入并重启后，优先加载自定义资源。";
 const MERGED_TARGET = {
   value: "merged",
@@ -1809,8 +1809,9 @@ async function inspectFirmwareDevice() {
     setText($("#firmwareChipName"), () => chipName || tr("已连接"));
     setText($("#firmwareMacAddress"), () => macAddress || "-");
     firmwareChipVerified = /ESP32-S3/i.test(String(chipName || ""));
-    const rawFlashSize = await loader.getFlashSize();
-    firmwareFlashSizeBytes = normalizeFlashCapacity(rawFlashSize);
+    // esptool-js 0.5.6 returns KiB, not bytes or MiB.
+    const flashSizeKiB = await loader.getFlashSize();
+    firmwareFlashSizeBytes = Number.isSafeInteger(flashSizeKiB) && flashSizeKiB > 0 ? flashSizeKiB * 1024 : 0;
     firmwareFlashSizeText = firmwareFlashSizeBytes ? formatBytes(firmwareFlashSizeBytes) : "-";
     updateFirmwareInstallSummary();
     if (!firmwareChipVerified || !firmwareFlashSizeBytes) {

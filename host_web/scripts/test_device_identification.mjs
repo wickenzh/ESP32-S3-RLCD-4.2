@@ -14,7 +14,7 @@ for (const failure of ['', 'flash', 'connect']) {
   class Loader {
     constructor() {
       this.chip = { readMac: async () => 'test' };
-      this.DETECTED_FLASH_SIZES_NUM = { 24: 16 * 1024 * 1024 };
+      this.DETECTED_FLASH_SIZES_NUM = new ESPLoader({ transport: { getInfo: () => 'test' }, baudrate: 115200, terminal: { clean() {}, write() {}, writeLine() {} } }).DETECTED_FLASH_SIZES_NUM;
     }
     async main() { events.push('connect'); if (failure === 'connect') throw Error('connect failed'); return 'ESP32-S3'; }
     async readFlashId() { events.push('flash-id'); if (failure === 'flash') throw Error('flash failed'); return 0x1840ef; }
