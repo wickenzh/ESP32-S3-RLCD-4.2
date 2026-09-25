@@ -1,7 +1,7 @@
 {
-  "version": "v1.6.11",
-  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.11/weather_clock_v1.6.11.bin",
-  "sha256": "de28a3f41883570c7d44135806dfce3a2c948fd40aa91391e4ebf76f64a2ec80",
-  "size": 6309392,
-  "notes": "v1.6.11：共 3 项更新。\n1. 修复和风天气单次更新的首个 API 请求遇到瞬时 TLS 建连超时或等待响应超时后只能…\n2. 优化和风天气单次更新的 HTTPS 连接复用，减少重复 TLS 建连与联网时间，同时保…\n3. 优化 OTA 启动确认：核心服务就绪后才确认新固件有效，启动异常时保留回滚资格。\n完整说明见源码仓库同版本 Release。"
+  "version": "v1.6.12",
+  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.12/weather_clock_v1.6.12.bin",
+  "sha256": "c6b7b00979805749050348c39754e8f0708e13ee2d1bd674d5e0f3d480d50023",
+  "size": 6311648,
+  "notes": "v1.6.12：共 4 项更新。\n1. 修复 NTP 备用服务器未实际启用的问题，优先使用阿里时间服务器，并启用腾讯与公共时间…\n2. 增强和风天气慢请求与失败阶段诊断，便于定位连接、首包等待及响应耗时异常。\n3. 显示刷新诊断改为每小时汇总，页面切换时仍即时记录，减少重复日志。\n4. 优化天气时钟动画差分绘制，跳过未变化像素，降低秒级动画的处理开销。\n完整说明见源码仓库同版本 Release。"
 }

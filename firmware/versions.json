@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.11",
+  "latest": "v1.6.12",
   "items": [
+    {
+      "version": "v1.6.12",
+      "notes": "v1.6.12：共 4 项更新。\n1. 修复 NTP 备用服务器未实际启用的问题，优先使用阿里时间服务器，并启用腾讯与公共时间…\n2. 增强和风天气慢请求与失败阶段诊断，便于定位连接、首包等待及响应耗时异常。\n3. 显示刷新诊断改为每小时汇总，页面切换时仍即时记录，减少重复日志。\n4. 优化天气时钟动画差分绘制，跳过未变化像素，降低秒级动画的处理开销。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.12/weather_clock_v1.6.12.bin",
+        "sha256": "c6b7b00979805749050348c39754e8f0708e13ee2d1bd674d5e0f3d480d50023",
+        "size": 6311648
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.12/weather_clock_v1.6.12_merged.bin",
+        "sha256": "b4bec35e7218e512788f0e418dc6ae82a5b133d319bddd6b994d8a6896b27ad3",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.11",
       "notes": "v1.6.11：共 3 项更新。\n1. 修复和风天气单次更新的首个 API 请求遇到瞬时 TLS 建连超时或等待响应超时后只能…\n2. 优化和风天气单次更新的 HTTPS 连接复用，减少重复 TLS 建连与联网时间，同时保…\n3. 优化 OTA 启动确认：核心服务就绪后才确认新固件有效，启动异常时保留回滚资格。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.3/weather_clock_v1.6.3_merged.bin",
         "sha256": "d62c596eb158aa695e746e62c02fc499e486a3e284d5af410919d2062ec7efcc",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.2",
-      "notes": "v1.6.2：共 2 项更新。\n1. 优化设置页视觉层次：所有选项采用 1px 圆角框，分类选中使用框内短竖条标记，操作项继…\n2. 优化设置页分类选中反馈：选中文字轻微右移 2px，取消选中后恢复原位置，外框和菜单坐标…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.2/weather_clock_v1.6.2.bin",
-        "sha256": "bff1d67dd0d3569a44f60099baf80d6481d5ab56936bb3ce19a4f6a9acce0082",
-        "size": 6286976
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.2/weather_clock_v1.6.2_merged.bin",
-        "sha256": "4cafa94836060bbf2589ab803933001bfac86fa1659d14a58bff8996bb107280",
         "size": 16509951
       }
     }
