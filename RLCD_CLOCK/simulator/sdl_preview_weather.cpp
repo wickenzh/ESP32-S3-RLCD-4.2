@@ -183,12 +183,13 @@ void build_weather_board_preview_body(lv_obj_t *screen)
                kWeatherBoardHumidityLabelW,
                kWeatherBoardDetailLabelH,
                "湿度 58%");
-    make_label(screen,
-               kWeatherBoardRightColumnX,
-               kWeatherBoardDetailTopY,
-               kWeatherBoardWindLabelW,
-               kWeatherBoardDetailLabelH,
-               "东北风 3级");
+    lv_obj_t *preview_wind = make_label(screen,
+                                        kWeatherBoardRightColumnX,
+                                        kWeatherBoardDetailTopY,
+                                        kWeatherBoardWindLabelW,
+                                        kWeatherBoardDetailLabelH,
+                                        "东北风 3级");
+    lv_obj_set_style_text_align(preview_wind, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     make_label(screen,
                kWeatherBoardLeftColumnX,
                kWeatherBoardDetailBottomY,
@@ -201,12 +202,13 @@ void build_weather_board_preview_body(lv_obj_t *screen)
                kWeatherBoardSunsetLabelW,
                kWeatherBoardSunLabelH,
                "日落 19:06");
-    make_label(screen,
-               kWeatherBoardRightColumnX,
-               kWeatherBoardDetailBottomY,
-               kWeatherBoardSunCountdownLabelW,
-               kWeatherBoardSunLabelH,
-               "距日落 01:05");
+    lv_obj_t *preview_countdown = make_label(screen,
+                                             kWeatherBoardRightColumnX,
+                                             kWeatherBoardDetailBottomY,
+                                             kWeatherBoardSunCountdownLabelW,
+                                             kWeatherBoardSunLabelH,
+                                             "距日落 01:05");
+    lv_obj_set_style_text_align(preview_countdown, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     make_label(screen,
                kWeatherBoardAlertX,
                kWeatherBoardAlertY,

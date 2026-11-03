@@ -49,14 +49,19 @@ inline constexpr int kWeatherBoardDetailBottomY = 224;
 inline constexpr int kWeatherBoardDetailLabelH = 22;
 inline constexpr int kWeatherBoardSunLabelH = 20;
 inline constexpr int kWeatherBoardLeftColumnX = 20;
-inline constexpr int kWeatherBoardMiddleColumnX = 132;
-inline constexpr int kWeatherBoardRightColumnX = 238;
+// 中列右移：右列文字起点在 279 附近，中列取 148 使下排
+// “日出 / 日落 / 距日落”左右间隙接近均等（48 / 49 px）。
+inline constexpr int kWeatherBoardMiddleColumnX = 148;
+// 右列整体右移并改为列内左对齐，使“风力”首字“东”与“距日落”首字“距”起笔对齐。
+// 盒内左内边距 2px，故盒子 X = 279 - 2 = 277；宽度放到屏幕右缘 400，
+// 以容纳“无持续风向 3级”这类长风向文案而不被 LV_LABEL_LONG_CLIP 截断。
+inline constexpr int kWeatherBoardRightColumnX = 277;
 inline constexpr int kWeatherBoardAirLabelW = 110;
 inline constexpr int kWeatherBoardHumidityLabelW = 86;
-inline constexpr int kWeatherBoardWindLabelW = 142;
+inline constexpr int kWeatherBoardWindLabelW = 123;
 inline constexpr int kWeatherBoardSunriseLabelW = 110;
 inline constexpr int kWeatherBoardSunsetLabelW = 98;
-inline constexpr int kWeatherBoardSunCountdownLabelW = 142;
+inline constexpr int kWeatherBoardSunCountdownLabelW = 123;
 
 inline constexpr int kWeatherBoardAlertX = 20;
 inline constexpr int kWeatherBoardAlertY = 246;

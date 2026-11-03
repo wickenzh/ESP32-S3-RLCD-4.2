@@ -371,6 +371,8 @@ void build_weather_detail_panel(lv_obj_t *screen)
                                     kWeatherBoardWindLabelW,
                                     kWeatherBoardDetailLabelH,
                                     kWeatherBoardWindPlaceholder);
+    // 右列内部左对齐：使“风力”首字与下排“距日落”首字起笔对齐。
+    set_weather_label_align(objects.wind_label, LV_TEXT_ALIGN_LEFT);
     objects.sunrise_label = make_label(screen,
                                        kWeatherBoardLeftColumnX,
                                        kWeatherBoardDetailBottomY,
@@ -389,6 +391,8 @@ void build_weather_detail_panel(lv_obj_t *screen)
                                              kWeatherBoardSunCountdownLabelW,
                                              kWeatherBoardSunLabelH,
                                              kWeatherBoardSunCountdownPlaceholder);
+    // 与上排“风力”同为列内左对齐，两行首字起笔对齐。
+    set_weather_label_align(objects.sun_countdown_label, LV_TEXT_ALIGN_LEFT);
     objects.alert_label = make_label(screen,
                                      kWeatherBoardAlertX,
                                      kWeatherBoardAlertY,
