@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.19",
+  "latest": "v1.6.20",
   "items": [
+    {
+      "version": "v1.6.20",
+      "notes": "v1.6.20：共 1 项更新。\n1. 天气看板底部信息行重新排布：风力与\"距日落\"首字起笔对齐，湿度与\"日落\"两列整体右移，…\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.20/weather_clock_v1.6.20.bin",
+        "sha256": "2773d39b4e2e819b8cd410003ab347b49dd54e5e7b621a3e9113bbb6aa925513",
+        "size": 6318400
+      },
+      "merged": {
+        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.20/weather_clock_v1.6.20_merged.bin",
+        "sha256": "579745d83dccda7eb1221da51d8a95a84c9cf85c2408b765ff4e1ecf3e91d374",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.19",
       "notes": "v1.6.19：共 1 项更新。\n1. 为设置页主标题及网络、声音、显示、系统分类增加居中显示的单色图标，并在主页说明图标来源。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.11/weather_clock_v1.6.11_merged.bin",
         "sha256": "c39254004cf19bdd351eb35496ff714c18970f4b5adee137c898fd40299c41fa",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.10",
-      "notes": "v1.6.10：共 3 项更新。\n1. 优化自动天气同步在主、备 Wi-Fi 均不可用时的连接等待：本轮最多等待 30 秒后进…\n2. 优化整点提醒开启时的联网错峰：自动天气同步在整点第 8 秒后启动，降低报时、Wi-Fi…\n3. 优化聚合时钟秒牌：普通秒跳仅重绘变化数字，降低秒级绘制与 RLCD 局部传输量；显示效…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.10/weather_clock_v1.6.10.bin",
-        "sha256": "78f9930da268b078ca1c72094ac02d162d39ed573cfcd6a6ea759dd99c91b10a",
-        "size": 6305104
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.10/weather_clock_v1.6.10_merged.bin",
-        "sha256": "a81e0258d4e472a4c55e167aaaca4cd391eb54e5a23926d0d6c316171eb5c784",
         "size": 16509951
       }
     }

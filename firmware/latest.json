@@ -1,7 +1,7 @@
 {
-  "version": "v1.6.19",
-  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.19/weather_clock_v1.6.19.bin",
-  "sha256": "8953eb4052c0e83cde34ce328822c8b75a0ebeba99a19b1759a879cf9f547d72",
-  "size": 6318384,
-  "notes": "v1.6.19：共 1 项更新。\n1. 为设置页主标题及网络、声音、显示、系统分类增加居中显示的单色图标，并在主页说明图标来源。\n完整说明见源码仓库同版本 Release。"
+  "version": "v1.6.20",
+  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.20/weather_clock_v1.6.20.bin",
+  "sha256": "2773d39b4e2e819b8cd410003ab347b49dd54e5e7b621a3e9113bbb6aa925513",
+  "size": 6318400,
+  "notes": "v1.6.20：共 1 项更新。\n1. 天气看板底部信息行重新排布：风力与\"距日落\"首字起笔对齐，湿度与\"日落\"两列整体右移，…\n完整说明见源码仓库同版本 Release。"
 }
